@@ -1,0 +1,30 @@
+{
+  "name": "dataflair-toplists",
+  "version": "1.2.0",
+  "description": "WordPress plugin for managing and displaying DataFlair toplists and brands with API integration",
+  "author": "DataFlair",
+  "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dataflair/toplists.git"
+  },
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "toplists",
+    "brands",
+    "casino",
+    "affiliates",
+    "dataflair"
+  ],
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
+    "lint:js": "wp-scripts lint-js",
+    "format:js": "wp-scripts format-js"
+  },
+  "devDependencies": {
+    "@wordpress/scripts": "^26.0.0"
+  }
+}
+

@@ -1,0 +1,216 @@
+/* DataFlair Toplists Styles */
+
+.dataflair-toplist {
+    margin: 30px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.dataflair-notice {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #856404;
+}
+
+.dataflair-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: #1a1a1a;
+}
+
+.dataflair-table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 30px;
+}
+
+.dataflair-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.dataflair-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+}
+
+.dataflair-table thead th {
+    padding: 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dataflair-table thead th.pos {
+    width: 60px;
+    text-align: center;
+}
+
+.dataflair-table thead th.casino {
+    width: 30%;
+}
+
+.dataflair-table thead th.bonus {
+    width: 45%;
+}
+
+.dataflair-table thead th.cta {
+    width: 150px;
+    text-align: center;
+}
+
+.dataflair-table tbody tr {
+    border-bottom: 1px solid #e5e5e5;
+    transition: background-color 0.2s;
+}
+
+.dataflair-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.dataflair-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.dataflair-table tbody td {
+    padding: 20px 16px;
+    vertical-align: middle;
+}
+
+.dataflair-table tbody td.pos {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.dataflair-table tbody td.casino {
+    font-size: 16px;
+}
+
+.casino-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.casino-info strong {
+    font-size: 18px;
+    color: #1a1a1a;
+    font-weight: 600;
+}
+
+.casino-info .licenses {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1976d2;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.bonus-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.bonus-info strong {
+    font-size: 16px;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.bonus-info .wagering,
+.bonus-info .min-deposit {
+    font-size: 13px;
+    color: #666;
+}
+
+.dataflair-table tbody td.cta {
+    text-align: center;
+}
+
+.dataflair-btn {
+    display: inline-block;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff !important;
+    padding: 12px 28px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dataflair-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    text-decoration: none;
+}
+
+.dataflair-btn:active {
+    transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .dataflair-table {
+        font-size: 14px;
+    }
+    
+    .dataflair-table thead th,
+    .dataflair-table tbody td {
+        padding: 12px 10px;
+    }
+    
+    .dataflair-title {
+        font-size: 22px;
+    }
+    
+    .casino-info strong {
+        font-size: 16px;
+    }
+    
+    .bonus-info strong {
+        font-size: 14px;
+    }
+    
+    .dataflair-btn {
+        padding: 10px 20px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .dataflair-table thead th.casino,
+    .dataflair-table thead th.bonus {
+        width: auto;
+    }
+    
+    .dataflair-table thead th.pos {
+        width: 40px;
+    }
+    
+    .dataflair-table thead th.cta {
+        width: 100px;
+    }
+    
+    .dataflair-btn {
+        padding: 8px 16px;
+    }
+}

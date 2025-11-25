@@ -1,0 +1,119 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "dataflair-toplists/toplist",
+  "title": "DataFlair Toplist",
+  "category": "widgets",
+  "icon": "list-view",
+  "description": "Display a casino toplist from DataFlair API",
+  "keywords": ["casino", "toplist", "dataflair", "gambling"],
+  "textdomain": "dataflair-toplists",
+  "editorScript": "file:./index.js",
+  "attributes": {
+    "toplistId": {
+      "type": "string",
+      "default": ""
+    },
+    "title": {
+      "type": "string",
+      "default": ""
+    },
+    "limit": {
+      "type": "number",
+      "default": 0
+    },
+    "ribbonBgColor": {
+      "type": "string",
+      "default": "brand-600"
+    },
+    "ribbonTextColor": {
+      "type": "string",
+      "default": "white"
+    },
+    "ribbonText": {
+      "type": "string",
+      "default": "Our Top Choice"
+    },
+    "rankBgColor": {
+      "type": "string",
+      "default": "gray-100"
+    },
+    "rankTextColor": {
+      "type": "string",
+      "default": "gray-900"
+    },
+    "rankBorderRadius": {
+      "type": "string",
+      "default": "rounded"
+    },
+    "brandLinkColor": {
+      "type": "string",
+      "default": "brand-600"
+    },
+    "bonusLabelStyle": {
+      "type": "string",
+      "default": "text-gray-600"
+    },
+    "bonusTextStyle": {
+      "type": "string",
+      "default": "text-gray-900 text-lg leading-6 font-semibold"
+    },
+    "featureCheckBg": {
+      "type": "string",
+      "default": "green-100"
+    },
+    "featureCheckColor": {
+      "type": "string",
+      "default": "green-600"
+    },
+    "featureTextColor": {
+      "type": "string",
+      "default": "gray-600"
+    },
+    "ctaBgColor": {
+      "type": "string",
+      "default": "brand-600"
+    },
+    "ctaHoverBgColor": {
+      "type": "string",
+      "default": "brand-700"
+    },
+    "ctaTextColor": {
+      "type": "string",
+      "default": "white"
+    },
+    "ctaBorderRadius": {
+      "type": "string",
+      "default": "rounded"
+    },
+    "ctaShadow": {
+      "type": "string",
+      "default": "shadow-md"
+    },
+    "metricLabelStyle": {
+      "type": "string",
+      "default": "text-gray-600"
+    },
+    "metricValueStyle": {
+      "type": "string",
+      "default": "text-gray-900 font-semibold"
+    },
+    "rgBorderColor": {
+      "type": "string",
+      "default": "gray-300"
+    },
+    "rgTextColor": {
+      "type": "string",
+      "default": "gray-600"
+    },
+    "prosCons": {
+      "type": "object",
+      "default": {}
+    }
+  },
+  "supports": {
+    "html": false,
+    "align": true
+  }
+}
+
