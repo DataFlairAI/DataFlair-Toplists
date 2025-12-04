@@ -23,6 +23,10 @@ define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
 define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
 
+// Include helper classes
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/class-brand.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/class-toplist.php';
+
 /**
  * Main DataFlair Plugin Class
  */
@@ -100,11 +104,15 @@ class DataFlair_Toplists {
         $alternative_toplists_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
         $charset_collate = $wpdb->get_charset_collate();
         
+        // Check if JSON type is supported
+        $supports_json = $this->supports_json_type();
+        $data_type = $supports_json ? 'JSON' : 'longtext';
+        
         $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id bigint(20) NOT NULL AUTO_INCREMENT,
             api_toplist_id bigint(20) NOT NULL,
             name varchar(255) NOT NULL,
-            data longtext NOT NULL,
+            data $data_type NOT NULL,
             version varchar(50) DEFAULT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
@@ -122,7 +130,7 @@ class DataFlair_Toplists {
             top_geos text,
             offers_count int(11) DEFAULT 0,
             trackers_count int(11) DEFAULT 0,
-            data longtext NOT NULL,
+            data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
             UNIQUE KEY api_brand_id (api_brand_id)
@@ -176,6 +184,9 @@ class DataFlair_Toplists {
             $this->upgrade_database();
             update_option('dataflair_db_version', $current_version);
         }
+        
+        // Migrate to JSON type if supported
+        $this->migrate_to_json_type();
     }
     
     /**
@@ -905,19 +916,19 @@ class DataFlair_Toplists {
                         <div class="filter-group">
                             <label>Licenses</label>
                             <div class="custom-multiselect" data-filter="license">
-                                <button type="button" class="multiselect-toggle">
+                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="licenses">
                                     <span class="selected-text">All Licenses</span>
                                     <span class="dashicons dashicons-arrow-down-alt2"></span>
                                 </button>
-                                <div class="multiselect-dropdown">
-                                    <div class="multiselect-search">
+                                <div class="dataflair-multiselect-dropdown" style="display: none;">
+                                    <div class="dataflair-multiselect-search">
                                         <input type="text" placeholder="Search licenses..." class="search-input">
                                     </div>
                                     <div class="multiselect-actions">
-                                        <a href="#" class="select-all">Select All</a>
-                                        <a href="#" class="clear-all">Clear</a>
+                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
+                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
                                     </div>
-                                    <div class="multiselect-options">
+                                    <div class="dataflair-multiselect-options">
                                         <?php foreach ($all_licenses as $license): ?>
                                             <label class="multiselect-option">
                                                 <input type="checkbox" value="<?php echo esc_attr($license); ?>">
@@ -933,19 +944,19 @@ class DataFlair_Toplists {
                         <div class="filter-group">
                             <label>Top Geos</label>
                             <div class="custom-multiselect" data-filter="geo">
-                                <button type="button" class="multiselect-toggle">
+                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="top_geos">
                                     <span class="selected-text">All Geos</span>
                                     <span class="dashicons dashicons-arrow-down-alt2"></span>
                                 </button>
-                                <div class="multiselect-dropdown">
-                                    <div class="multiselect-search">
+                                <div class="dataflair-multiselect-dropdown" style="display: none;">
+                                    <div class="dataflair-multiselect-search">
                                         <input type="text" placeholder="Search geos..." class="search-input">
                                     </div>
                                     <div class="multiselect-actions">
-                                        <a href="#" class="select-all">Select All</a>
-                                        <a href="#" class="clear-all">Clear</a>
+                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
+                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
                                     </div>
-                                    <div class="multiselect-options">
+                                    <div class="dataflair-multiselect-options">
                                         <?php foreach ($all_geos as $geo): ?>
                                             <label class="multiselect-option">
                                                 <input type="checkbox" value="<?php echo esc_attr($geo); ?>">
@@ -961,19 +972,19 @@ class DataFlair_Toplists {
                         <div class="filter-group">
                             <label>Payment Methods</label>
                             <div class="custom-multiselect" data-filter="payment">
-                                <button type="button" class="multiselect-toggle">
+                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="payment_methods">
                                     <span class="selected-text">All Payments</span>
                                     <span class="dashicons dashicons-arrow-down-alt2"></span>
                                 </button>
-                                <div class="multiselect-dropdown">
-                                    <div class="multiselect-search">
+                                <div class="dataflair-multiselect-dropdown" style="display: none;">
+                                    <div class="dataflair-multiselect-search">
                                         <input type="text" placeholder="Search payments..." class="search-input">
                                     </div>
                                     <div class="multiselect-actions">
-                                        <a href="#" class="select-all">Select All</a>
-                                        <a href="#" class="clear-all">Clear</a>
+                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
+                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
                                     </div>
-                                    <div class="multiselect-options">
+                                    <div class="dataflair-multiselect-options">
                                         <?php foreach ($all_payment_methods as $method): ?>
                                             <label class="multiselect-option">
                                                 <input type="checkbox" value="<?php echo esc_attr($method); ?>">
@@ -987,8 +998,8 @@ class DataFlair_Toplists {
                         
                         <!-- Actions -->
                         <div class="filter-group filter-actions">
-                            <button type="button" id="clear-filters" class="button">Clear All Filters</button>
-                            <span id="filter-count">Showing <?php echo count($brands); ?> brands</span>
+                            <button type="button" id="dataflair-clear-all-filters" class="button">Clear All Filters</button>
+                            <span id="dataflair-brands-count">Showing <?php echo count($brands); ?> brands</span>
                         </div>
                     </div>
                 </div>
@@ -1048,13 +1059,14 @@ class DataFlair_Toplists {
                             $payments_json = !empty($data['paymentMethods']) ? json_encode($data['paymentMethods']) : '[]';
                         ?>
                         <tr class="brand-row" 
-                            data-brand-id="<?php echo esc_attr($brand_id); ?>"
-                            data-brand-name="<?php echo esc_attr(strtolower($brand->name)); ?>"
+                            data-brand-name="<?php echo esc_attr($brand->name); ?>"
                             data-offers-count="<?php echo esc_attr($brand->offers_count); ?>"
                             data-trackers-count="<?php echo esc_attr($brand->trackers_count); ?>"
-                            data-licenses='<?php echo esc_attr($licenses_json); ?>'
-                            data-geos='<?php echo esc_attr($geos_json); ?>'
-                            data-payments='<?php echo esc_attr($payments_json); ?>'>
+                            data-brand-data='<?php echo esc_attr(json_encode(array(
+                                'licenses' => !empty($data['licenses']) ? $data['licenses'] : array(),
+                                'topGeos' => $geos,
+                                'paymentMethods' => !empty($data['paymentMethods']) ? $data['paymentMethods'] : array()
+                            ))); ?>'>
                             <td class="toggle-cell">
                                 <button type="button" class="brand-toggle" aria-expanded="false">
                                     <span class="dashicons dashicons-arrow-right-alt2"></span>
@@ -3526,6 +3538,147 @@ class DataFlair_Toplists {
         }
         
         return rest_ensure_response($casinos);
+    }
+    
+    /**
+     * Check if MySQL/MariaDB supports JSON data type
+     * 
+     * @return bool
+     */
+    private function supports_json_type() {
+        global $wpdb;
+        
+        // Get MySQL version
+        $version = $wpdb->get_var("SELECT VERSION()");
+        
+        if (empty($version)) {
+            return false;
+        }
+        
+        // Check if it's MariaDB
+        if (stripos($version, 'mariadb') !== false) {
+            // MariaDB 10.2.7+ supports JSON
+            preg_match('/(\d+)\.(\d+)\.(\d+)/', $version, $matches);
+            if (!empty($matches)) {
+                $major = (int)$matches[1];
+                $minor = (int)$matches[2];
+                $patch = (int)$matches[3];
+                return ($major > 10) || ($major == 10 && $minor > 2) || ($major == 10 && $minor == 2 && $patch >= 7);
+            }
+        } else {
+            // MySQL 5.7.8+ supports JSON
+            preg_match('/(\d+)\.(\d+)\.(\d+)/', $version, $matches);
+            if (!empty($matches)) {
+                $major = (int)$matches[1];
+                $minor = (int)$matches[2];
+                $patch = (int)$matches[3];
+                return ($major > 5) || ($major == 5 && $minor > 7) || ($major == 5 && $minor == 7 && $patch >= 8);
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Migrate data fields from longtext to JSON type
+     */
+    public function migrate_to_json_type() {
+        global $wpdb;
+        
+        if (!$this->supports_json_type()) {
+            error_log('DataFlair: JSON type not supported by MySQL version. Skipping migration.');
+            return;
+        }
+        
+        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+        
+        // Check current column type
+        $toplist_column = $wpdb->get_row($wpdb->prepare(
+            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'data'",
+            DB_NAME,
+            $table_name
+        ));
+        
+        $brand_column = $wpdb->get_row($wpdb->prepare(
+            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'data'",
+            DB_NAME,
+            $brands_table_name
+        ));
+        
+        // Migrate toplists table
+        if ($toplist_column && strtolower($toplist_column->DATA_TYPE) !== 'json') {
+            // First, validate all JSON data
+            $invalid_rows = $wpdb->get_results(
+                "SELECT id FROM $table_name WHERE data IS NOT NULL AND data != ''",
+                ARRAY_A
+            );
+            
+            $valid_count = 0;
+            $invalid_count = 0;
+            
+            foreach ($invalid_rows as $row) {
+                $data = $wpdb->get_var($wpdb->prepare(
+                    "SELECT data FROM $table_name WHERE id = %d",
+                    $row['id']
+                ));
+                
+                // Validate JSON
+                json_decode($data);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $valid_count++;
+                } else {
+                    $invalid_count++;
+                    error_log('DataFlair: Invalid JSON in toplist ID ' . $row['id'] . ': ' . json_last_error_msg());
+                }
+            }
+            
+            if ($invalid_count === 0) {
+                // All data is valid JSON, proceed with migration
+                $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN data JSON NOT NULL");
+                error_log('DataFlair: Successfully migrated toplists data column to JSON type');
+            } else {
+                error_log("DataFlair: Cannot migrate toplists table - found $invalid_count invalid JSON rows");
+            }
+        }
+        
+        // Migrate brands table
+        if ($brand_column && strtolower($brand_column->DATA_TYPE) !== 'json') {
+            // First, validate all JSON data
+            $invalid_rows = $wpdb->get_results(
+                "SELECT id FROM $brands_table_name WHERE data IS NOT NULL AND data != ''",
+                ARRAY_A
+            );
+            
+            $valid_count = 0;
+            $invalid_count = 0;
+            
+            foreach ($invalid_rows as $row) {
+                $data = $wpdb->get_var($wpdb->prepare(
+                    "SELECT data FROM $brands_table_name WHERE id = %d",
+                    $row['id']
+                ));
+                
+                // Validate JSON
+                json_decode($data);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $valid_count++;
+                } else {
+                    $invalid_count++;
+                    error_log('DataFlair: Invalid JSON in brand ID ' . $row['id'] . ': ' . json_last_error_msg());
+                }
+            }
+            
+            if ($invalid_count === 0) {
+                // All data is valid JSON, proceed with migration
+                $wpdb->query("ALTER TABLE $brands_table_name MODIFY COLUMN data JSON NOT NULL");
+                error_log('DataFlair: Successfully migrated brands data column to JSON type');
+            } else {
+                error_log("DataFlair: Cannot migrate brands table - found $invalid_count invalid JSON rows");
+            }
+        }
     }
 }
 
