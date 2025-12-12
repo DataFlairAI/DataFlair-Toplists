@@ -225,7 +225,7 @@ jQuery(document).ready(function($) {
     });
     
     // Search within multiselect
-    $('.dataflair-multiselect-search').on('input', function() {
+    $('.dataflair-multiselect-search input, .search-input').on('input', function() {
         var searchTerm = $(this).val().toLowerCase();
         var $options = $(this).closest('.dataflair-multiselect-dropdown').find('.dataflair-multiselect-options label');
         
@@ -238,7 +238,9 @@ jQuery(document).ready(function($) {
     // Select All
     $('.dataflair-multiselect-select-all').on('click', function(e) {
         e.preventDefault();
-        $(this).closest('.dataflair-multiselect-dropdown').find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', true);
+        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
+        $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', true);
+        updateSelectedText($dropdown);
         applyFiltersAndSort();
     });
     
@@ -246,11 +248,65 @@ jQuery(document).ready(function($) {
     $('.dataflair-multiselect-clear').on('click', function(e) {
         e.preventDefault();
         $(this).closest('.dataflair-multiselect-dropdown').find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', false);
+        updateSelectedText($(this).closest('.dataflair-multiselect-dropdown'));
         applyFiltersAndSort();
     });
     
-    // Apply filter when checkbox changes
-    $('.dataflair-multiselect-options input[type="checkbox"]').on('change', function() {
+    // Apply filter when checkbox changes - use event delegation for dynamically loaded content
+    $(document).on('change', '.dataflair-multiselect-options input[type="checkbox"]', function() {
+        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
+        updateSelectedText($dropdown);
+        applyFiltersAndSort();
+    });
+    
+    // Function to update the selected text on the button
+    function updateSelectedText($dropdown) {
+        var $toggle = $dropdown.prev('.dataflair-multiselect-toggle');
+        var $selectedText = $toggle.find('.selected-text');
+        var $checkboxes = $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]');
+        var $checked = $checkboxes.filter(':checked');
+        var total = $checkboxes.length;
+        var checkedCount = $checked.length;
+        
+        if (checkedCount === 0) {
+            // No selections - show default text based on filter type
+            var filterType = $toggle.data('filter-type');
+            if (filterType === 'licenses') {
+                $selectedText.text('All Licenses');
+            } else if (filterType === 'top_geos') {
+                $selectedText.text('All Geos');
+            } else if (filterType === 'payment_methods') {
+                $selectedText.text('All Payments');
+            } else {
+                $selectedText.text('All');
+            }
+        } else if (checkedCount === 1) {
+            // One selected - show the value
+            $selectedText.text($checked.closest('label').find('span').text());
+        } else if (checkedCount === total) {
+            // All selected - show "All [Type]"
+            var filterType = $toggle.data('filter-type');
+            if (filterType === 'licenses') {
+                $selectedText.text('All Licenses');
+            } else if (filterType === 'top_geos') {
+                $selectedText.text('All Geos');
+            } else if (filterType === 'payment_methods') {
+                $selectedText.text('All Payments');
+            } else {
+                $selectedText.text('All Selected');
+            }
+        } else {
+            // Multiple selected - show count
+            $selectedText.text(checkedCount + ' selected');
+        }
+    }
+    
+    // Update selected text when Select All is clicked
+    $('.dataflair-multiselect-select-all').on('click', function(e) {
+        e.preventDefault();
+        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
+        $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', true);
+        updateSelectedText($dropdown);
         applyFiltersAndSort();
     });
     
@@ -264,6 +320,10 @@ jQuery(document).ready(function($) {
     // Clear all filters
     $('#dataflair-clear-all-filters').on('click', function() {
         $('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', false);
+        // Update all button texts
+        $('.dataflair-multiselect-dropdown').each(function() {
+            updateSelectedText($(this));
+        });
         applyFiltersAndSort();
     });
     
@@ -518,6 +578,11 @@ jQuery(document).ready(function($) {
     
     // Initialize pagination on page load
     updatePagination();
+    
+    // Initialize selected text for all filters on page load
+    $('.dataflair-multiselect-dropdown').each(function() {
+        updateSelectedText($(this));
+    });
     
     // ========================================
     // Alternative Toplists Functionality
