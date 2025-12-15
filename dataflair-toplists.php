@@ -430,11 +430,16 @@ class DataFlair_Toplists {
             );
         }
         
+        // Use file modification time as version to prevent caching issues
+        $admin_js_version = file_exists(DATAFLAIR_PLUGIN_DIR . 'assets/admin.js') 
+            ? filemtime(DATAFLAIR_PLUGIN_DIR . 'assets/admin.js') 
+            : DATAFLAIR_VERSION;
+        
         wp_enqueue_script(
             'dataflair-admin',
             DATAFLAIR_PLUGIN_URL . 'assets/admin.js',
             array('jquery'),
-            DATAFLAIR_VERSION,
+            $admin_js_version,
             true
         );
         
@@ -3371,11 +3376,16 @@ class DataFlair_Toplists {
      * Enqueue frontend styles
      */
     public function enqueue_frontend_assets() {
+        // Use file modification time as version to prevent caching issues
+        $style_css_version = file_exists(DATAFLAIR_PLUGIN_DIR . 'assets/style.css') 
+            ? filemtime(DATAFLAIR_PLUGIN_DIR . 'assets/style.css') 
+            : DATAFLAIR_VERSION;
+        
         wp_enqueue_style(
             'dataflair-toplists',
             DATAFLAIR_PLUGIN_URL . 'assets/style.css',
             array(),
-            DATAFLAIR_VERSION
+            $style_css_version
         );
     }
     
