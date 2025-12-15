@@ -23,9 +23,10 @@ define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
 define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
 
-// Include helper classes
-require_once DATAFLAIR_PLUGIN_DIR . 'includes/class-brand.php';
-require_once DATAFLAIR_PLUGIN_DIR . 'includes/class-toplist.php';
+// Load Composer autoloader
+if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
+    require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
+}
 
 /**
  * Main DataFlair Plugin Class

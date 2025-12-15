@@ -10,6 +10,8 @@
  *   $brands = Brand::all();
  */
 
+namespace DataFlair\Toplists\Models;
+
 if (!defined('ABSPATH')) {
     exit;
 }

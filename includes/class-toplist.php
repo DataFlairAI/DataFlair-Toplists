@@ -9,6 +9,8 @@
  *   $toplists = Toplist::all();
  */
 
+namespace DataFlair\Toplists\Models;
+
 if (!defined('ABSPATH')) {
     exit;
 }
