@@ -341,6 +341,8 @@ class DataFlair_Toplists {
         register_setting('dataflair_settings', 'dataflair_api_token', $args);
         // Keep dataflair_api_endpoints for internal use (populated by fetch_all_toplists)
         register_setting('dataflair_settings', 'dataflair_api_endpoints', $args);
+        // API base URL - can be auto-detected or manually set
+        register_setting('dataflair_settings', 'dataflair_api_base_url', $args);
         
         // Default customization settings
         register_setting('dataflair_settings', 'dataflair_ribbon_bg_color', $args);
@@ -362,7 +364,21 @@ class DataFlair_Toplists {
         
         // Save API settings
         if (isset($_POST['dataflair_api_token'])) {
-            update_option('dataflair_api_token', sanitize_text_field($_POST['dataflair_api_token']));
+            // Trim whitespace and preserve token value - don't use sanitize_text_field as it may modify special characters
+            $token = trim($_POST['dataflair_api_token']);
+            update_option('dataflair_api_token', $token);
+        }
+        
+        // Save API base URL if manually set
+        if (isset($_POST['dataflair_api_base_url'])) {
+            $base_url = trim($_POST['dataflair_api_base_url']);
+            if (!empty($base_url)) {
+                // Ensure it ends with /api/v1 or similar
+                if (!preg_match('#/api/v\d+/?$#', $base_url)) {
+                    $base_url = rtrim($base_url, '/') . '/api/v1';
+                }
+                update_option('dataflair_api_base_url', $base_url);
+            }
         }
         
         // Save customization settings
@@ -392,6 +408,26 @@ class DataFlair_Toplists {
         // Only load on our settings pages
         if ($hook !== 'toplevel_page_dataflair-toplists' && $hook !== 'dataflair_page_dataflair-brands') {
             return;
+        }
+        
+        // Enqueue Select2 CSS and JS (only on brands page)
+        if ($hook === 'dataflair_page_dataflair-brands') {
+            // Select2 CSS
+            wp_enqueue_style(
+                'select2',
+                'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css',
+                array(),
+                '4.1.0'
+            );
+            
+            // Select2 JS
+            wp_enqueue_script(
+                'select2',
+                'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js',
+                array('jquery'),
+                '4.1.0',
+                true
+            );
         }
         
         wp_enqueue_script(
@@ -443,6 +479,21 @@ class DataFlair_Toplists {
                 
                 <?php if ($current_tab === 'api'): ?>
                     <!-- API Settings Tab -->
+                    <style>
+                        #dataflair_api_base_url::placeholder {
+                            color: #d3d3d3;
+                        }
+                        #dataflair_api_base_url::-webkit-input-placeholder {
+                            color: #d3d3d3;
+                        }
+                        #dataflair_api_base_url::-moz-placeholder {
+                            color: #d3d3d3;
+                            opacity: 1;
+                        }
+                        #dataflair_api_base_url:-ms-input-placeholder {
+                            color: #d3d3d3;
+                        }
+                    </style>
                     <div class="tab-content">
                 <table class="form-table">
                     <tr>
@@ -456,6 +507,29 @@ class DataFlair_Toplists {
                                    value="<?php echo esc_attr(get_option('dataflair_api_token')); ?>" 
                                    class="regular-text">
                             <p class="description">Your DataFlair API bearer token</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="dataflair_api_base_url">API Base URL</label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                   id="dataflair_api_base_url" 
+                                   name="dataflair_api_base_url" 
+                                   value="<?php echo esc_attr(get_option('dataflair_api_base_url', '')); ?>" 
+                                   class="regular-text"
+                                   placeholder="https://tenant.dataflair.ai/api/v1">
+                            <p class="description">
+                                Your DataFlair API base URL (e.g., https://tenant.dataflair.ai/api/v1). 
+                                Leave empty to auto-detect from token or stored endpoints.
+                                <?php 
+                                $current_base = get_option('dataflair_api_base_url');
+                                if (!empty($current_base)) {
+                                    echo '<br><strong>Current: ' . esc_html($current_base) . '</strong>';
+                                }
+                                ?>
+                            </p>
                         </td>
                     </tr>
                 </table>
@@ -680,6 +754,38 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Get API base URL - auto-detect from stored endpoints or use default
+     * 
+     * @return string API base URL
+     */
+    private function get_api_base_url() {
+        // First, try to get from stored option (manually set or auto-detected)
+        $base_url = get_option('dataflair_api_base_url');
+        if (!empty($base_url)) {
+            return $base_url;
+        }
+        
+        // Try to extract from stored endpoints
+        $endpoints = get_option('dataflair_api_endpoints');
+        if (!empty($endpoints)) {
+            $endpoints_array = array_filter(array_map('trim', explode("\n", $endpoints)));
+            if (!empty($endpoints_array)) {
+                $first_endpoint = $endpoints_array[0];
+                // Extract base URL from endpoint (e.g., https://tenant.dataflair.ai/api/v1/toplists/3)
+                if (preg_match('#^(https?://[^/]+/api/v\d+)/#', $first_endpoint, $matches)) {
+                    $base_url = $matches[1];
+                    // Store it for future use
+                    update_option('dataflair_api_base_url', $base_url);
+                    return $base_url;
+                }
+            }
+        }
+        
+        // Fallback to default
+        return 'https://sigma.dataflair.ai/api/v1';
+    }
+    
+    /**
      * AJAX handler to fetch all toplists from API and sync them
      */
     public function ajax_fetch_all_toplists() {
@@ -689,23 +795,33 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
         
-        $token = get_option('dataflair_api_token');
+        $token = trim(get_option('dataflair_api_token'));
         if (empty($token)) {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
         
-        // Use default base API URL
-        $base_url = 'https://sigma.dataflair.ai/api/v1';
+        // Debug: Log token length (not the actual token for security)
+        error_log('DataFlair API Token length: ' . strlen($token) . ' characters');
+        
+        // Get API base URL (auto-detected or manually set)
+        $base_url = $this->get_api_base_url();
         
         // Fetch list of all toplists
-        $list_url = $base_url . '/toplists';
+        // Add token as query parameter (as per README documentation)
+        // add_query_arg automatically URL-encodes the value
+        $list_url = add_query_arg('token', $token, $base_url . '/toplists');
+        
+        // Try query parameter only first (as per README)
+        $headers = array(
+            'Accept' => 'application/json'
+        );
+        
+        error_log('DataFlair API Request URL: ' . $list_url);
+        error_log('DataFlair API Request Headers: ' . print_r($headers, true));
         
         $response = wp_remote_get($list_url, array(
             'timeout' => 30,
-            'headers' => array(
-                'Accept' => 'application/json',
-                'Authorization' => 'Bearer ' . $token
-            )
+            'headers' => $headers
         ));
         
         if (is_wp_error($response)) {
@@ -717,8 +833,44 @@ class DataFlair_Toplists {
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         
+        // If we get 401, try with Authorization header as well
+        if ($status_code === 401) {
+            error_log('DataFlair: Got 401 with query parameter, trying with Authorization header');
+            $headers_with_auth = array(
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer ' . $token
+            );
+            $response = wp_remote_get($list_url, array(
+                'timeout' => 30,
+                'headers' => $headers_with_auth
+            ));
+            
+            if (is_wp_error($response)) {
+                $error_msg = 'Failed to fetch toplist list: ' . $response->get_error_message();
+                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
+                wp_send_json_error(array('message' => $error_msg));
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+        }
+        
         error_log('DataFlair /toplists API Response Code: ' . $status_code);
         error_log('DataFlair /toplists API Response Body (first 500 chars): ' . substr($body, 0, 500));
+        
+        // Auto-detect and store base URL from successful response
+        if ($status_code === 200) {
+            $parsed_url = parse_url($list_url);
+            if (isset($parsed_url['scheme']) && isset($parsed_url['host'])) {
+                $detected_base = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/api/v1';
+                // Only update if not already set or if different
+                $current_base = get_option('dataflair_api_base_url');
+                if (empty($current_base) || $current_base !== $detected_base) {
+                    update_option('dataflair_api_base_url', $detected_base);
+                    error_log('DataFlair: Auto-detected and stored API base URL: ' . $detected_base);
+                }
+            }
+        }
         
         if ($status_code !== 200) {
             $error_msg = 'API returned status ' . $status_code . '. Response: ' . substr($body, 0, 200);
@@ -802,7 +954,7 @@ class DataFlair_Toplists {
      * Sync all configured toplists
      */
     private function sync_all_toplists() {
-        $token = get_option('dataflair_api_token');
+        $token = trim(get_option('dataflair_api_token'));
         $endpoints = get_option('dataflair_api_endpoints');
         
         if (empty($token)) {
@@ -916,85 +1068,31 @@ class DataFlair_Toplists {
                         <!-- License Filter -->
                         <div class="filter-group">
                             <label>Licenses</label>
-                            <div class="custom-multiselect" data-filter="license">
-                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="licenses">
-                                    <span class="selected-text">All Licenses</span>
-                                    <span class="dashicons dashicons-arrow-down-alt2"></span>
-                                </button>
-                                <div class="dataflair-multiselect-dropdown" style="display: none;">
-                                    <div class="dataflair-multiselect-search">
-                                        <input type="text" placeholder="Search licenses..." class="search-input">
-                                    </div>
-                                    <div class="multiselect-actions">
-                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
-                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
-                                    </div>
-                                    <div class="dataflair-multiselect-options">
-                                        <?php foreach ($all_licenses as $license): ?>
-                                            <label class="multiselect-option">
-                                                <input type="checkbox" value="<?php echo esc_attr($license); ?>">
-                                                <span><?php echo esc_html($license); ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            </div>
+                            <select id="dataflair-filter-licenses" class="dataflair-select2" multiple="multiple" data-filter-type="licenses" style="width: 100%;">
+                                <?php foreach ($all_licenses as $license): ?>
+                                    <option value="<?php echo esc_attr($license); ?>"><?php echo esc_html($license); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         
                         <!-- Geo Filter -->
                         <div class="filter-group">
                             <label>Top Geos</label>
-                            <div class="custom-multiselect" data-filter="geo">
-                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="top_geos">
-                                    <span class="selected-text">All Geos</span>
-                                    <span class="dashicons dashicons-arrow-down-alt2"></span>
-                                </button>
-                                <div class="dataflair-multiselect-dropdown" style="display: none;">
-                                    <div class="dataflair-multiselect-search">
-                                        <input type="text" placeholder="Search geos..." class="search-input">
-                                    </div>
-                                    <div class="multiselect-actions">
-                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
-                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
-                                    </div>
-                                    <div class="dataflair-multiselect-options">
-                                        <?php foreach ($all_geos as $geo): ?>
-                                            <label class="multiselect-option">
-                                                <input type="checkbox" value="<?php echo esc_attr($geo); ?>">
-                                                <span><?php echo esc_html($geo); ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            </div>
+                            <select id="dataflair-filter-top-geos" class="dataflair-select2" multiple="multiple" data-filter-type="top_geos" style="width: 100%;">
+                                <?php foreach ($all_geos as $geo): ?>
+                                    <option value="<?php echo esc_attr($geo); ?>"><?php echo esc_html($geo); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         
                         <!-- Payment Filter -->
                         <div class="filter-group">
                             <label>Payment Methods</label>
-                            <div class="custom-multiselect" data-filter="payment">
-                                <button type="button" class="dataflair-multiselect-toggle" data-filter-type="payment_methods">
-                                    <span class="selected-text">All Payments</span>
-                                    <span class="dashicons dashicons-arrow-down-alt2"></span>
-                                </button>
-                                <div class="dataflair-multiselect-dropdown" style="display: none;">
-                                    <div class="dataflair-multiselect-search">
-                                        <input type="text" placeholder="Search payments..." class="search-input">
-                                    </div>
-                                    <div class="multiselect-actions">
-                                        <a href="#" class="dataflair-multiselect-select-all">Select All</a>
-                                        <a href="#" class="dataflair-multiselect-clear">Clear</a>
-                                    </div>
-                                    <div class="dataflair-multiselect-options">
-                                        <?php foreach ($all_payment_methods as $method): ?>
-                                            <label class="multiselect-option">
-                                                <input type="checkbox" value="<?php echo esc_attr($method); ?>">
-                                                <span><?php echo esc_html($method); ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            </div>
+                            <select id="dataflair-filter-payment-methods" class="dataflair-select2" multiple="multiple" data-filter-type="payment_methods" style="width: 100%;">
+                                <?php foreach ($all_payment_methods as $method): ?>
+                                    <option value="<?php echo esc_attr($method); ?>"><?php echo esc_html($method); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         
                         <!-- Actions -->
@@ -1343,6 +1441,16 @@ class DataFlair_Toplists {
                 <div class="tablenav bottom">
                     <div class="tablenav-pages">
                         <span class="displaying-num" id="brands-total-count"><?php echo count($brands); ?> items</span>
+                        <span class="pagination-links" style="margin-right: 10px;">
+                            <label for="items-per-page-selector" style="margin-right: 5px;">Show:</label>
+                            <select id="items-per-page-selector" style="margin-right: 10px;">
+                                <option value="10">10</option>
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </span>
                         <span class="pagination-links">
                             <a class="first-page button" href="#" id="pagination-first" disabled>
                                 <span class="screen-reader-text">First page</span>
@@ -1370,6 +1478,40 @@ class DataFlair_Toplists {
                 </div>
                 
                 <style>
+                    /* Select2 styling for WordPress admin */
+                    .select2-container {
+                        z-index: 999999;
+                    }
+                    .select2-container--default .select2-selection--multiple {
+                        border: 1px solid #8c8f94;
+                        border-radius: 4px;
+                        min-height: 30px;
+                        padding: 2px;
+                    }
+                    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+                        background-color: #2271b1;
+                        border: 1px solid #2271b1;
+                        color: #fff;
+                        padding: 2px 6px;
+                        margin: 2px;
+                        border-radius: 3px;
+                    }
+                    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+                        color: #fff;
+                        margin-right: 5px;
+                        cursor: pointer;
+                    }
+                    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+                        color: #f0f0f1;
+                    }
+                    .select2-container--default .select2-search--inline .select2-search__field {
+                        margin-top: 2px;
+                        padding: 2px;
+                    }
+                    .filter-group .select2-container {
+                        margin-top: 5px;
+                    }
+                    
                     /* Filters */
                     .dataflair-filters {
                         background: #f9f9f9;
@@ -1904,7 +2046,7 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
         
-        $token = get_option('dataflair_api_token');
+        $token = trim(get_option('dataflair_api_token'));
         if (empty($token)) {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
@@ -1939,7 +2081,7 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
         
-        $token = get_option('dataflair_api_token');
+        $token = trim(get_option('dataflair_api_token'));
         if (empty($token)) {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
@@ -1955,14 +2097,14 @@ class DataFlair_Toplists {
      * Sync a single page of brands from API (15 brands per page)
      */
     private function sync_brands_page($page, $token) {
-        $base_url = 'https://sigma.dataflair.ai/api/v1';
+        $base_url = $this->get_api_base_url();
         $brands_url = $base_url . '/brands?page=' . $page;
         
         $response = wp_remote_get($brands_url, array(
             'timeout' => 30,
             'headers' => array(
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer ' . $token
+                'Authorization' => 'Bearer ' . trim($token)
             )
         ));
         
@@ -2143,13 +2285,13 @@ class DataFlair_Toplists {
      * Used by cron job
      */
     private function sync_all_brands() {
-        $token = get_option('dataflair_api_token');
+        $token = trim(get_option('dataflair_api_token'));
         
         if (empty($token)) {
             return array('success' => false, 'message' => 'API token not configured');
         }
         
-        $base_url = 'https://sigma.dataflair.ai/api/v1';
+        $base_url = $this->get_api_base_url();
         $synced = 0;
         $errors = 0;
         $current_page = 1;
@@ -2166,7 +2308,7 @@ class DataFlair_Toplists {
                 'timeout' => 30,
                 'headers' => array(
                     'Accept' => 'application/json',
-                    'Authorization' => 'Bearer ' . $token
+                    'Authorization' => 'Bearer ' . trim($token)
                 )
             ));
             
@@ -2503,14 +2645,18 @@ class DataFlair_Toplists {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
         
-        // Add token as query parameter
+        // Trim token to ensure no whitespace issues
+        $token = trim($token);
+        
+        // Add token as query parameter (as per README documentation)
+        // add_query_arg automatically URL-encodes the value
         $url = add_query_arg('token', $token, $endpoint);
         
+        // Try query parameter only first (as per README)
         $response = wp_remote_get($url, array(
             'timeout' => 30,
             'headers' => array(
-                'Accept' => 'application/json',
-                'Authorization' => 'Bearer ' . $token
+                'Accept' => 'application/json'
             )
         ));
         
@@ -2523,6 +2669,28 @@ class DataFlair_Toplists {
         
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
+        
+        // If we get 401, try with Authorization header as well
+        if ($status_code === 401) {
+            error_log('DataFlair: Got 401 with query parameter for ' . $endpoint . ', trying with Authorization header');
+            $response = wp_remote_get($url, array(
+                'timeout' => 30,
+                'headers' => array(
+                    'Accept' => 'application/json',
+                    'Authorization' => 'Bearer ' . $token
+                )
+            ));
+            
+            if (is_wp_error($response)) {
+                $error_message = 'DataFlair API Error for ' . $endpoint . ': ' . $response->get_error_message();
+                error_log($error_message);
+                add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
+                return false;
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+        }
         
         // Log response for debugging
         error_log('DataFlair API Response Code: ' . $status_code . ' for URL: ' . $url);

@@ -16,6 +16,7 @@ jQuery(document).ready(function($) {
             action: 'dataflair_save_settings',
             nonce: dataflairAdmin.nonce,
             dataflair_api_token: $('#dataflair_api_token').val() || '',
+            dataflair_api_base_url: $('#dataflair_api_base_url').val() || '',
             dataflair_ribbon_bg_color: $('#dataflair_ribbon_bg_color').val() || '',
             dataflair_ribbon_text_color: $('#dataflair_ribbon_text_color').val() || '',
             dataflair_cta_bg_color: $('#dataflair_cta_bg_color').val() || '',
@@ -27,6 +28,7 @@ jQuery(document).ready(function($) {
             url: dataflairAdmin.ajaxUrl,
             type: 'POST',
             data: formData,
+            timeout: 10000, // 10 second timeout
             success: function(response) {
                 if (response.success) {
                     $message.html('<span style="color: #46b450;">✓ ' + response.data.message + '</span>');
@@ -41,8 +43,14 @@ jQuery(document).ready(function($) {
                     $button.val(originalText).prop('disabled', false);
                 }
             },
-            error: function() {
-                $message.html('<span style="color: #dc3232;">✗ Error saving settings. Please try again.</span>');
+            error: function(xhr, status, error) {
+                var errorMsg = 'Error saving settings. Please try again.';
+                if (status === 'timeout') {
+                    errorMsg = 'Request timed out. Please try again.';
+                } else if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                    errorMsg = xhr.responseJSON.data.message;
+                }
+                $message.html('<span style="color: #dc3232;">✗ ' + errorMsg + '</span>');
                 $button.val(originalText).prop('disabled', false);
             }
         });
@@ -210,134 +218,51 @@ jQuery(document).ready(function($) {
         }
     });
     
-    // Initialize custom multiselect filters
-    $('.dataflair-multiselect-toggle').on('click', function(e) {
-        e.stopPropagation();
-        var $toggle = $(this);
-        var $dropdown = $toggle.next('.dataflair-multiselect-dropdown');
-        var $allDropdowns = $('.dataflair-multiselect-dropdown');
-        
-        // Close other dropdowns
-        $allDropdowns.not($dropdown).hide();
-        
-        // Toggle this dropdown
-        $dropdown.toggle();
-    });
-    
-    // Search within multiselect
-    $('.dataflair-multiselect-search input, .search-input').on('input', function() {
-        var searchTerm = $(this).val().toLowerCase();
-        var $options = $(this).closest('.dataflair-multiselect-dropdown').find('.dataflair-multiselect-options label');
-        
-        $options.each(function() {
-            var text = $(this).text().toLowerCase();
-            $(this).toggle(text.indexOf(searchTerm) > -1);
+    // Initialize Select2 for brand filters (only if Select2 is available)
+    if (typeof $.fn.select2 !== 'undefined') {
+        $('#dataflair-filter-licenses').select2({
+            placeholder: 'All Licenses',
+            allowClear: true,
+            width: '100%'
         });
-    });
-    
-    // Select All
-    $('.dataflair-multiselect-select-all').on('click', function(e) {
-        e.preventDefault();
-        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
-        $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', true);
-        updateSelectedText($dropdown);
-        applyFiltersAndSort();
-    });
-    
-    // Clear
-    $('.dataflair-multiselect-clear').on('click', function(e) {
-        e.preventDefault();
-        $(this).closest('.dataflair-multiselect-dropdown').find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', false);
-        updateSelectedText($(this).closest('.dataflair-multiselect-dropdown'));
-        applyFiltersAndSort();
-    });
-    
-    // Apply filter when checkbox changes - use event delegation for dynamically loaded content
-    $(document).on('change', '.dataflair-multiselect-options input[type="checkbox"]', function() {
-        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
-        updateSelectedText($dropdown);
-        applyFiltersAndSort();
-    });
-    
-    // Function to update the selected text on the button
-    function updateSelectedText($dropdown) {
-        var $toggle = $dropdown.prev('.dataflair-multiselect-toggle');
-        var $selectedText = $toggle.find('.selected-text');
-        var $checkboxes = $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]');
-        var $checked = $checkboxes.filter(':checked');
-        var total = $checkboxes.length;
-        var checkedCount = $checked.length;
         
-        if (checkedCount === 0) {
-            // No selections - show default text based on filter type
-            var filterType = $toggle.data('filter-type');
-            if (filterType === 'licenses') {
-                $selectedText.text('All Licenses');
-            } else if (filterType === 'top_geos') {
-                $selectedText.text('All Geos');
-            } else if (filterType === 'payment_methods') {
-                $selectedText.text('All Payments');
-            } else {
-                $selectedText.text('All');
-            }
-        } else if (checkedCount === 1) {
-            // One selected - show the value
-            $selectedText.text($checked.closest('label').find('span').text());
-        } else if (checkedCount === total) {
-            // All selected - show "All [Type]"
-            var filterType = $toggle.data('filter-type');
-            if (filterType === 'licenses') {
-                $selectedText.text('All Licenses');
-            } else if (filterType === 'top_geos') {
-                $selectedText.text('All Geos');
-            } else if (filterType === 'payment_methods') {
-                $selectedText.text('All Payments');
-            } else {
-                $selectedText.text('All Selected');
-            }
-        } else {
-            // Multiple selected - show count
-            $selectedText.text(checkedCount + ' selected');
-        }
+        $('#dataflair-filter-top-geos').select2({
+            placeholder: 'All Geos',
+            allowClear: true,
+            width: '100%'
+        });
+        
+        $('#dataflair-filter-payment-methods').select2({
+            placeholder: 'All Payments',
+            allowClear: true,
+            width: '100%'
+        });
+        
+        // Apply filters when Select2 changes
+        $('.dataflair-select2').on('change', function() {
+            applyFiltersAndSort();
+        });
     }
     
-    // Update selected text when Select All is clicked
-    $('.dataflair-multiselect-select-all').on('click', function(e) {
-        e.preventDefault();
-        var $dropdown = $(this).closest('.dataflair-multiselect-dropdown');
-        $dropdown.find('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', true);
-        updateSelectedText($dropdown);
-        applyFiltersAndSort();
-    });
-    
-    // Close dropdowns when clicking outside
-    $(document).on('click', function(e) {
-        if (!$(e.target).closest('.filter-group').length) {
-            $('.dataflair-multiselect-dropdown').hide();
+    // Function to get selected values for a filter type (updated for Select2)
+    function getSelectedFilterValues(filterType) {
+        var $select = $('.dataflair-select2[data-filter-type="' + filterType + '"]');
+        var selectedValues = $select.val();
+        if (!selectedValues || !Array.isArray(selectedValues)) {
+            return [];
         }
-    });
+        return selectedValues.filter(function(value) {
+            return value !== null && value !== '';
+        });
+    }
     
     // Clear all filters
     $('#dataflair-clear-all-filters').on('click', function() {
-        $('.dataflair-multiselect-options input[type="checkbox"]').prop('checked', false);
-        // Update all button texts
-        $('.dataflair-multiselect-dropdown').each(function() {
-            updateSelectedText($(this));
-        });
+        if (typeof $.fn.select2 !== 'undefined') {
+            $('.dataflair-select2').val(null).trigger('change');
+        }
         applyFiltersAndSort();
     });
-    
-    // Function to get selected values for a filter type
-    function getSelectedFilterValues(filterType) {
-        var values = [];
-        $('.dataflair-multiselect-toggle[data-filter-type="' + filterType + '"]')
-            .next('.dataflair-multiselect-dropdown')
-            .find('input[type="checkbox"]:checked')
-            .each(function() {
-                values.push($(this).val());
-            });
-        return values;
-    }
     
     // Sorting functionality
     var currentSort = { field: null, direction: 'asc' };
@@ -405,42 +330,134 @@ jQuery(document).ready(function($) {
     }
     
     // Pagination variables
-    var itemsPerPage = 50;
+    var itemsPerPage = 20; // Default to 20 items per page
     var currentPage = 1;
     var totalPages = 1;
+    var isUpdatingPagination = false; // Prevent concurrent updates
     
-    function updatePagination() {
-        var $visibleRows = $('.dataflair-brands-table tbody tr.brand-row:visible');
-        var totalItems = $visibleRows.length;
-        totalPages = Math.ceil(totalItems / itemsPerPage);
-        
-        if (currentPage > totalPages) {
-            currentPage = totalPages || 1;
+    // Helper function to check if a row matches current filters
+    function rowMatchesFilters($row) {
+        var rowData = $row.data('brand-data');
+        // If row doesn't have data, it can't match filters (exclude it from count)
+        if (!rowData) {
+            return false;
         }
         
-        $('#total-pages').text(totalPages);
-        $('#current-page-selector').val(currentPage);
+        var selectedLicenses = getSelectedFilterValues('licenses');
+        var selectedGeos = getSelectedFilterValues('top_geos');
+        var selectedPaymentMethods = getSelectedFilterValues('payment_methods');
         
-        // Update button states
-        $('#pagination-first, #pagination-prev').prop('disabled', currentPage === 1);
-        $('#pagination-next, #pagination-last').prop('disabled', currentPage === totalPages || totalPages === 0);
+        var matchesLicenses = selectedLicenses.length === 0;
+        var matchesGeos = selectedGeos.length === 0;
+        var matchesPayments = selectedPaymentMethods.length === 0;
         
-        // Display current page
-        displayPage(currentPage);
+        // Check licenses
+        if (!matchesLicenses && rowData.licenses) {
+            for (var i = 0; i < selectedLicenses.length; i++) {
+                if (rowData.licenses.indexOf(selectedLicenses[i]) > -1) {
+                    matchesLicenses = true;
+                    break;
+                }
+            }
+        }
+        
+        // Check geos
+        if (!matchesGeos && rowData.topGeos) {
+            for (var i = 0; i < selectedGeos.length; i++) {
+                if (rowData.topGeos.indexOf(selectedGeos[i]) > -1) {
+                    matchesGeos = true;
+                    break;
+                }
+            }
+        }
+        
+        // Check payment methods
+        if (!matchesPayments && rowData.paymentMethods) {
+            for (var i = 0; i < selectedPaymentMethods.length; i++) {
+                if (rowData.paymentMethods.indexOf(selectedPaymentMethods[i]) > -1) {
+                    matchesPayments = true;
+                    break;
+                }
+            }
+        }
+        
+        return matchesLicenses && matchesGeos && matchesPayments;
+    }
+    
+    function updatePagination() {
+        // Prevent concurrent calls
+        if (isUpdatingPagination) {
+            return;
+        }
+        isUpdatingPagination = true;
+        
+        try {
+            // Get all brand rows and count those that match filters
+            // This count should not be affected by pagination hiding rows
+            var $allRows = $('.dataflair-brands-table tbody tr.brand-row');
+            var visibleCount = 0;
+            
+            // Count filtered rows (regardless of current visibility)
+            $allRows.each(function() {
+                if (rowMatchesFilters($(this))) {
+                    visibleCount++;
+                }
+            });
+            
+            var totalItems = visibleCount;
+            totalPages = Math.ceil(totalItems / itemsPerPage);
+            
+            // Ensure totalPages is at least 1 if there are items
+            if (totalItems > 0 && totalPages === 0) {
+                totalPages = 1;
+            }
+            
+            // Ensure currentPage is valid
+            if (currentPage > totalPages && totalPages > 0) {
+                currentPage = totalPages;
+            } else if (totalPages === 0) {
+                currentPage = 1;
+            }
+            
+            // Update UI
+            $('#total-pages').text(totalPages);
+            $('#current-page-selector').val(currentPage);
+            
+            // Update button states
+            $('#pagination-first, #pagination-prev').prop('disabled', currentPage === 1 || totalPages === 0);
+            $('#pagination-next, #pagination-last').prop('disabled', currentPage === totalPages || totalPages === 0);
+            
+            // Display current page (this will show/hide rows based on pagination)
+            displayPage(currentPage);
+        } finally {
+            isUpdatingPagination = false;
+        }
     }
     
     function displayPage(page) {
-        var $allRows = $('.dataflair-brands-table tbody tr.brand-row:visible');
+        // Get all brand rows
+        var $allRows = $('.dataflair-brands-table tbody tr.brand-row');
         var start = (page - 1) * itemsPerPage;
         var end = start + itemsPerPage;
         
-        $allRows.each(function(index) {
+        var visibleIndex = 0;
+        
+        $allRows.each(function() {
             var $row = $(this);
             var $detailRow = $row.next('.brand-details');
+            var matchesFilters = rowMatchesFilters($row);
             
-            if (index >= start && index < end) {
-                $row.show();
+            if (matchesFilters) {
+                // Row matches filters - show or hide based on pagination
+                if (visibleIndex >= start && visibleIndex < end) {
+                    $row.show();
+                } else {
+                    $row.hide();
+                    $detailRow.hide();
+                }
+                visibleIndex++;
             } else {
+                // Row doesn't match filters - always hide
                 $row.hide();
                 $detailRow.hide();
             }
@@ -455,7 +472,9 @@ jQuery(document).ready(function($) {
         var $table = $('.dataflair-brands-table');
         var $rows = $table.find('tbody tr.brand-row');
         var visibleCount = 0;
+        var totalCount = $rows.length;
         
+        // Apply filters - mark rows but don't show/hide yet (pagination will handle that)
         $rows.each(function() {
             var $row = $(this);
             var rowData = $row.data('brand-data');
@@ -465,7 +484,7 @@ jQuery(document).ready(function($) {
             var matchesPayments = selectedPaymentMethods.length === 0;
             
             // Check licenses
-            if (!matchesLicenses && rowData.licenses) {
+            if (!matchesLicenses && rowData && rowData.licenses) {
                 for (var i = 0; i < selectedLicenses.length; i++) {
                     if (rowData.licenses.indexOf(selectedLicenses[i]) > -1) {
                         matchesLicenses = true;
@@ -475,7 +494,7 @@ jQuery(document).ready(function($) {
             }
             
             // Check geos
-            if (!matchesGeos && rowData.topGeos) {
+            if (!matchesGeos && rowData && rowData.topGeos) {
                 for (var i = 0; i < selectedGeos.length; i++) {
                     if (rowData.topGeos.indexOf(selectedGeos[i]) > -1) {
                         matchesGeos = true;
@@ -485,7 +504,7 @@ jQuery(document).ready(function($) {
             }
             
             // Check payment methods
-            if (!matchesPayments && rowData.paymentMethods) {
+            if (!matchesPayments && rowData && rowData.paymentMethods) {
                 for (var i = 0; i < selectedPaymentMethods.length; i++) {
                     if (rowData.paymentMethods.indexOf(selectedPaymentMethods[i]) > -1) {
                         matchesPayments = true;
@@ -495,19 +514,14 @@ jQuery(document).ready(function($) {
             }
             
             if (matchesLicenses && matchesGeos && matchesPayments) {
-                $row.show();
                 visibleCount++;
-            } else {
-                $row.hide();
-                $row.next('.brand-details').hide();
             }
         });
         
         // Update count
-        var totalCount = $rows.length;
         $('#dataflair-brands-count').text('Showing ' + visibleCount + ' of ' + totalCount + ' brands');
         
-        // Reset to first page
+        // Reset to first page and update pagination (which will handle showing/hiding)
         currentPage = 1;
         updatePagination();
     }
@@ -533,7 +547,9 @@ jQuery(document).ready(function($) {
     // Next page
     $('#pagination-next').on('click', function(e) {
         e.preventDefault();
-        if (currentPage < totalPages) {
+        // Re-read totalPages from DOM to ensure we have latest value
+        var currentTotalPages = parseInt($('#total-pages').text()) || totalPages;
+        if (currentPage < currentTotalPages && currentTotalPages > 0) {
             currentPage++;
             updatePagination();
         }
@@ -542,8 +558,10 @@ jQuery(document).ready(function($) {
     // Last page
     $('#pagination-last').on('click', function(e) {
         e.preventDefault();
-        if (currentPage !== totalPages) {
-            currentPage = totalPages;
+        // Re-read totalPages from DOM to ensure we have latest value
+        var currentTotalPages = parseInt($('#total-pages').text()) || totalPages;
+        if (currentTotalPages > 0 && currentPage !== currentTotalPages) {
+            currentPage = currentTotalPages;
             updatePagination();
         }
     });
@@ -575,6 +593,17 @@ jQuery(document).ready(function($) {
             $(this).val(currentPage);
         }
     });
+    
+    // Items per page selector
+    $('#items-per-page-selector').on('change', function() {
+        itemsPerPage = parseInt($(this).val()) || 20;
+        // Reset to first page when changing items per page
+        currentPage = 1;
+        updatePagination();
+    });
+    
+    // Initialize items per page selector
+    $('#items-per-page-selector').val(itemsPerPage);
     
     // Initialize pagination on page load
     updatePagination();
