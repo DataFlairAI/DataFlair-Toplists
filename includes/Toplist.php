@@ -1,13 +1,12 @@
 <?php
 /**
- * Brand Model - Eloquent-like helper for brands
+ * Toplist Model - Eloquent-like helper for toplists
  * 
  * Usage:
- *   $brand = Brand::find(12);
- *   $brand = Brand::findByApiId(123);
- *   $brand = Brand::findBySlug('brand-slug');
- *   $brands = Brand::where('status', 'active')->get();
- *   $brands = Brand::all();
+ *   $toplist = Toplist::find(5);
+ *   $toplist = Toplist::findByApiId(123);
+ *   $toplists = Toplist::where('version', '1.0')->get();
+ *   $toplists = Toplist::all();
  */
 
 namespace DataFlair\Toplists\Models;
@@ -16,9 +15,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Brand {
+class Toplist {
     
-    protected static $table_name = DATAFLAIR_BRANDS_TABLE_NAME;
+    protected static $table_name = DATAFLAIR_TABLE_NAME;
     
     protected $attributes = array();
     protected $original = array();
@@ -28,10 +27,10 @@ class Brand {
     protected static $query_limit = null;
     
     /**
-     * Find brand by local ID
+     * Find toplist by local ID
      * 
      * @param int $id Local database ID
-     * @return Brand|null
+     * @return Toplist|null
      */
     public static function find($id) {
         global $wpdb;
@@ -50,40 +49,18 @@ class Brand {
     }
     
     /**
-     * Find brand by API brand ID
+     * Find toplist by API toplist ID
      * 
-     * @param int $api_brand_id API brand ID
-     * @return Brand|null
+     * @param int $api_toplist_id API toplist ID
+     * @return Toplist|null
      */
-    public static function findByApiId($api_brand_id) {
+    public static function findByApiId($api_toplist_id) {
         global $wpdb;
         $table_name = $wpdb->prefix . self::$table_name;
         
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table_name WHERE api_brand_id = %d",
-            $api_brand_id
-        ), ARRAY_A);
-        
-        if (!$row) {
-            return null;
-        }
-        
-        return self::make($row);
-    }
-    
-    /**
-     * Find brand by slug
-     * 
-     * @param string $slug Brand slug
-     * @return Brand|null
-     */
-    public static function findBySlug($slug) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . self::$table_name;
-        
-        $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table_name WHERE slug = %s",
-            $slug
+            "SELECT * FROM $table_name WHERE api_toplist_id = %d",
+            $api_toplist_id
         ), ARRAY_A);
         
         if (!$row) {
@@ -99,7 +76,7 @@ class Brand {
      * @param string $column Column name
      * @param mixed $value Value
      * @param string $operator Operator (default: =)
-     * @return Brand
+     * @return Toplist
      */
     public static function where($column, $value, $operator = '=') {
         self::$query_where[] = array(
@@ -116,7 +93,7 @@ class Brand {
      * 
      * @param string $column Column name
      * @param string $direction ASC or DESC
-     * @return Brand
+     * @return Toplist
      */
     public static function orderBy($column, $direction = 'ASC') {
         self::$query_order = array(
@@ -131,7 +108,7 @@ class Brand {
      * Add limit clause
      * 
      * @param int $limit Limit number
-     * @return Brand
+     * @return Toplist
      */
     public static function limit($limit) {
         self::$query_limit = $limit;
@@ -142,7 +119,7 @@ class Brand {
     /**
      * Execute query and get results (for fluent interface)
      * 
-     * @return array Array of Brand instances
+     * @return array Array of Toplist instances
      */
     public function get() {
         return self::getResults();
@@ -151,7 +128,7 @@ class Brand {
     /**
      * Execute query and get results
      * 
-     * @return array Array of Brand instances
+     * @return array Array of Toplist instances
      */
     public static function getResults() {
         global $wpdb;
@@ -193,18 +170,18 @@ class Brand {
             $results = $wpdb->get_results($sql, ARRAY_A);
         }
         
-        $brands = array();
+        $toplists = array();
         foreach ($results as $row) {
-            $brands[] = self::make($row);
+            $toplists[] = self::make($row);
         }
         
-        return $brands;
+        return $toplists;
     }
     
     /**
-     * Get all brands
+     * Get all toplists
      * 
-     * @return array Array of Brand instances
+     * @return array Array of Toplist instances
      */
     public static function all() {
         self::resetQuery();
@@ -214,7 +191,7 @@ class Brand {
     /**
      * Get first result
      * 
-     * @return Brand|null
+     * @return Toplist|null
      */
     public static function first() {
         self::limit(1);
@@ -232,10 +209,10 @@ class Brand {
     }
     
     /**
-     * Create Brand instance from array
+     * Create Toplist instance from array
      * 
      * @param array $attributes
-     * @return Brand
+     * @return Toplist
      */
     protected static function make($attributes) {
         $instance = new static();
@@ -280,45 +257,33 @@ class Brand {
     }
     
     /**
-     * Get product types as array
+     * Get toplist items (casinos)
      * 
      * @return array
      */
-    public function getProductTypes() {
-        $product_types = $this->getAttribute('product_types');
-        if (empty($product_types)) {
+    public function getItems() {
+        $data = $this->getData();
+        if (!$data || !isset($data['data']['items'])) {
             return array();
         }
         
-        return array_map('trim', explode(',', $product_types));
+        return $data['data']['items'];
     }
     
     /**
-     * Get licenses as array
+     * Check if data is stale
      * 
-     * @return array
+     * @param int $days Number of days to consider stale (default: 3)
+     * @return bool
      */
-    public function getLicenses() {
-        $licenses = $this->getAttribute('licenses');
-        if (empty($licenses)) {
-            return array();
+    public function isStale($days = 3) {
+        $last_synced = strtotime($this->getAttribute('last_synced'));
+        if (!$last_synced) {
+            return true;
         }
         
-        return array_map('trim', explode(',', $licenses));
-    }
-    
-    /**
-     * Get top geos as array
-     * 
-     * @return array
-     */
-    public function getTopGeos() {
-        $top_geos = $this->getAttribute('top_geos');
-        if (empty($top_geos)) {
-            return array();
-        }
-        
-        return array_map('trim', explode(',', $top_geos));
+        $threshold = $days * 24 * 60 * 60;
+        return (time() - $last_synced) > $threshold;
     }
     
     /**
@@ -351,12 +316,12 @@ class Brand {
     }
     
     /**
-     * Get API brand ID
+     * Get API toplist ID
      * 
      * @return int
      */
-    public function getApiBrandId() {
-        return (int) $this->getAttribute('api_brand_id');
+    public function getApiToplistId() {
+        return (int) $this->getAttribute('api_toplist_id');
     }
     
     /**
@@ -369,20 +334,11 @@ class Brand {
     }
     
     /**
-     * Get slug
+     * Get version
      * 
-     * @return string
+     * @return string|null
      */
-    public function getSlug() {
-        return $this->getAttribute('slug');
-    }
-    
-    /**
-     * Get status
-     * 
-     * @return string
-     */
-    public function getStatus() {
-        return $this->getAttribute('status');
+    public function getVersion() {
+        return $this->getAttribute('version');
     }
 }
