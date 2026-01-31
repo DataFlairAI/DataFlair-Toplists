@@ -134,15 +134,32 @@ if (!empty($brand['licenses'])) {
 
 $reviewer = !empty($item['reviewer']) ? esc_html($item['reviewer']) : '';
 
-// Get casino URL (handle arrays)
+// Get casino URL - prioritize tracker link from trackers array
 $casino_url = '';
-if (!empty($offer['tracking_url'])) {
-    $casino_url = is_array($offer['tracking_url']) ? '' : $offer['tracking_url'];
-} elseif (!empty($offer['url'])) {
-    $casino_url = is_array($offer['url']) ? '' : $offer['url'];
-} elseif (!empty($brand['url'])) {
-    $casino_url = is_array($brand['url']) ? '' : $brand['url'];
+
+// First, check for trackerLink in trackers array (from API)
+// Trackers structure: offer.trackers[0].trackerLink
+if (!empty($offer['trackers']) && is_array($offer['trackers']) && count($offer['trackers']) > 0) {
+    $first_tracker = $offer['trackers'][0];
+    if (!empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
+        $casino_url = $first_tracker['trackerLink'];
+    }
 }
+
+// Fallback to tracking_url (if trackers array doesn't have trackerLink)
+if (empty($casino_url) && !empty($offer['tracking_url'])) {
+    $casino_url = is_array($offer['tracking_url']) ? '' : $offer['tracking_url'];
+}
+
+// Fallback to other URL fields
+if (empty($casino_url)) {
+    if (!empty($offer['url'])) {
+        $casino_url = is_array($offer['url']) ? '' : $offer['url'];
+    } elseif (!empty($brand['url'])) {
+        $casino_url = is_array($brand['url']) ? '' : $brand['url'];
+    }
+}
+
 $casino_url = !empty($casino_url) ? esc_url($casino_url) : '#';
 
 // Get review URL - use pre-set URL from parent function, or generate it
@@ -228,9 +245,9 @@ if (empty($review_url)) {
             <!-- Bonus Column -->
             <div class="casino-bonus-col">
                 <div class="bonus-label">Welcome Bonus</div>
-                <a href="<?php echo $casino_url; ?>" target="_blank" rel="nofollow" class="bonus-text">
-                    <?php echo $offer_text ?: 'Bonus Available'; ?>
-                </a>
+                <div class="bonus-text">
+                    <?php echo esc_html($offer_text ?: 'Bonus Available'); ?>
+                </div>
             </div>
             
             <!-- Features Column -->
@@ -251,7 +268,7 @@ if (empty($review_url)) {
             
             <!-- CTA Column -->
             <div class="casino-cta-col">
-                <a href="<?php echo $casino_url; ?>" target="_blank" rel="nofollow" class="casino-cta-button">
+                <a href="<?php echo esc_url($casino_url); ?>" target="_blank" rel="nofollow" class="casino-cta-button">
                     Visit Site
                 </a>
                 
