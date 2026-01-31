@@ -1131,7 +1131,8 @@ class DataFlair_Toplists {
                         <tr>
                             <th style="width: 3%;"></th>
                             <th style="width: 5%;">ID</th>
-                            <th style="width: 16%;" class="sortable">
+                            <th style="width: 8%;">Logo</th>
+                            <th style="width: 14%;" class="sortable">
                                 <a href="#" class="sort-link" data-sort="name">
                                     Brand Name
                                     <span class="sorting-indicator">
@@ -1140,8 +1141,8 @@ class DataFlair_Toplists {
                                 </a>
                             </th>
                             <th style="width: 10%;">Product Type</th>
-                            <th style="width: 14%;">Licenses</th>
-                            <th style="width: 18%;">Top Geos</th>
+                            <th style="width: 12%;">Licenses</th>
+                            <th style="width: 16%;">Top Geos</th>
                             <th style="width: 7%;" class="sortable">
                                 <a href="#" class="sort-link" data-sort="offers">
                                     Offers
@@ -1158,7 +1159,7 @@ class DataFlair_Toplists {
                                     </span>
                                 </a>
                             </th>
-                            <th style="width: 15%;">Last Synced</th>
+                            <th style="width: 13%;">Last Synced</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1195,6 +1196,41 @@ class DataFlair_Toplists {
                                 </button>
                             </td>
                             <td><?php echo esc_html($brand->api_brand_id); ?></td>
+                            <td class="brand-logo-cell">
+                                <?php 
+                                // Get logo URL - prioritize local_logo
+                                $logo_url = '';
+                                if (!empty($data['local_logo'])) {
+                                    $logo_url = $data['local_logo'];
+                                } else {
+                                    // Fallback to external logo
+                                    $logo_keys = array('logo', 'brandLogo', 'logoUrl', 'image');
+                                    foreach ($logo_keys as $key) {
+                                        if (!empty($data[$key])) {
+                                            if (is_array($data[$key])) {
+                                                $logo_url = $data[$key]['url'] ?? $data[$key]['src'] ?? '';
+                                            } else {
+                                                $logo_url = $data[$key];
+                                            }
+                                            if ($logo_url) break;
+                                        }
+                                    }
+                                }
+                                
+                                if ($logo_url && !is_array($logo_url)): ?>
+                                    <img src="<?php echo esc_url($logo_url); ?>" 
+                                         alt="<?php echo esc_attr($brand->name); ?>" 
+                                         class="brand-logo-thumb"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <div class="brand-logo-placeholder" style="display: none;">
+                                        <?php echo esc_html(strtoupper(substr($brand->name, 0, 2))); ?>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="brand-logo-placeholder">
+                                        <?php echo esc_html(strtoupper(substr($brand->name, 0, 2))); ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <strong><?php echo esc_html($brand->name); ?></strong>
                                 <div class="row-actions">
@@ -1241,7 +1277,7 @@ class DataFlair_Toplists {
                         
                         <!-- Expandable Details Row -->
                         <tr class="brand-details" id="<?php echo esc_attr($brand_id); ?>" style="display: none;">
-                            <td colspan="9">
+                            <td colspan="10">
                                 <div class="brand-details-content">
                                     <div class="details-grid">
                                         <div class="detail-section">
@@ -1840,6 +1876,35 @@ class DataFlair_Toplists {
                         border-radius: 10px;
                         font-size: 11px;
                         font-weight: 600;
+                    }
+                    
+                    /* Brand Logo */
+                    .brand-logo-cell {
+                        text-align: center;
+                        padding: 8px !important;
+                    }
+                    .brand-logo-thumb {
+                        width: 60px;
+                        height: 45px;
+                        object-fit: contain;
+                        background: #1a1a1a;
+                        border-radius: 6px;
+                        padding: 6px;
+                        display: inline-block;
+                    }
+                    .brand-logo-placeholder {
+                        width: 60px;
+                        height: 45px;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: linear-gradient(135deg, #352d67 0%, #5a4fa5 100%);
+                        color: #fff;
+                        font-size: 14px;
+                        font-weight: 700;
+                        border-radius: 6px;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
                     }
                     
                     /* Toggle Button */
