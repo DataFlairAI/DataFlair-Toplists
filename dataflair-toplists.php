@@ -1203,12 +1203,16 @@ class DataFlair_Toplists {
                                 if (!empty($data['local_logo'])) {
                                     $logo_url = $data['local_logo'];
                                 } else {
-                                    // Fallback to external logo
+                                    // Fallback to external logo with nested structure support
                                     $logo_keys = array('logo', 'brandLogo', 'logoUrl', 'image');
                                     foreach ($logo_keys as $key) {
                                         if (!empty($data[$key])) {
                                             if (is_array($data[$key])) {
-                                                $logo_url = $data[$key]['url'] ?? $data[$key]['src'] ?? '';
+                                                // Check for nested logo object with rectangular/square
+                                                $logo_url = $data[$key]['rectangular'] ?? 
+                                                           $data[$key]['square'] ?? 
+                                                           $data[$key]['url'] ?? 
+                                                           $data[$key]['src'] ?? '';
                                             } else {
                                                 $logo_url = $data[$key];
                                             }
@@ -2196,8 +2200,14 @@ class DataFlair_Toplists {
         foreach ($logo_keys as $key) {
             if (!empty($brand_data[$key])) {
                 if (is_array($brand_data[$key])) {
-                    // Check common sub-keys
-                    if (!empty($brand_data[$key]['url'])) {
+                    // Check for nested logo object with rectangular/square options
+                    if (!empty($brand_data[$key]['rectangular'])) {
+                        $logo_url = $brand_data[$key]['rectangular'];
+                        break;
+                    } elseif (!empty($brand_data[$key]['square'])) {
+                        $logo_url = $brand_data[$key]['square'];
+                        break;
+                    } elseif (!empty($brand_data[$key]['url'])) {
                         $logo_url = $brand_data[$key]['url'];
                         break;
                     } elseif (!empty($brand_data[$key]['src'])) {
@@ -2215,12 +2225,14 @@ class DataFlair_Toplists {
         }
         
         if (empty($logo_url) || !filter_var($logo_url, FILTER_VALIDATE_URL)) {
-            error_log('DataFlair: No valid logo URL found for brand "' . ($brand_data['name'] ?? 'unknown') . '"');
+            error_log('DataFlair: No valid logo URL found for brand "' . ($brand_data['name'] ?? 'unknown') . '". Available keys: ' . implode(', ', array_keys($brand_data)));
             return false;
         }
         
+        error_log('DataFlair: Found logo URL for brand "' . ($brand_data['name'] ?? 'unknown') . '": ' . $logo_url);
+        
         // Create logos directory if it doesn't exist
-        $upload_dir = DATAFLAIR_PLUGIN_DIR . 'uploads/logos/';
+        $upload_dir = DATAFLAIR_PLUGIN_DIR . 'assets/logos/';
         if (!file_exists($upload_dir)) {
             wp_mkdir_p($upload_dir);
         }
@@ -2242,7 +2254,8 @@ class DataFlair_Toplists {
         // Check if file already exists and is recent (less than 7 days old)
         if (file_exists($file_path) && (time() - filemtime($file_path)) < (7 * 24 * 60 * 60)) {
             // Return existing file URL
-            $file_url = DATAFLAIR_PLUGIN_URL . 'uploads/logos/' . $filename;
+            $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
+            error_log('DataFlair: Using cached logo for brand "' . ($brand_data['name'] ?? 'unknown') . '": ' . $file_url);
             return $file_url;
         }
         
@@ -2274,7 +2287,8 @@ class DataFlair_Toplists {
         }
         
         // Return the URL to the saved file
-        $file_url = DATAFLAIR_PLUGIN_URL . 'uploads/logos/' . $filename;
+        $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
+        error_log('DataFlair: Successfully saved logo for brand "' . ($brand_data['name'] ?? 'unknown') . '" to: ' . $file_url);
         return $file_url;
     }
     

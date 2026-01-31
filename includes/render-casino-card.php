@@ -18,7 +18,6 @@ $logo_url = '';
 // First, check if we have a locally saved logo
 if (!empty($brand['local_logo'])) {
     $logo_url = $brand['local_logo'];
-    error_log('DataFlair: Using local logo for brand "' . $brand_name . '": ' . $logo_url);
 } else {
     // Fallback to external logo URLs
     $logo_sources = array(
@@ -32,8 +31,14 @@ if (!empty($brand['local_logo'])) {
     foreach ($logo_sources as $key) {
         if (!empty($brand[$key])) {
             if (is_array($brand[$key])) {
-                // If it's an array, try to get the URL from common sub-keys
-                if (!empty($brand[$key]['url'])) {
+                // Check for nested logo object with rectangular/square options
+                if (!empty($brand[$key]['rectangular'])) {
+                    $logo_url = $brand[$key]['rectangular'];
+                    break;
+                } elseif (!empty($brand[$key]['square'])) {
+                    $logo_url = $brand[$key]['square'];
+                    break;
+                } elseif (!empty($brand[$key]['url'])) {
                     $logo_url = $brand[$key]['url'];
                     break;
                 } elseif (!empty($brand[$key]['src'])) {
@@ -52,11 +57,6 @@ if (!empty($brand['local_logo'])) {
                 break;
             }
         }
-    }
-    
-    // Debug: Log if no external logo found
-    if (empty($logo_url)) {
-        error_log('DataFlair: No logo found for brand "' . $brand_name . '". Available keys: ' . implode(', ', array_keys($brand)));
     }
 }
 
