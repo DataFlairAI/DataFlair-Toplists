@@ -12,38 +12,51 @@ $position = $item['position'];
 $brand_name = esc_html($brand['name']);
 $brand_slug = sanitize_title($brand_name);
 
-// Handle logo - check multiple possible keys and formats
+// Handle logo - prioritize local_logo, then fallback to external URLs
 $logo_url = '';
-$logo_sources = array(
-    'logo',           // Standard key
-    'brandLogo',      // Alternative key
-    'logoUrl',        // Alternative key
-    'image',          // Alternative key
-    'logoImage'       // Alternative key
-);
 
-foreach ($logo_sources as $key) {
-    if (!empty($brand[$key])) {
-        if (is_array($brand[$key])) {
-            // If it's an array, try to get the URL from common sub-keys
-            if (!empty($brand[$key]['url'])) {
-                $logo_url = $brand[$key]['url'];
-                break;
-            } elseif (!empty($brand[$key]['src'])) {
-                $logo_url = $brand[$key]['src'];
-                break;
-            } elseif (!empty($brand[$key]['path'])) {
-                $logo_url = $brand[$key]['path'];
-                break;
-            } elseif (!empty($brand[$key][0])) {
-                $logo_url = $brand[$key][0];
+// First, check if we have a locally saved logo
+if (!empty($brand['local_logo'])) {
+    $logo_url = $brand['local_logo'];
+    error_log('DataFlair: Using local logo for brand "' . $brand_name . '": ' . $logo_url);
+} else {
+    // Fallback to external logo URLs
+    $logo_sources = array(
+        'logo',           // Standard key
+        'brandLogo',      // Alternative key
+        'logoUrl',        // Alternative key
+        'image',          // Alternative key
+        'logoImage'       // Alternative key
+    );
+
+    foreach ($logo_sources as $key) {
+        if (!empty($brand[$key])) {
+            if (is_array($brand[$key])) {
+                // If it's an array, try to get the URL from common sub-keys
+                if (!empty($brand[$key]['url'])) {
+                    $logo_url = $brand[$key]['url'];
+                    break;
+                } elseif (!empty($brand[$key]['src'])) {
+                    $logo_url = $brand[$key]['src'];
+                    break;
+                } elseif (!empty($brand[$key]['path'])) {
+                    $logo_url = $brand[$key]['path'];
+                    break;
+                } elseif (!empty($brand[$key][0])) {
+                    $logo_url = $brand[$key][0];
+                    break;
+                }
+            } else {
+                // It's a string - use directly
+                $logo_url = $brand[$key];
                 break;
             }
-        } else {
-            // It's a string - use directly
-            $logo_url = $brand[$key];
-            break;
         }
+    }
+    
+    // Debug: Log if no external logo found
+    if (empty($logo_url)) {
+        error_log('DataFlair: No logo found for brand "' . $brand_name . '". Available keys: ' . implode(', ', array_keys($brand)));
     }
 }
 
@@ -52,11 +65,6 @@ if (!empty($logo_url) && !is_array($logo_url)) {
     $logo_url = esc_url($logo_url);
 } else {
     $logo_url = '';
-}
-
-// Debug: Log if logo is missing
-if (empty($logo_url)) {
-    error_log('DataFlair: Missing logo for brand "' . $brand_name . '". Available keys: ' . implode(', ', array_keys($brand)));
 }
 
 $rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);

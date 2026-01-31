@@ -1,0 +1,11 @@
+# Ignore all logo images but keep the directory structure
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.svg
+
+# Keep .htaccess and .gitignore
+!.htaccess
+!.gitignore

@@ -2117,6 +2117,103 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Download and save brand logo locally
+     * 
+     * @param array $brand_data Brand data from API
+     * @param string $brand_slug Brand slug for filename
+     * @return string|false Local URL to saved logo or false on failure
+     */
+    private function download_brand_logo($brand_data, $brand_slug) {
+        // Extract logo URL from brand data
+        $logo_url = '';
+        $logo_keys = array('logo', 'brandLogo', 'logoUrl', 'image', 'logoImage');
+        
+        foreach ($logo_keys as $key) {
+            if (!empty($brand_data[$key])) {
+                if (is_array($brand_data[$key])) {
+                    // Check common sub-keys
+                    if (!empty($brand_data[$key]['url'])) {
+                        $logo_url = $brand_data[$key]['url'];
+                        break;
+                    } elseif (!empty($brand_data[$key]['src'])) {
+                        $logo_url = $brand_data[$key]['src'];
+                        break;
+                    } elseif (!empty($brand_data[$key]['path'])) {
+                        $logo_url = $brand_data[$key]['path'];
+                        break;
+                    }
+                } else {
+                    $logo_url = $brand_data[$key];
+                    break;
+                }
+            }
+        }
+        
+        if (empty($logo_url) || !filter_var($logo_url, FILTER_VALIDATE_URL)) {
+            error_log('DataFlair: No valid logo URL found for brand "' . ($brand_data['name'] ?? 'unknown') . '"');
+            return false;
+        }
+        
+        // Create logos directory if it doesn't exist
+        $upload_dir = DATAFLAIR_PLUGIN_DIR . 'uploads/logos/';
+        if (!file_exists($upload_dir)) {
+            wp_mkdir_p($upload_dir);
+        }
+        
+        // Get file extension from URL
+        $path_info = pathinfo(parse_url($logo_url, PHP_URL_PATH));
+        $extension = !empty($path_info['extension']) ? $path_info['extension'] : 'png';
+        
+        // Only allow safe image extensions
+        $allowed_extensions = array('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg');
+        if (!in_array(strtolower($extension), $allowed_extensions)) {
+            $extension = 'png';
+        }
+        
+        // Create unique filename
+        $filename = sanitize_file_name($brand_slug) . '.' . $extension;
+        $file_path = $upload_dir . $filename;
+        
+        // Check if file already exists and is recent (less than 7 days old)
+        if (file_exists($file_path) && (time() - filemtime($file_path)) < (7 * 24 * 60 * 60)) {
+            // Return existing file URL
+            $file_url = DATAFLAIR_PLUGIN_URL . 'uploads/logos/' . $filename;
+            return $file_url;
+        }
+        
+        // Download the image
+        $response = wp_remote_get($logo_url, array(
+            'timeout' => 30,
+            'sslverify' => false // Some CDNs have SSL issues
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('DataFlair: Failed to download logo from ' . $logo_url . ': ' . $response->get_error_message());
+            return false;
+        }
+        
+        $image_data = wp_remote_retrieve_body($response);
+        $response_code = wp_remote_retrieve_response_code($response);
+        
+        if ($response_code !== 200 || empty($image_data)) {
+            error_log('DataFlair: Failed to download logo, HTTP ' . $response_code);
+            return false;
+        }
+        
+        // Save the image
+        $saved = file_put_contents($file_path, $image_data);
+        
+        if ($saved === false) {
+            error_log('DataFlair: Failed to save logo to ' . $file_path);
+            return false;
+        }
+        
+        // Return the URL to the saved file
+        $file_url = DATAFLAIR_PLUGIN_URL . 'uploads/logos/' . $filename;
+        return $file_url;
+    }
+    
+    /**
      * Sync a single page of brands from API (15 brands per page)
      */
     private function sync_brands_page($page, $token) {
@@ -2196,6 +2293,14 @@ class DataFlair_Toplists {
             $api_brand_id = $brand_data['id'];
             $brand_name = isset($brand_data['name']) ? $brand_data['name'] : 'Unnamed Brand';
             $brand_slug = isset($brand_data['slug']) ? $brand_data['slug'] : sanitize_title($brand_name);
+            
+            // Download and save logo locally
+            $local_logo_path = $this->download_brand_logo($brand_data, $brand_slug);
+            if ($local_logo_path) {
+                // Add local logo path to brand data
+                $brand_data['local_logo'] = $local_logo_path;
+                error_log('DataFlair: Logo saved locally for brand "' . $brand_name . '" at: ' . $local_logo_path);
+            }
             
             // Extract computed fields
             $product_types = isset($brand_data['productTypes']) && is_array($brand_data['productTypes']) 
