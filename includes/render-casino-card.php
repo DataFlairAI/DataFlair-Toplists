@@ -12,22 +12,51 @@ $position = $item['position'];
 $brand_name = esc_html($brand['name']);
 $brand_slug = sanitize_title($brand_name);
 
-// Handle logo - it might be a string or array
+// Handle logo - check multiple possible keys and formats
 $logo_url = '';
-if (!empty($brand['logo'])) {
-    if (is_array($brand['logo'])) {
-        // If it's an array, try to get the URL from common keys
-        if (!empty($brand['logo']['url'])) {
-            $logo_url = esc_url($brand['logo']['url']);
-        } elseif (!empty($brand['logo']['src'])) {
-            $logo_url = esc_url($brand['logo']['src']);
-        } elseif (!empty($brand['logo'][0])) {
-            $logo_url = esc_url($brand['logo'][0]);
+$logo_sources = array(
+    'logo',           // Standard key
+    'brandLogo',      // Alternative key
+    'logoUrl',        // Alternative key
+    'image',          // Alternative key
+    'logoImage'       // Alternative key
+);
+
+foreach ($logo_sources as $key) {
+    if (!empty($brand[$key])) {
+        if (is_array($brand[$key])) {
+            // If it's an array, try to get the URL from common sub-keys
+            if (!empty($brand[$key]['url'])) {
+                $logo_url = $brand[$key]['url'];
+                break;
+            } elseif (!empty($brand[$key]['src'])) {
+                $logo_url = $brand[$key]['src'];
+                break;
+            } elseif (!empty($brand[$key]['path'])) {
+                $logo_url = $brand[$key]['path'];
+                break;
+            } elseif (!empty($brand[$key][0])) {
+                $logo_url = $brand[$key][0];
+                break;
+            }
+        } else {
+            // It's a string - use directly
+            $logo_url = $brand[$key];
+            break;
         }
-    } else {
-        // It's a string
-        $logo_url = esc_url($brand['logo']);
     }
+}
+
+// Clean and validate the logo URL
+if (!empty($logo_url) && !is_array($logo_url)) {
+    $logo_url = esc_url($logo_url);
+} else {
+    $logo_url = '';
+}
+
+// Debug: Log if logo is missing
+if (empty($logo_url)) {
+    error_log('DataFlair: Missing logo for brand "' . $brand_name . '". Available keys: ' . implode(', ', array_keys($brand)));
 }
 
 $rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);
@@ -106,13 +135,22 @@ if (empty($review_url)) {
                     <?php echo esc_html($position); ?>
                 </div>
                 
-                <?php if (!empty($logo_url)): ?>
                 <div class="casino-logo">
                     <a href="<?php echo $review_url; ?>">
-                        <img src="<?php echo $logo_url; ?>" alt="<?php echo $brand_name; ?>">
+                        <?php if (!empty($logo_url)): ?>
+                            <img src="<?php echo $logo_url; ?>" 
+                                 alt="<?php echo $brand_name; ?>" 
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="casino-logo-placeholder" style="display: none;">
+                                <?php echo esc_html(substr($brand_name, 0, 2)); ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="casino-logo-placeholder">
+                                <?php echo esc_html(substr($brand_name, 0, 2)); ?>
+                            </div>
+                        <?php endif; ?>
                     </a>
                 </div>
-                <?php endif; ?>
                 
                 <div class="casino-brand-info">
                     <a href="<?php echo $review_url; ?>" class="casino-brand-name">
