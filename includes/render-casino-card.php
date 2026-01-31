@@ -211,10 +211,7 @@ if (empty($review_url)) {
             <!-- CTA Column -->
             <div class="casino-cta-col">
                 <a href="<?php echo $casino_url; ?>" target="_blank" rel="nofollow" class="casino-cta-button">
-                    <span>Visit Site</span>
-                    <svg class="cta-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                    </svg>
+                    Visit Site
                 </a>
                 
                 <button type="button" class="casino-toggle-button" @click="showDetails = !showDetails">
