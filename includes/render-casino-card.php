@@ -134,33 +134,50 @@ if (!empty($brand['licenses'])) {
 
 $reviewer = !empty($item['reviewer']) ? esc_html($item['reviewer']) : '';
 
-// Get casino URL - prioritize tracker link from trackers array
-$casino_url = '';
+// Get tracker data and campaign name from API
+$tracker_url = '';
+$campaign_name = '';
+$has_valid_tracker = false;
 
 // First, check for trackerLink in trackers array (from API)
-// Trackers structure: offer.trackers[0].trackerLink
+// Trackers structure: offer.trackers[0].trackerLink and offer.trackers[0].campaignName
 if (!empty($offer['trackers']) && is_array($offer['trackers']) && count($offer['trackers']) > 0) {
     $first_tracker = $offer['trackers'][0];
     if (!empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
-        $casino_url = $first_tracker['trackerLink'];
+        $tracker_url = $first_tracker['trackerLink'];
+        $campaign_name = !empty($first_tracker['campaignName']) ? $first_tracker['campaignName'] : '';
+        
+        // Store tracker URL in transient for redirect handler
+        if (!empty($campaign_name) && !empty($tracker_url)) {
+            $transient_key = 'dataflair_tracker_' . md5($campaign_name);
+            set_transient($transient_key, $tracker_url, 30 * DAY_IN_SECONDS); // 30 days expiry
+            $has_valid_tracker = true;
+        }
     }
 }
 
 // Fallback to tracking_url (if trackers array doesn't have trackerLink)
-if (empty($casino_url) && !empty($offer['tracking_url'])) {
-    $casino_url = is_array($offer['tracking_url']) ? '' : $offer['tracking_url'];
+if (empty($tracker_url) && !empty($offer['tracking_url'])) {
+    $tracker_url = is_array($offer['tracking_url']) ? '' : $offer['tracking_url'];
 }
 
 // Fallback to other URL fields
-if (empty($casino_url)) {
+if (empty($tracker_url)) {
     if (!empty($offer['url'])) {
-        $casino_url = is_array($offer['url']) ? '' : $offer['url'];
+        $tracker_url = is_array($offer['url']) ? '' : $offer['url'];
     } elseif (!empty($brand['url'])) {
-        $casino_url = is_array($brand['url']) ? '' : $brand['url'];
+        $tracker_url = is_array($brand['url']) ? '' : $brand['url'];
     }
 }
 
-$casino_url = !empty($casino_url) ? esc_url($casino_url) : '#';
+// Generate redirect URL if we have campaign name, otherwise use direct URL
+if ($has_valid_tracker && !empty($campaign_name)) {
+    // Use /go/?campaign=campaign-name format
+    $casino_url = home_url('/go/?campaign=' . urlencode($campaign_name));
+} else {
+    // Fallback to direct URL (or disabled if no URL)
+    $casino_url = !empty($tracker_url) ? esc_url($tracker_url) : '#';
+}
 
 // Get review URL - use pre-set URL from parent function, or generate it
 if (!isset($review_url) || empty($review_url)) {
@@ -268,9 +285,15 @@ if (empty($review_url)) {
             
             <!-- CTA Column -->
             <div class="casino-cta-col">
-                <a href="<?php echo esc_url($casino_url); ?>" target="_blank" rel="nofollow" class="casino-cta-button">
-                    Visit Site
-                </a>
+                <?php if ($has_valid_tracker && !empty($casino_url) && $casino_url !== '#'): ?>
+                    <a href="<?php echo esc_url($casino_url); ?>" target="_blank" rel="nofollow" class="casino-cta-button">
+                        Visit Site
+                    </a>
+                <?php else: ?>
+                    <button type="button" class="casino-cta-button" disabled>
+                        Visit Site
+                    </button>
+                <?php endif; ?>
                 
                 <button type="button" class="casino-toggle-button" @click="showDetails = !showDetails">
                     <span x-text="showDetails ? 'Show less' : 'Show more'">Show more</span>

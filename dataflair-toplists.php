@@ -75,6 +75,9 @@ class DataFlair_Toplists {
         // REST API for block editor
         add_action('rest_api_init', array($this, 'register_rest_routes'));
         
+        // Redirect handler for /go/ campaign links
+        add_action('template_redirect', array($this, 'handle_campaign_redirect'));
+        
         // Cron
         add_action('dataflair_sync_cron', array($this, 'cron_sync_toplists'));
         add_action('dataflair_brands_sync_cron', array($this, 'cron_sync_brands'));
@@ -991,6 +994,9 @@ class DataFlair_Toplists {
             return array('success' => false, 'message' => 'No endpoints configured');
         }
         
+        // Clear old tracker transients before syncing new data
+        $this->clear_tracker_transients();
+        
         $endpoints_array = array_filter(array_map('trim', explode("\n", $endpoints)));
         $synced = 0;
         $errors = 0;
@@ -1009,6 +1015,27 @@ class DataFlair_Toplists {
             'synced' => $synced,
             'errors' => $errors
         );
+    }
+    
+    /**
+     * Clear all DataFlair tracker transients
+     * Called before syncing to expire old campaign mappings
+     */
+    private function clear_tracker_transients() {
+        global $wpdb;
+        
+        // Delete all transients with dataflair_tracker_ prefix
+        $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM {$wpdb->options} 
+                WHERE option_name LIKE %s 
+                OR option_name LIKE %s",
+                '_transient_dataflair_tracker_%',
+                '_transient_timeout_dataflair_tracker_%'
+            )
+        );
+        
+        error_log('DataFlair: Cleared all tracker transients before sync');
     }
     
     /**
@@ -3893,6 +3920,51 @@ class DataFlair_Toplists {
             array(),
             DATAFLAIR_VERSION
         );
+    }
+    
+    /**
+     * Handle campaign redirect from /go/?campaign=campaign-name
+     * Performs 301 redirect to tracker URL stored in transient
+     */
+    public function handle_campaign_redirect() {
+        // Check if this is a /go/ request with campaign parameter
+        if (!isset($_GET['campaign']) || empty($_GET['campaign'])) {
+            return;
+        }
+        
+        // Only handle if URL path is /go/ or contains /go
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        $parsed_url = parse_url($request_uri);
+        $path = isset($parsed_url['path']) ? $parsed_url['path'] : '';
+        
+        // Check if path contains /go (handles /go/, /go, /go?campaign=, etc.)
+        if (strpos($path, '/go') === false) {
+            return;
+        }
+        
+        $campaign_name = sanitize_text_field($_GET['campaign']);
+        
+        if (empty($campaign_name)) {
+            // Invalid campaign name, return 404
+            status_header(404);
+            nocache_headers();
+            return;
+        }
+        
+        // Look up tracker URL from transient
+        $transient_key = 'dataflair_tracker_' . md5($campaign_name);
+        $tracker_url = get_transient($transient_key);
+        
+        if (empty($tracker_url) || !filter_var($tracker_url, FILTER_VALIDATE_URL)) {
+            // Campaign not found or invalid URL, return 404
+            status_header(404);
+            nocache_headers();
+            return;
+        }
+        
+        // Perform 301 redirect to tracker URL
+        wp_redirect($tracker_url, 301);
+        exit;
     }
     
     /**
