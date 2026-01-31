@@ -3043,6 +3043,91 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Get or create review post for a casino brand
+     * Auto-creates draft review if it doesn't exist
+     * 
+     * @param array $brand Brand data from API
+     * @param array $item Full toplist item data
+     * @return int|false Post ID of review, or false on failure
+     */
+    private function get_or_create_review_post($brand, $item) {
+        // Check if review post type exists
+        if (!post_type_exists('review')) {
+            error_log('DataFlair: Review post type not registered');
+            return false;
+        }
+        
+        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+        $brand_name = !empty($brand['name']) ? $brand['name'] : 'Unknown Casino';
+        
+        // Check if review post already exists
+        $existing_review = get_page_by_path($brand_slug, OBJECT, 'review');
+        
+        if ($existing_review) {
+            return $existing_review->ID;
+        }
+        
+        // Auto-create draft review post
+        $review_data = array(
+            'post_title'   => $brand_name . ' Review',
+            'post_name'    => $brand_slug,
+            'post_content' => '',
+            'post_status'  => 'draft',
+            'post_type'    => 'review',
+            'post_author'  => get_current_user_id() ?: 1,
+        );
+        
+        $review_id = wp_insert_post($review_data);
+        
+        if (is_wp_error($review_id)) {
+            error_log('DataFlair: Failed to create review post: ' . $review_id->get_error_message());
+            return false;
+        }
+        
+        // Populate meta fields with brand data
+        if (!empty($brand['id'])) {
+            update_post_meta($review_id, '_review_brand_id', $brand['id']);
+        }
+        
+        // Extract and save logo URL
+        $logo_url = '';
+        if (!empty($brand['logo'])) {
+            if (is_array($brand['logo'])) {
+                $logo_url = $brand['logo']['rectangular'] ?? $brand['logo']['square'] ?? $brand['logo']['url'] ?? '';
+            } else {
+                $logo_url = $brand['logo'];
+            }
+        }
+        
+        // Save all review meta fields
+        update_post_meta($review_id, '_review_brand_name', $brand_name);
+        update_post_meta($review_id, '_review_logo', $logo_url);
+        update_post_meta($review_id, '_review_url', !empty($item['offer']['tracking_url']) ? $item['offer']['tracking_url'] : '');
+        update_post_meta($review_id, '_review_rating', !empty($item['rating']) ? $item['rating'] : (!empty($brand['rating']) ? $brand['rating'] : ''));
+        update_post_meta($review_id, '_review_bonus', !empty($item['offer']['offerText']) ? $item['offer']['offerText'] : '');
+        
+        // Save payment methods
+        $payments = array();
+        if (!empty($item['paymentMethods'])) {
+            $payments = is_array($item['paymentMethods']) ? $item['paymentMethods'] : explode(',', $item['paymentMethods']);
+        } elseif (!empty($brand['paymentMethods'])) {
+            $payments = is_array($brand['paymentMethods']) ? $brand['paymentMethods'] : explode(',', $brand['paymentMethods']);
+        }
+        update_post_meta($review_id, '_review_payments', implode(', ', $payments));
+        
+        // Save licenses
+        $licenses = array();
+        if (!empty($brand['licenses'])) {
+            $licenses = is_array($brand['licenses']) ? $brand['licenses'] : explode(',', $brand['licenses']);
+        }
+        update_post_meta($review_id, '_review_licenses', implode(', ', $licenses));
+        
+        error_log('DataFlair: Auto-created draft review post #' . $review_id . ' for ' . $brand_name);
+        
+        return $review_id;
+    }
+    
+    /**
      * Render individual casino card
      * Uses the new structured template for better layout
      */
@@ -3051,6 +3136,31 @@ class DataFlair_Toplists {
         $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
         
         if (file_exists($template_path)) {
+            // Get or create review post and generate review URL
+            $brand = $item['brand'];
+            $review_id = $this->get_or_create_review_post($brand, $item);
+            
+            if ($review_id) {
+                // Get permalink - works for both published and draft posts
+                $review_url = get_permalink($review_id);
+                // If permalink is false (draft), generate preview link
+                if (!$review_url) {
+                    $review_url = get_preview_post_link($review_id);
+                }
+                // Final fallback to slug-based URL
+                if (!$review_url) {
+                    $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+                    $review_url = home_url('/reviews/' . $brand_slug . '/');
+                }
+            } else {
+                // Fallback to /reviews/{slug} format
+                $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+                $review_url = home_url('/reviews/' . $brand_slug . '/');
+            }
+            
+            // Pass review URL to template
+            $review_url = apply_filters('dataflair_review_url', $review_url, $brand, $item);
+            
             // Use new template
             ob_start();
             include $template_path;
@@ -3321,12 +3431,12 @@ class DataFlair_Toplists {
                         <a
                             href="#"
                             class="view-more-button no-underline <?php echo esc_attr($build_class('text', $brand_link)); ?> text-base"
-                            x-text="showDetails ? 'Less Information -' : 'More Information +'"
+                            x-text="showDetails ? 'Show less -' : 'Show more +'"
                             @click.prevent="showDetails = !showDetails"
                             data-gtm-element="details-toggle"
                             data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
                         >
-                            More Information +
+                            Show more +
                         </a>
                     </div>
                 </div>

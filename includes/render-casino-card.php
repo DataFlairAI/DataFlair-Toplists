@@ -145,11 +145,19 @@ if (!empty($offer['tracking_url'])) {
 }
 $casino_url = !empty($casino_url) ? esc_url($casino_url) : '#';
 
-// Get review URL (handle arrays)
-$review_url = '';
-if (!empty($brand['review_url']) && !is_array($brand['review_url'])) {
-    $review_url = esc_url($brand['review_url']);
+// Get review URL - use pre-set URL from parent function, or generate it
+if (!isset($review_url) || empty($review_url)) {
+    // Check if review URL was passed from parent function
+    if (!empty($brand['review_url']) && !is_array($brand['review_url'])) {
+        $review_url = esc_url($brand['review_url']);
+    } else {
+        // Generate review URL: /reviews/{brand-slug}
+        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+        $review_url = home_url('/reviews/' . $brand_slug . '/');
+    }
 }
+
+// Fallback to casino URL if review URL is still empty
 if (empty($review_url)) {
     $review_url = $casino_url;
 }
@@ -177,10 +185,10 @@ if (empty($review_url)) {
                 </div>
                 
                 <div class="casino-logo">
-                    <a href="<?php echo $review_url; ?>">
+                    <a href="<?php echo esc_url($review_url); ?>">
                         <?php if (!empty($logo_url)): ?>
-                            <img src="<?php echo $logo_url; ?>" 
-                                 alt="<?php echo $brand_name; ?>" 
+                            <img src="<?php echo esc_url($logo_url); ?>" 
+                                 alt="<?php echo esc_attr($brand_name); ?>" 
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                             <div class="casino-logo-placeholder" style="display: none;">
                                 <?php echo esc_html(substr($brand_name, 0, 2)); ?>
@@ -194,8 +202,8 @@ if (empty($review_url)) {
                 </div>
                 
                 <div class="casino-brand-info">
-                    <a href="<?php echo $review_url; ?>" class="casino-brand-name">
-                        <?php echo $brand_name; ?>
+                    <a href="<?php echo esc_url($review_url); ?>" class="casino-brand-name">
+                        <?php echo esc_html($brand_name); ?>
                     </a>
                     
                     <?php if ($rating > 0): ?>
@@ -208,7 +216,7 @@ if (empty($review_url)) {
                     </div>
                     <?php endif; ?>
                     
-                    <a href="<?php echo $review_url; ?>" class="casino-review-link">
+                    <a href="<?php echo esc_url($review_url); ?>" class="casino-review-link">
                         Read Review
                         <svg class="review-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
