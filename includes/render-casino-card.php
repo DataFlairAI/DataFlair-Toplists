@@ -69,7 +69,40 @@ if (!empty($logo_url) && !is_array($logo_url)) {
 
 $rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);
 $offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
-$features = !empty($item['features']) ? array_slice($item['features'], 0, 3) : array();
+
+// Handle features - check block editor pros/cons first, then fall back to API features
+$features = array();
+
+// Build casino key matching the block editor format: casino-{position}-{brandSlug}
+$casino_key = 'casino-' . $position . '-' . $brand_slug;
+
+// Debug logging
+error_log('DataFlair: Position: ' . $position . ', Brand slug: ' . $brand_slug);
+error_log('DataFlair: Casino key: ' . $casino_key);
+error_log('DataFlair: Pros/cons data available: ' . (!empty($pros_cons_data) ? 'Yes' : 'No'));
+if (!empty($pros_cons_data)) {
+    error_log('DataFlair: Pros/cons keys: ' . implode(', ', array_keys($pros_cons_data)));
+}
+
+if (!empty($pros_cons_data) && isset($pros_cons_data[$casino_key])) {
+    // Use pros from block editor
+    $casino_pros_cons = $pros_cons_data[$casino_key];
+    error_log('DataFlair: Found pros/cons for casino ' . $casino_key . ': ' . json_encode($casino_pros_cons));
+    if (!empty($casino_pros_cons['pros']) && is_array($casino_pros_cons['pros'])) {
+        // Filter out empty strings
+        $features = array_filter($casino_pros_cons['pros'], function($pro) {
+            return !empty(trim($pro));
+        });
+        $features = array_slice($features, 0, 3);
+        error_log('DataFlair: Using ' . count($features) . ' pros as features');
+    }
+} 
+
+// Fall back to API features if no block editor pros are set
+if (empty($features) && !empty($item['features'])) {
+    $features = array_slice($item['features'], 0, 3);
+    error_log('DataFlair: Using ' . count($features) . ' API features');
+}
 
 // Payment methods - check multiple possible keys
 $payment_methods = array();
@@ -215,7 +248,7 @@ if (empty($review_url)) {
                 </a>
                 
                 <button type="button" class="casino-toggle-button" @click="showDetails = !showDetails">
-                    <span x-text="showDetails ? 'Less Information' : 'More Information'">More Information</span>
+                    <span x-text="showDetails ? 'Show less' : 'Show more'">Show more</span>
                     <svg class="toggle-arrow" :class="showDetails ? 'rotated' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
