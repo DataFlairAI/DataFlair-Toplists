@@ -15,6 +15,7 @@ jQuery(document).ready(function($) {
         var formData = {
             action: 'dataflair_save_settings',
             nonce: dataflairAdmin.nonce,
+            dataflair_api_base_url: $('#dataflair_api_base_url').val() || '',
             dataflair_api_token: $('#dataflair_api_token').val() || '',
             dataflair_api_base_url: $('#dataflair_api_base_url').val() || '',
             dataflair_ribbon_bg_color: $('#dataflair_ribbon_bg_color').val() || '',

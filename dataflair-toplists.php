@@ -339,6 +339,7 @@ class DataFlair_Toplists {
         );
         
         register_setting('dataflair_settings', 'dataflair_api_token', $args);
+        register_setting('dataflair_settings', 'dataflair_api_base_url', $args);
         // Keep dataflair_api_endpoints for internal use (populated by fetch_all_toplists)
         register_setting('dataflair_settings', 'dataflair_api_endpoints', $args);
         // API base URL - can be auto-detected or manually set
@@ -379,6 +380,9 @@ class DataFlair_Toplists {
                 }
                 update_option('dataflair_api_base_url', $base_url);
             }
+        }
+        if (isset($_POST['dataflair_api_base_url'])) {
+            update_option('dataflair_api_base_url', esc_url_raw($_POST['dataflair_api_base_url']));
         }
         
         // Save customization settings
@@ -501,6 +505,20 @@ class DataFlair_Toplists {
                     </style>
                     <div class="tab-content">
                 <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="dataflair_api_base_url">API Base URL</label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                   id="dataflair_api_base_url" 
+                                   name="dataflair_api_base_url" 
+                                   value="<?php echo esc_attr(get_option('dataflair_api_base_url', 'https://sigma.dataflair.ai/api/v1')); ?>" 
+                                   class="regular-text"
+                                   placeholder="https://strikeodds.dataflair.ai/api/v1">
+                            <p class="description">Your DataFlair API base URL (e.g., https://strikeodds.dataflair.ai/api/v1)</p>
+                        </td>
+                    </tr>
                     <tr>
                         <th scope="row">
                             <label for="dataflair_api_token">API Bearer Token</label>
@@ -767,7 +785,7 @@ class DataFlair_Toplists {
         // First, try to get from stored option (manually set or auto-detected)
         $base_url = get_option('dataflair_api_base_url');
         if (!empty($base_url)) {
-            return $base_url;
+            return rtrim($base_url, '/'); // Remove trailing slash if present
         }
         
         // Try to extract from stored endpoints
@@ -781,7 +799,7 @@ class DataFlair_Toplists {
                     $base_url = $matches[1];
                     // Store it for future use
                     update_option('dataflair_api_base_url', $base_url);
-                    return $base_url;
+                    return rtrim($base_url, '/');
                 }
             }
         }
@@ -2842,8 +2860,20 @@ class DataFlair_Toplists {
     
     /**
      * Render individual casino card
+     * Uses the new structured template for better layout
      */
     private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array()) {
+        // Check if new template exists
+        $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        
+        if (file_exists($template_path)) {
+            // Use new template
+            ob_start();
+            include $template_path;
+            return ob_get_clean();
+        }
+        
+        // Fallback to original rendering (legacy support)
         // Get customization values with defaults
         $ribbon_bg = !empty($customizations['ribbonBgColor']) ? $customizations['ribbonBgColor'] : 'brand-600';
         $ribbon_text_color = !empty($customizations['ribbonTextColor']) ? $customizations['ribbonTextColor'] : 'white';
