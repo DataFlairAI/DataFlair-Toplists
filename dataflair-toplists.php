@@ -88,6 +88,9 @@ class DataFlair_Toplists {
         // Enqueue admin scripts
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         
+        // Enqueue block editor assets
+        add_action('enqueue_block_editor_assets', array($this, 'enqueue_editor_assets'));
+        
         // Check if shortcode/block is used and enqueue Alpine.js if needed
         add_action('wp_footer', array($this, 'maybe_enqueue_alpine'), 5);
         
@@ -3877,6 +3880,19 @@ class DataFlair_Toplists {
                 'version' => DATAFLAIR_VERSION
             ));
         }
+    }
+    
+    /**
+     * Enqueue editor assets for Gutenberg block
+     */
+    public function enqueue_editor_assets() {
+        $editor_style = DATAFLAIR_PLUGIN_URL . 'assets/editor.css';
+        wp_enqueue_style(
+            'dataflair-toplist-editor',
+            $editor_style,
+            array(),
+            DATAFLAIR_VERSION
+        );
     }
     
     /**
