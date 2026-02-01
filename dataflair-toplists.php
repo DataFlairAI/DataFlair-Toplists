@@ -56,7 +56,6 @@ class DataFlair_Toplists {
         
         // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
-        add_action('admin_menu', array($this, 'add_test_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_action('wp_ajax_dataflair_save_settings', array($this, 'ajax_save_settings'));
         add_action('wp_ajax_dataflair_fetch_all_toplists', array($this, 'ajax_fetch_all_toplists'));
