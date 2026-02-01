@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.2.0');
+define('DATAFLAIR_VERSION', '1.3.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -56,6 +56,7 @@ class DataFlair_Toplists {
         
         // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
+        add_action('admin_menu', array($this, 'add_test_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_action('wp_ajax_dataflair_save_settings', array($this, 'ajax_save_settings'));
         add_action('wp_ajax_dataflair_fetch_all_toplists', array($this, 'ajax_fetch_all_toplists'));
@@ -333,6 +334,59 @@ class DataFlair_Toplists {
             array($this, 'brands_page')
         );
         
+        // Add Tests submenu (only for development)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            add_submenu_page(
+                'dataflair-toplists',
+                'Tests',
+                'Tests',
+                'manage_options',
+                'dataflair-tests',
+                array($this, 'tests_page')
+            );
+        }
+        
+    }
+    
+    /**
+     * Tests page
+     */
+    public function tests_page() {
+        $test_file = isset($_GET['test']) ? sanitize_text_field($_GET['test']) : 'all';
+        $tests_dir = DATAFLAIR_PLUGIN_DIR . 'tests/';
+        
+        ?>
+        <div class="wrap">
+            <h1>🧪 Dataflair Plugin Tests</h1>
+            <p>Run tests to verify plugin functionality.</p>
+            
+            <div style="margin: 20px 0;">
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=all'); ?>" class="button button-primary">Run All Tests</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=logo'); ?>" class="button">Logo Download Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=logo-url'); ?>" class="button">Logo URL Structure Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=brand'); ?>" class="button">Brand Data Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=toplist'); ?>" class="button">Toplist Fetch Test</a>
+            </div>
+            
+            <hr>
+            
+            <?php
+            if ($test_file === 'all') {
+                include $tests_dir . 'run-all-tests.php';
+            } elseif ($test_file === 'logo') {
+                include $tests_dir . 'test-logo-download.php';
+            } elseif ($test_file === 'logo-url') {
+                include $tests_dir . 'test-logo-url.php';
+            } elseif ($test_file === 'brand') {
+                include $tests_dir . 'test-brand-data.php';
+            } elseif ($test_file === 'toplist') {
+                include $tests_dir . 'test-toplist-fetch.php';
+            } else {
+                echo '<p>Invalid test selected.</p>';
+            }
+            ?>
+        </div>
+        <?php
     }
     
     /**
@@ -3168,6 +3222,50 @@ class DataFlair_Toplists {
         if (file_exists($template_path)) {
             // Get or create review post and generate review URL
             $brand = $item['brand'];
+            
+            // Download and save logo locally if not already done
+            if (empty($brand['local_logo']) && !empty($brand['api_brand_id'])) {
+                // Extract logo URL from brand data (same logic as in render-casino-card.php)
+                $logo_url = '';
+                $logo_sources = array('logo', 'brandLogo', 'logoUrl', 'image', 'logoImage');
+                
+                foreach ($logo_sources as $key) {
+                    if (!empty($brand[$key])) {
+                        if (is_array($brand[$key])) {
+                            if (!empty($brand[$key]['rectangular'])) {
+                                $logo_url = $brand[$key]['rectangular'];
+                                break;
+                            } elseif (!empty($brand[$key]['square'])) {
+                                $logo_url = $brand[$key]['square'];
+                                break;
+                            } elseif (!empty($brand[$key]['url'])) {
+                                $logo_url = $brand[$key]['url'];
+                                break;
+                            } elseif (!empty($brand[$key]['src'])) {
+                                $logo_url = $brand[$key]['src'];
+                                break;
+                            } elseif (!empty($brand[$key][0])) {
+                                $logo_url = $brand[$key][0];
+                                break;
+                            }
+                        } else {
+                            $logo_url = $brand[$key];
+                            break;
+                        }
+                    }
+                }
+                
+                // Download and save logo using theme's function if available
+                if (!empty($logo_url) && filter_var($logo_url, FILTER_VALIDATE_URL)) {
+                    if (function_exists('strikeodds_download_and_save_logo')) {
+                        $local_logo = strikeodds_download_and_save_logo($logo_url, $brand['api_brand_id']);
+                        if ($local_logo) {
+                            $brand['local_logo'] = $local_logo;
+                        }
+                    }
+                }
+            }
+            
             $review_id = $this->get_or_create_review_post($brand, $item);
             
             if ($review_id) {
@@ -3190,6 +3288,9 @@ class DataFlair_Toplists {
             
             // Pass review URL to template
             $review_url = apply_filters('dataflair_review_url', $review_url, $brand, $item);
+            
+            // Update item with processed brand data (including local_logo)
+            $item['brand'] = $brand;
             
             // Use new template
             ob_start();

@@ -7,6 +7,7 @@ WordPress plugin to fetch and display casino toplists and brands from DataFlair 
 - **Toplists Management**: Fetch and display casino toplists from DataFlair API
 - **Brands Management**: Sync and manage active brands with detailed information
 - **Alternative Toplists**: Set geo-specific alternative toplists for better user experience
+- **Logo Caching**: Automatic logo download and local storage to reduce API calls
 - **Accordion UI**: Expandable details for brands and toplists
 - **Advanced Filtering**: Filter brands by licenses, geos, and payment methods
 - **Sorting & Pagination**: Sort by name, offers, trackers with 50 items per page
@@ -14,6 +15,7 @@ WordPress plugin to fetch and display casino toplists and brands from DataFlair 
 - **Custom Database Tables**: Optimized storage for toplists, brands, and alternative mappings
 - **Gutenberg Block**: Display toplists using WordPress block editor
 - **Shortcode Support**: Use `[dataflair_toplist]` shortcode anywhere
+- **Test Suite**: Comprehensive test suite for logo downloads, brand data, and toplist fetching
 
 ## 🎯 Core Features Explained
 
@@ -449,9 +451,11 @@ Potential improvements for future versions:
    - Visual toplist selector in block editor
    - Live preview in editor
 
-2. **Logo Support**
-   - If API provides logo URLs, add to display
-   - Fallback to brand name
+2. **Logo Support** ✅
+   - Logo URLs are automatically downloaded and cached locally
+   - Logos stored in theme's `assets/logos/` directory
+   - Reduces API calls and improves page load performance
+   - Automatic fallback to remote URLs if download fails
 
 3. **Tracking Integration**
    - Add tracking URL field to offers
@@ -545,13 +549,31 @@ npm run start
 ```
 
 ### Running Tests
-```bash
-# Run PHPUnit tests (when implemented)
-composer test
 
-# Check code style
-composer phpcs
+The plugin includes a comprehensive test suite located in the `tests/` directory:
+
+**Via WordPress Admin:**
+- Go to **DataFlair → Tests** (visible when `WP_DEBUG` is enabled)
+- Run individual tests or all tests at once
+
+**Available Tests:**
+- `test-logo-download.php` - Tests logo download functionality
+- `test-logo-url.php` - Tests logo URL structure after local save
+- `test-brand-data.php` - Tests brand data extraction from API
+- `test-toplist-fetch.php` - Tests toplist fetching and rendering
+- `run-all-tests.php` - Runs all tests in sequence
+
+**Via Browser:**
 ```
+http://yoursite.com/wp-content/plugins/dataflair-toplists/tests/test-logo-download.php?run_test=1
+```
+
+**Via WP-CLI:**
+```bash
+wp eval-file wp-content/plugins/dataflair-toplists/tests/test-logo-download.php
+```
+
+See `tests/README.md` for detailed documentation.
 
 ## 📄 License
 

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2024-12-XX
+
+### Added
+- Logo download and local caching functionality
+- Automatic logo download when rendering toplists
+- Logo storage in theme's `assets/logos/` directory
+- Test suite for logo downloads, brand data, and toplist fetching
+- Test admin page (DataFlair → Tests) for running tests
+- Logo URL structure verification tests
+- API-based brand data testing
+
+### Changed
+- Toplist rendering now downloads logos locally before display
+- Reduced API calls by caching logos locally
+- Improved logo URL handling in casino card rendering
+
+### Technical
+- Added `strikeodds_download_and_save_logo()` function integration
+- Enhanced `render_casino_card()` to download logos automatically
+- Created comprehensive test suite in `tests/` directory
+
 ## [1.2.0] - 2024-11-25
 
 ### Added
