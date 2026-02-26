@@ -239,12 +239,28 @@ jQuery(document).ready(function($) {
             width: '100%'
         });
         
-        // Apply filters when Select2 changes
-        $('.dataflair-select2').on('change', function() {
-            applyFiltersAndSort();
-        });
+        // Apply filters when Select2 changes — debounced so rapid chip
+        // add/remove batches into a single call instead of firing per chip
+        var debouncedApply = debounce(applyFiltersAndSort, 200);
+        $('.dataflair-select2').on('change', debouncedApply);
     }
     
+    // Debounce — delays fn until ms have passed since the last call
+    function debounce(fn, ms) {
+        var timer;
+        return function() { clearTimeout(timer); timer = setTimeout(fn, ms); };
+    }
+
+    // Cached filter state — refreshed once per applyFiltersAndSort call,
+    // then reused by every rowMatchesFilters call to avoid N×3 DOM reads
+    var activeFilters = { licenses: [], geos: [], payments: [] };
+
+    function refreshActiveFilters() {
+        activeFilters.licenses = getSelectedFilterValues('licenses');
+        activeFilters.geos     = getSelectedFilterValues('top_geos');
+        activeFilters.payments = getSelectedFilterValues('payment_methods');
+    }
+
     // Function to get selected values for a filter type (updated for Select2)
     function getSelectedFilterValues(filterType) {
         var $select = $('.dataflair-select2[data-filter-type="' + filterType + '"]');
@@ -339,49 +355,29 @@ jQuery(document).ready(function($) {
     // Helper function to check if a row matches current filters
     function rowMatchesFilters($row) {
         var rowData = $row.data('brand-data');
-        // If row doesn't have data, it can't match filters (exclude it from count)
-        if (!rowData) {
-            return false;
-        }
-        
-        var selectedLicenses = getSelectedFilterValues('licenses');
-        var selectedGeos = getSelectedFilterValues('top_geos');
-        var selectedPaymentMethods = getSelectedFilterValues('payment_methods');
-        
-        var matchesLicenses = selectedLicenses.length === 0;
-        var matchesGeos = selectedGeos.length === 0;
-        var matchesPayments = selectedPaymentMethods.length === 0;
-        
-        // Check licenses
+        if (!rowData) return false;
+
+        // Use pre-cached activeFilters — no DOM reads inside the loop
+        var matchesLicenses = activeFilters.licenses.length === 0;
+        var matchesGeos     = activeFilters.geos.length === 0;
+        var matchesPayments = activeFilters.payments.length === 0;
+
         if (!matchesLicenses && rowData.licenses) {
-            for (var i = 0; i < selectedLicenses.length; i++) {
-                if (rowData.licenses.indexOf(selectedLicenses[i]) > -1) {
-                    matchesLicenses = true;
-                    break;
-                }
+            for (var i = 0; i < activeFilters.licenses.length; i++) {
+                if (rowData.licenses.indexOf(activeFilters.licenses[i]) > -1) { matchesLicenses = true; break; }
             }
         }
-        
-        // Check geos
         if (!matchesGeos && rowData.topGeos) {
-            for (var i = 0; i < selectedGeos.length; i++) {
-                if (rowData.topGeos.indexOf(selectedGeos[i]) > -1) {
-                    matchesGeos = true;
-                    break;
-                }
+            for (var i = 0; i < activeFilters.geos.length; i++) {
+                if (rowData.topGeos.indexOf(activeFilters.geos[i]) > -1) { matchesGeos = true; break; }
             }
         }
-        
-        // Check payment methods
         if (!matchesPayments && rowData.paymentMethods) {
-            for (var i = 0; i < selectedPaymentMethods.length; i++) {
-                if (rowData.paymentMethods.indexOf(selectedPaymentMethods[i]) > -1) {
-                    matchesPayments = true;
-                    break;
-                }
+            for (var i = 0; i < activeFilters.payments.length; i++) {
+                if (rowData.paymentMethods.indexOf(activeFilters.payments[i]) > -1) { matchesPayments = true; break; }
             }
         }
-        
+
         return matchesLicenses && matchesGeos && matchesPayments;
     }
     
@@ -406,20 +402,24 @@ jQuery(document).ready(function($) {
             });
             
             var totalItems = visibleCount;
+            var totalCount = $allRows.length;
             totalPages = Math.ceil(totalItems / itemsPerPage);
-            
+
             // Ensure totalPages is at least 1 if there are items
             if (totalItems > 0 && totalPages === 0) {
                 totalPages = 1;
             }
-            
+
             // Ensure currentPage is valid
             if (currentPage > totalPages && totalPages > 0) {
                 currentPage = totalPages;
             } else if (totalPages === 0) {
                 currentPage = 1;
             }
-            
+
+            // Update brand count (single source of truth — here we already have visibleCount)
+            $('#dataflair-brands-count').text('Showing ' + totalItems + ' of ' + totalCount + ' brands');
+
             // Update UI
             $('#total-pages').text(totalPages);
             $('#current-page-selector').val(currentPage);
@@ -466,63 +466,9 @@ jQuery(document).ready(function($) {
     }
     
     function applyFiltersAndSort() {
-        var selectedLicenses = getSelectedFilterValues('licenses');
-        var selectedGeos = getSelectedFilterValues('top_geos');
-        var selectedPaymentMethods = getSelectedFilterValues('payment_methods');
-        
-        var $table = $('.dataflair-brands-table');
-        var $rows = $table.find('tbody tr.brand-row');
-        var visibleCount = 0;
-        var totalCount = $rows.length;
-        
-        // Apply filters - mark rows but don't show/hide yet (pagination will handle that)
-        $rows.each(function() {
-            var $row = $(this);
-            var rowData = $row.data('brand-data');
-            
-            var matchesLicenses = selectedLicenses.length === 0;
-            var matchesGeos = selectedGeos.length === 0;
-            var matchesPayments = selectedPaymentMethods.length === 0;
-            
-            // Check licenses
-            if (!matchesLicenses && rowData && rowData.licenses) {
-                for (var i = 0; i < selectedLicenses.length; i++) {
-                    if (rowData.licenses.indexOf(selectedLicenses[i]) > -1) {
-                        matchesLicenses = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Check geos
-            if (!matchesGeos && rowData && rowData.topGeos) {
-                for (var i = 0; i < selectedGeos.length; i++) {
-                    if (rowData.topGeos.indexOf(selectedGeos[i]) > -1) {
-                        matchesGeos = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Check payment methods
-            if (!matchesPayments && rowData && rowData.paymentMethods) {
-                for (var i = 0; i < selectedPaymentMethods.length; i++) {
-                    if (rowData.paymentMethods.indexOf(selectedPaymentMethods[i]) > -1) {
-                        matchesPayments = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (matchesLicenses && matchesGeos && matchesPayments) {
-                visibleCount++;
-            }
-        });
-        
-        // Update count
-        $('#dataflair-brands-count').text('Showing ' + visibleCount + ' of ' + totalCount + ' brands');
-        
-        // Reset to first page and update pagination (which will handle showing/hiding)
+        // Refresh cached filter values once — rowMatchesFilters + updatePagination
+        // will both use these without touching the DOM again
+        refreshActiveFilters();
         currentPage = 1;
         updatePagination();
     }

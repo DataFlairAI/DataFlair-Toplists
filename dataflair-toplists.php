@@ -627,8 +627,8 @@ class DataFlair_Toplists {
                         Fetch All Toplists from API
                     </button>
                     <span id="dataflair-fetch-message" style="margin-left: 10px;"></span>
-                    <p class="description">This will automatically discover and sync all available toplists from the DataFlair API. Existing endpoints will be updated.</p>
-                    <p class="description">Last automatic sync: <?php echo $this->get_last_cron_time(); ?></p>
+                    <p class="description">Fetches all toplists from the DataFlair API. Existing toplists will be updated.</p>
+                    <p class="description">Auto-sync runs twice daily. <?php echo $this->get_last_cron_time(); ?></p>
             
             <hr>
             
@@ -641,6 +641,7 @@ class DataFlair_Toplists {
                             <th>WP ID</th>
                             <th>API ID</th>
                             <th>Name</th>
+                            <th>Template</th>
                             <th>Version</th>
                             <th>Items</th>
                             <th>Last Synced</th>
@@ -661,6 +662,7 @@ class DataFlair_Toplists {
                             <td><?php echo esc_html($toplist->id); ?></td>
                             <td><?php echo esc_html($toplist->api_toplist_id); ?></td>
                             <td><?php echo esc_html($toplist->name); ?></td>
+                            <td><?php echo esc_html(isset($data['data']['template']['name']) ? $data['data']['template']['name'] : '—'); ?></td>
                             <td><?php echo esc_html($toplist->version); ?></td>
                             <td><?php echo esc_html($items_count); ?></td>
                             <td><?php echo esc_html($toplist->last_synced); ?></td>
@@ -669,7 +671,7 @@ class DataFlair_Toplists {
                             </td>
                         </tr>
                         <tr class="toplist-accordion-content" data-toplist-id="<?php echo esc_attr($toplist->id); ?>" style="display: none;">
-                            <td colspan="8" style="padding: 0;">
+                            <td colspan="9" style="padding: 0;">
                                 <div class="toplist-accordion-inner" style="padding: 20px; background: #f9f9f9; border-left: 4px solid #0073aa;">
                                     <h3 style="margin-top: 0;">Alternative Toplists for Different Geos</h3>
                                     <p class="description">Set alternative toplists to show when a user from a specific geo visits a page where this toplist is displayed.</p>
@@ -1023,6 +1025,8 @@ class DataFlair_Toplists {
      */
     public function cron_sync_toplists() {
         $this->sync_all_toplists();
+        // Record exact time this cron fired so the admin UI can show "X minutes ago"
+        update_option('dataflair_last_toplists_cron_run', time());
     }
     
     /**
@@ -1030,6 +1034,8 @@ class DataFlair_Toplists {
      */
     public function cron_sync_brands() {
         $this->sync_all_brands();
+        // Record exact time this cron fired so the admin UI can show "X minutes ago"
+        update_option('dataflair_last_brands_cron_run', time());
     }
     
     /**
@@ -1124,8 +1130,8 @@ class DataFlair_Toplists {
                 </div>
             </div>
             
-            <p class="description">This will fetch all active brands from the DataFlair API in batches of 15. Existing brands will be updated.</p>
-            <p class="description">Auto-sync runs every 15 minutes. Last automatic sync: <?php echo $this->get_last_brands_cron_time(); ?></p>
+            <p class="description">Fetches all active brands from the DataFlair API in batches of 15. Existing brands will be updated.</p>
+            <p class="description">Auto-sync runs every 15 minutes. <?php echo $this->get_last_brands_cron_time(); ?></p>
             
             <hr>
             
@@ -1641,14 +1647,44 @@ class DataFlair_Toplists {
                         padding: 2px 6px;
                         margin: 2px;
                         border-radius: 3px;
+                        display: inline-flex;
+                        align-items: center;
                     }
                     .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+                        /* Select2 v4.1+ renders this as a <button> — reset browser defaults */
+                        border: none;
+                        background: rgba(255, 255, 255, 0.25);
+                        padding: 0;
+                        margin-right: 0;
                         color: #fff;
-                        margin-right: 5px;
                         cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 700;
+                        line-height: 1;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 50%;
+                        flex-shrink: 0;
                     }
                     .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-                        color: #f0f0f1;
+                        background: rgba(255, 255, 255, 0.45);
+                        color: #fff;
+                    }
+                    /* Inner ×  span — strip any inherited spacing so button stays square */
+                    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove span {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        line-height: 1;
+                        margin: 0;
+                        padding: 0;
+                    }
+                    /* Display label — own the gap from the × button */
+                    .select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+                        padding-left: 15px;
                     }
                     .select2-container--default .select2-search--inline .select2-search__field {
                         margin-top: 2px;
@@ -1874,6 +1910,13 @@ class DataFlair_Toplists {
                     }
                     
                     /* Sortable Headers */
+                    /* Smooth row visibility transitions */
+                    .dataflair-brands-table tbody tr.brand-row {
+                        transition: opacity 0.15s ease;
+                    }
+                    .dataflair-brands-table {
+                        transition: opacity 0.1s ease;
+                    }
                     .dataflair-brands-table thead th.sortable {
                         padding: 0;
                     }
@@ -2203,12 +2246,44 @@ class DataFlair_Toplists {
     /**
      * Get last brands cron execution time
      */
+    /**
+     * Returns human-readable relative time string for a Unix timestamp.
+     * e.g. "just now", "3 minutes ago", "2 hours ago"
+     */
+    private function time_ago( $timestamp ) {
+        $diff = time() - $timestamp;
+
+        if ( $diff < 10 )                    return 'just now';
+        if ( $diff < 60 )                    return $diff . ' seconds ago';
+        if ( $diff < 120 )                   return '1 minute ago';
+        if ( $diff < 3600 )                  return floor( $diff / 60 ) . ' minutes ago';
+        if ( $diff < 7200 )                  return '1 hour ago';
+        if ( $diff < 86400 )                 return floor( $diff / 3600 ) . ' hours ago';
+        return date( 'Y-m-d H:i', $timestamp );
+    }
+
+    /**
+     * Returns a future-relative label, e.g. "in 3 minutes", "in 45 seconds"
+     */
+    private function time_until( $timestamp ) {
+        $diff = $timestamp - time();
+
+        if ( $diff <= 0 )       return 'any moment';
+        if ( $diff < 60 )       return 'in ' . $diff . ' seconds';
+        if ( $diff < 120 )      return 'in 1 minute';
+        if ( $diff < 3600 )     return 'in ' . floor( $diff / 60 ) . ' minutes';
+        if ( $diff < 7200 )     return 'in 1 hour';
+        return 'in ' . floor( $diff / 3600 ) . ' hours';
+    }
+
     private function get_last_brands_cron_time() {
-        $timestamp = wp_next_scheduled('dataflair_brands_sync_cron');
-        if ($timestamp) {
-            return 'Next sync: ' . date('Y-m-d H:i:s', $timestamp);
-        }
-        return 'Not scheduled';
+        $last_run  = get_option( 'dataflair_last_brands_cron_run' );
+        $next_run  = wp_next_scheduled( 'dataflair_brands_sync_cron' );
+
+        $last_str  = $last_run ? $this->time_ago( $last_run ) : 'never';
+        $next_str  = $next_run ? $this->time_until( $next_run ) : 'not scheduled';
+
+        return 'Last sync: ' . $last_str . ' &mdash; Next sync: ' . $next_str;
     }
     
     /**
@@ -3980,11 +4055,13 @@ class DataFlair_Toplists {
      * Get last cron execution time
      */
     private function get_last_cron_time() {
-        $timestamp = wp_next_scheduled('dataflair_sync_cron');
-        if ($timestamp) {
-            return 'Next sync: ' . date('Y-m-d H:i:s', $timestamp);
-        }
-        return 'Not scheduled';
+        $last_run = get_option('dataflair_last_toplists_cron_run');
+        $next_run = wp_next_scheduled('dataflair_sync_cron');
+
+        $last_str = $last_run ? $this->time_ago($last_run) : 'never';
+        $next_str = $next_run ? $this->time_until($next_run) : 'not scheduled';
+
+        return 'Last sync: ' . $last_str . ' &mdash; Next sync: ' . $next_str;
     }
     
     /**

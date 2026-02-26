@@ -21,10 +21,13 @@
     "build": "wp-scripts build",
     "start": "wp-scripts start",
     "lint:js": "wp-scripts lint-js",
-    "format:js": "wp-scripts format-js"
+    "format:js": "wp-scripts format-js",
+    "env:start": "wp-env start",
+    "env:stop":  "wp-env stop",
+    "env:clean": "wp-env destroy"
   },
   "devDependencies": {
+    "@wordpress/env": "^11.0.0",
     "@wordpress/scripts": "^26.0.0"
   }
 }
-
