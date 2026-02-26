@@ -3,4 +3,5 @@ vendor/
 build/
 *.log
 composer.lock
+.wp-env.json
 
