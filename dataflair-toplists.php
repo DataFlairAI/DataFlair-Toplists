@@ -473,8 +473,8 @@ class DataFlair_Toplists {
             return;
         }
         
-        // Enqueue Select2 CSS and JS (only on brands page)
-        if ($hook === 'dataflair_page_dataflair-brands') {
+        // Enqueue Select2 CSS and JS (brands page + toplists page)
+        if ($hook === 'dataflair_page_dataflair-brands' || $hook === 'toplevel_page_dataflair-toplists') {
             // Select2 CSS
             wp_enqueue_style(
                 'select2',
@@ -566,20 +566,6 @@ class DataFlair_Toplists {
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="dataflair_api_base_url">API Base URL</label>
-                        </th>
-                        <td>
-                            <input type="text" 
-                                   id="dataflair_api_base_url" 
-                                   name="dataflair_api_base_url" 
-                                   value="<?php echo esc_attr(get_option('dataflair_api_base_url', 'https://sigma.dataflair.ai/api/v1')); ?>" 
-                                   class="regular-text"
-                                   placeholder="https://strikeodds.dataflair.ai/api/v1">
-                            <p class="description">Your DataFlair API base URL (e.g., https://strikeodds.dataflair.ai/api/v1)</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">
                             <label for="dataflair_api_token">API Bearer Token</label>
                         </th>
                         <td>
@@ -634,26 +620,69 @@ class DataFlair_Toplists {
             
             <h2>Synced Toplists</h2>
             <?php if ($toplists): ?>
-                <table class="wp-list-table widefat fixed striped">
+                <?php
+                // Collect unique template names for the filter dropdown
+                $all_templates = array();
+                foreach ($toplists as $tl) {
+                    $tl_data = json_decode($tl->data, true);
+                    $tname = isset($tl_data['data']['template']['name']) ? $tl_data['data']['template']['name'] : '';
+                    if ($tname) $all_templates[] = $tname;
+                }
+                $all_templates = array_values(array_unique($all_templates));
+                sort($all_templates);
+                ?>
+
+                <!-- Template filter -->
+                <div class="dataflair-filters" style="margin-bottom: 16px;">
+                    <div class="filter-row">
+                        <div class="filter-group" style="max-width: 320px;">
+                            <label style="font-weight:600;">Template</label>
+                            <select id="dataflair-filter-template" class="dataflair-toplist-select2" style="width:100%;">
+                                <?php foreach ($all_templates as $tname): ?>
+                                    <option value="<?php echo esc_attr($tname); ?>"><?php echo esc_html($tname); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="filter-group filter-actions" style="flex:0; align-self:flex-end;">
+                            <button type="button" id="dataflair-clear-toplist-filters" class="button">Clear</button>
+                        </div>
+                        <div class="filter-group" style="flex:0; align-self:flex-end; white-space:nowrap;">
+                            <span id="dataflair-toplists-count" style="color:#646970;">Showing <?php echo count($toplists); ?> toplists</span>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="wp-list-table widefat fixed striped dataflair-toplists-table">
                     <thead>
                         <tr>
                             <th style="width: 40px;"></th>
                             <th>WP ID</th>
                             <th>API ID</th>
                             <th>Name</th>
-                            <th>Template</th>
+                            <th class="sortable-toplist">
+                                <a href="#" class="toplist-sort-link" data-sort="template">Template <span class="toplist-sort-indicator"></span></a>
+                            </th>
                             <th>Version</th>
-                            <th>Items</th>
-                            <th>Last Synced</th>
+                            <th class="sortable-toplist">
+                                <a href="#" class="toplist-sort-link" data-sort="items">Items <span class="toplist-sort-indicator"></span></a>
+                            </th>
+                            <th class="sortable-toplist">
+                                <a href="#" class="toplist-sort-link" data-sort="last_synced">Last Synced <span class="toplist-sort-indicator"></span></a>
+                            </th>
                             <th>Shortcode</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($toplists as $toplist): 
+                        <?php foreach ($toplists as $toplist):
                             $data = json_decode($toplist->data, true);
                             $items_count = isset($data['data']['items']) ? count($data['data']['items']) : 0;
+                            $template_name = isset($data['data']['template']['name']) ? $data['data']['template']['name'] : '';
                         ?>
-                        <tr class="toplist-row" data-toplist-id="<?php echo esc_attr($toplist->id); ?>">
+                        <tr class="toplist-row"
+                            data-toplist-id="<?php echo esc_attr($toplist->id); ?>"
+                            data-template="<?php echo esc_attr($template_name); ?>"
+                            data-items="<?php echo esc_attr($items_count); ?>"
+                            data-last-synced="<?php echo esc_attr($toplist->last_synced); ?>">
                             <td>
                                 <button type="button" class="toplist-toggle-btn" title="View Details">
                                     <span class="dashicons dashicons-arrow-right"></span>
@@ -802,6 +831,19 @@ class DataFlair_Toplists {
             
             <style>
                 /* Toplist Accordion Styles */
+                .dataflair-toplists-table th.sortable-toplist { padding: 0; }
+                .toplist-sort-link {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 8px 10px;
+                    text-decoration: none;
+                    color: inherit;
+                    white-space: nowrap;
+                }
+                .toplist-sort-link:hover { background: #f0f0f1; }
+                .toplist-sort-indicator { font-size: 10px; margin-left: 4px; color: #2271b1; }
+                .dataflair-toplists-table tbody tr.toplist-row { transition: opacity 0.15s ease; }
                 .toplist-toggle-btn {
                     background: none;
                     border: none;
