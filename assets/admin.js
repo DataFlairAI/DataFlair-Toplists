@@ -752,4 +752,98 @@ jQuery(document).ready(function($) {
             }
         });
     });
+
+    // =========================================================
+    // TOPLISTS — template filter + sortable columns
+    // =========================================================
+    if ($('.dataflair-toplists-table').length) {
+
+        // Init Select2 for template filter
+        if (typeof $.fn.select2 !== 'undefined') {
+            $('#dataflair-filter-template').select2({
+                placeholder: 'All Templates',
+                allowClear: true,
+                width: '100%'
+            });
+            $('#dataflair-filter-template').on('change', debounce(applyToplistFiltersAndSort, 200));
+        }
+
+        // Clear filter
+        $('#dataflair-clear-toplist-filters').on('click', function() {
+            $('#dataflair-filter-template').val(null).trigger('change');
+        });
+
+        // Sort state
+        var toplistSort = { field: null, direction: 'asc' };
+
+        // Sortable column click
+        $(document).on('click', '.toplist-sort-link', function(e) {
+            e.preventDefault();
+            var field = $(this).data('sort');
+            if (toplistSort.field === field) {
+                toplistSort.direction = toplistSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                toplistSort.field = field;
+                toplistSort.direction = 'asc';
+            }
+            // Update indicators
+            $('.toplist-sort-indicator').text('');
+            $(this).find('.toplist-sort-indicator').text(toplistSort.direction === 'asc' ? ' ↑' : ' ↓');
+            applyToplistFiltersAndSort();
+        });
+
+        function applyToplistFiltersAndSort() {
+            var selectedTemplate = $('#dataflair-filter-template').val() || '';
+            var $tbody = $('.dataflair-toplists-table tbody');
+            var $rows  = $tbody.find('tr.toplist-row');
+            var total  = $rows.length;
+
+            // Collect row + accordion pairs
+            var pairs = [];
+            $rows.each(function() {
+                var $row = $(this);
+                pairs.push({ row: $row, accordion: $row.next('.toplist-accordion-content') });
+            });
+
+            // Filter
+            var visible = pairs.filter(function(p) {
+                var template = p.row.data('template') || '';
+                var matches  = !selectedTemplate || template === selectedTemplate;
+                if (!matches) {
+                    p.row.hide();
+                    p.accordion.hide();
+                } else {
+                    p.row.show();
+                }
+                return matches;
+            });
+
+            // Sort visible pairs
+            if (toplistSort.field) {
+                visible.sort(function(a, b) {
+                    var av, bv;
+                    if (toplistSort.field === 'template') {
+                        av = (a.row.data('template') || '').toLowerCase();
+                        bv = (b.row.data('template') || '').toLowerCase();
+                    } else if (toplistSort.field === 'items') {
+                        av = parseInt(a.row.data('items'), 10) || 0;
+                        bv = parseInt(b.row.data('items'), 10) || 0;
+                    } else if (toplistSort.field === 'last_synced') {
+                        av = a.row.data('last-synced') || '';
+                        bv = b.row.data('last-synced') || '';
+                    }
+                    if (av < bv) return toplistSort.direction === 'asc' ? -1 : 1;
+                    if (av > bv) return toplistSort.direction === 'asc' ?  1 : -1;
+                    return 0;
+                });
+                // Re-append in sorted order
+                $.each(visible, function(i, p) {
+                    $tbody.append(p.row).append(p.accordion);
+                });
+            }
+
+            $('#dataflair-toplists-count').text('Showing ' + visible.length + ' of ' + total + ' toplists');
+        }
+    }
+
 });
