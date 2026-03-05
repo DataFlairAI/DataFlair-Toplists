@@ -31,9 +31,12 @@ if (!defined('ABSPATH')) {
 
 function run_all_tests() {
     $test_files = array(
-        'test-logo-download.php' => 'Logo Download Tests',
-        'test-brand-data.php' => 'Brand Data Extraction Tests',
-        'test-toplist-fetch.php' => 'Toplist Fetching Tests',
+        'test-logo-download.php'   => 'Logo Download Tests',
+        'test-brand-data.php'      => 'Brand Data — Comprehensive (all fields + false positives)',
+        'test-toplist-fetch.php'   => 'Toplist Fetching Tests',
+        'test-toplist-render.php'  => 'Toplist Rendering — Shortcode, Gutenberg, Geo Edge Cases',
+        'test-api-edge-cases.php'  => 'API Edge Cases — Auth failures, null fields, pagination',
+        'test-cron.php'            => 'Cron Jobs — Schedule, manual trigger, fresh data pull',
     );
     
     echo "<!DOCTYPE html><html><head><title>Dataflair Plugin Tests</title></head><body>\n";
@@ -96,4 +99,10 @@ if (php_sapi_name() !== 'cli') {
     include __DIR__ . '/test-brand-data.php';
     echo "\n" . str_repeat('=', 80) . "\n\n";
     include __DIR__ . '/test-toplist-fetch.php';
+    echo "\n" . str_repeat('=', 80) . "\n\n";
+    include __DIR__ . '/test-toplist-render.php';
+    echo "\n" . str_repeat('=', 80) . "\n\n";
+    include __DIR__ . '/test-api-edge-cases.php';
+    echo "\n" . str_repeat('=', 80) . "\n\n";
+    include __DIR__ . '/test-cron.php';
 }
