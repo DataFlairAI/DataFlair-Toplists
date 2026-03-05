@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "WordPress Environment (wp-env)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "env:start"],
+      "port": 8888
+    },
+    {
+      "name": "JS Build Watcher (wp-scripts start)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start"],
+      "port": 8887
+    }
+  ]
+}
