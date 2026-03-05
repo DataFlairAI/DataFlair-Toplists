@@ -1,333 +1,558 @@
 <?php
 /**
- * Test Brand Data Extraction
- * 
- * Tests all data points that should be extracted from brand data
+ * Test Brand Data — Comprehensive
+ *
+ * Validates ALL fields returned by GET /api/v1/brands:
+ *  - Core fields: id, name, slug, rating, brandStatus, logo
+ *  - Relationships: productTypes, licenses, paymentMethods, currencies,
+ *    gameTypes, gameProviders, languages, topGeos, restrictedCountries
+ *  - Offer + trackers
+ *  - False positives: inactive brands MUST NOT appear
+ *  - Pagination meta: per_page, total, last_page present
+ *  - Empty arrays (not null) when a brand has no relationships
+ *  - Alphabetical ordering (default sort)
+ *
+ * Run via WP-CLI:   wp eval-file tests/test-brand-data.php
+ * Run via browser:  /wp-admin/?page=dataflair&tab=debug&run_test=brand-data
  */
 
-// Load WordPress if not already loaded
 if (!defined('ABSPATH')) {
-    // Try to find wp-load.php from the plugin directory
-    $wp_load_paths = array(
-        dirname(dirname(dirname(dirname(__FILE__)))) . '/wp-load.php', // Standard WordPress structure
-        dirname(dirname(dirname(__FILE__))) . '/wp-load.php', // Alternative structure
+    $wp_load_paths = [
+        dirname(dirname(dirname(dirname(__FILE__)))) . '/wp-load.php',
+        dirname(dirname(dirname(__FILE__))) . '/wp-load.php',
         '../../../wp-load.php',
         '../../../../wp-load.php',
-    );
-    
+    ];
     $wp_loaded = false;
     foreach ($wp_load_paths as $path) {
         if (file_exists($path)) {
-            require_once($path);
+            require_once $path;
             $wp_loaded = true;
             break;
         }
     }
-    
     if (!$wp_loaded) {
-        die('Error: Could not find wp-load.php. Please run this test from WordPress admin or via WP-CLI.');
+        die('Error: Could not find wp-load.php.');
     }
 }
 
-/**
- * Test brand data extraction
- */
-function test_brand_data_extraction() {
-    echo "<h2>🧪 Testing Brand Data Extraction</h2>\n";
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+$GLOBALS['_df_pass']  = 0;
+$GLOBALS['_df_fail']  = 0;
+$GLOBALS['_df_warn']  = 0;
+
+function df_pass(string $msg): void {
+    $GLOBALS['_df_pass']++;
+    echo "<p class='test-pass'>✓ {$msg}</p>\n";
+}
+
+function df_fail(string $msg): void {
+    $GLOBALS['_df_fail']++;
+    echo "<p class='test-fail'>✗ {$msg}</p>\n";
+}
+
+function df_warn(string $msg): void {
+    $GLOBALS['_df_warn']++;
+    echo "<p class='test-warning'>⚠ {$msg}</p>\n";
+}
+
+function df_info(string $msg): void {
+    echo "<p class='test-info'>{$msg}</p>\n";
+}
+
+function df_section(string $title): void {
+    echo "<div class='test-section'>\n<h3>{$title}</h3>\n";
+}
+
+function df_end_section(): void {
+    echo "</div>\n";
+}
+
+// Assert helpers
+function df_assert_key_exists(array $data, string $key, string $label, bool $required = true): bool {
+    if (array_key_exists($key, $data)) {
+        df_pass("{$label}: key '{$key}' present");
+        return true;
+    }
+    $required ? df_fail("{$label}: key '{$key}' MISSING") : df_warn("{$label}: key '{$key}' absent (optional)");
+    return false;
+}
+
+function df_assert_is_array(array $data, string $key, string $label): bool {
+    if (array_key_exists($key, $data) && is_array($data[$key])) {
+        df_pass("{$label}: '{$key}' is array (" . count($data[$key]) . " items)");
+        return true;
+    }
+    df_fail("{$label}: '{$key}' should be array, got " . gettype($data[$key] ?? null));
+    return false;
+}
+
+function df_assert_is_string_non_empty(array $data, string $key, string $label): bool {
+    if (!empty($data[$key]) && is_string($data[$key])) {
+        $short = strlen($data[$key]) > 40 ? substr($data[$key], 0, 40) . '...' : $data[$key];
+        df_pass("{$label}: '{$key}' = \"{$short}\"");
+        return true;
+    }
+    df_fail("{$label}: '{$key}' should be non-empty string, got " . var_export($data[$key] ?? null, true));
+    return false;
+}
+
+// ── Main test function ────────────────────────────────────────────────────────
+
+function test_brand_data_comprehensive(): void {
+    echo "<h2>🧪 Brand Data — Comprehensive Tests</h2>\n";
     echo "<style>
         .test-container { max-width: 1200px; margin: 20px auto; padding: 20px; font-family: monospace; }
         .test-section { background: #f5f5f5; padding: 15px; margin: 10px 0; border-left: 4px solid #0073aa; }
-        .test-pass { color: #00a32a; font-weight: bold; }
-        .test-fail { color: #d63638; font-weight: bold; }
-        .test-info { color: #2271b1; }
-        .test-warning { color: #dba617; }
-        .data-point { background: white; padding: 10px; margin: 5px 0; border: 1px solid #ddd; }
-        pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-        table th, table td { padding: 8px; text-align: left; border: 1px solid #ddd; }
+        .test-pass { color: #00a32a; font-weight: bold; margin: 3px 0; }
+        .test-fail { color: #d63638; font-weight: bold; margin: 3px 0; }
+        .test-info { color: #2271b1; margin: 3px 0; }
+        .test-warning { color: #dba617; margin: 3px 0; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; overflow-x: auto; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+        table th, table td { padding: 6px 10px; text-align: left; border: 1px solid #ddd; }
         table th { background: #0073aa; color: white; }
+        .badge-pass { background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 3px; }
+        .badge-fail { background: #f8d7da; color: #721c24; padding: 2px 6px; border-radius: 3px; }
+        .badge-warn { background: #fff3cd; color: #856404; padding: 2px 6px; border-radius: 3px; }
+        details summary { cursor: pointer; color: #2271b1; }
     </style>\n";
     echo "<div class='test-container'>\n";
-    
-    // Test 1: Get API configuration
-    echo "<div class='test-section'>\n";
-    echo "<h3>Test 1: API Configuration</h3>\n";
-    
-    $api_base_url = get_option('dataflair_api_base_url', 'https://sigma.dataflair.ai/api/v1');
-    $api_token = get_option('dataflair_api_token', '');
-    
-    echo "<p class='test-info'>API Base URL: <strong>{$api_base_url}</strong></p>\n";
-    
+
+    // ── T01: API Configuration ────────────────────────────────────────────────
+    df_section('T01 · API Configuration');
+    $api_base_url = get_option('dataflair_api_base_url', '');
+    $api_token    = get_option('dataflair_api_token', '');
+
+    df_info("Base URL: <strong>" . esc_html($api_base_url ?: '(not set)') . "</strong>");
+
+    if (empty($api_base_url)) {
+        df_fail('dataflair_api_base_url is not set — cannot continue');
+        df_end_section();
+        echo "</div>\n";
+        return;
+    }
+    df_pass('dataflair_api_base_url is configured');
+
     if (empty($api_token)) {
-        echo "<p class='test-fail'>✗ API Token is not configured</p>\n";
-        echo "<p class='test-info'>Please configure the API token in DataFlair → Settings</p>\n";
-        echo "</div>\n";
+        df_fail('dataflair_api_token is not set — cannot continue');
+        df_end_section();
         echo "</div>\n";
         return;
-    } else {
-        echo "<p class='test-pass'>✓ API Token is configured (length: " . strlen($api_token) . " characters)</p>\n";
     }
-    echo "</div>\n";
-    
-    // Test 2: Fetch brand from API
-    echo "<div class='test-section'>\n";
-    echo "<h3>Test 2: Fetch Brand from API</h3>\n";
-    
+    $prefix = substr($api_token, 0, 4);
+    if ($prefix !== 'dfp_') {
+        df_warn("Token does not start with 'dfp_' (starts with '{$prefix}') — are you using a Plugin Token?");
+    } else {
+        df_pass("Token starts with 'dfp_' (correct Plugin Token prefix)");
+    }
+    df_pass('dataflair_api_token is configured (length: ' . strlen($api_token) . ')');
+    df_end_section();
+
+    // ── T02: HTTP call to /brands (page 1) ───────────────────────────────────
+    df_section('T02 · HTTP Request — GET /brands');
     $brands_url = rtrim($api_base_url, '/') . '/brands';
-    echo "<p class='test-info'>Fetching from: <a href='{$brands_url}' target='_blank'>{$brands_url}</a></p>\n";
-    
-    $headers = array(
-        'Authorization' => 'Bearer ' . $api_token,
-        'Content-Type' => 'application/json',
-    );
-    
-    $response = wp_remote_get($brands_url, array(
-        'headers' => $headers,
+    df_info("URL: <a href='" . esc_url($brands_url) . "' target='_blank'>" . esc_html($brands_url) . "</a>");
+
+    $response = wp_remote_get($brands_url, [
+        'headers' => ['Authorization' => "Bearer {$api_token}", 'Accept' => 'application/json'],
         'timeout' => 30,
-    ));
-    
+    ]);
+
     if (is_wp_error($response)) {
-        echo "<p class='test-fail'>✗ API Request failed: " . $response->get_error_message() . "</p>\n";
-        echo "</div>\n";
-        echo "</div>\n";
-        return;
-    }
-    
-    $status_code = wp_remote_retrieve_response_code($response);
-    $body = wp_remote_retrieve_body($response);
-    
-    echo "<p class='test-info'>Response Code: {$status_code}</p>\n";
-    
-    if ($status_code !== 200) {
-        echo "<p class='test-fail'>✗ API returned error status {$status_code}</p>\n";
-        echo "<p class='test-info'>Response: " . esc_html(substr($body, 0, 500)) . "</p>\n";
-        echo "</div>\n";
+        df_fail('Request failed: ' . $response->get_error_message());
+        df_end_section();
         echo "</div>\n";
         return;
     }
-    
-    $api_data = json_decode($body, true);
-    if (!$api_data) {
-        echo "<p class='test-fail'>✗ API response is not valid JSON</p>\n";
-        echo "<p class='test-info'>Response: " . esc_html(substr($body, 0, 500)) . "</p>\n";
-        echo "</div>\n";
-        echo "</div>\n";
-        return;
-    }
-    
-    echo "<p class='test-pass'>✓ API response received and parsed successfully</p>\n";
-    
-    // Get first brand from API response
-    if (empty($api_data['data']) || !is_array($api_data['data']) || empty($api_data['data'][0])) {
-        echo "<p class='test-fail'>✗ No brands found in API response</p>\n";
-        echo "<p class='test-info'>Response structure: " . esc_html(print_r(array_keys($api_data), true)) . "</p>\n";
-        echo "</div>\n";
+
+    $status = wp_remote_retrieve_response_code($response);
+    $body   = wp_remote_retrieve_body($response);
+
+    if ($status === 401) {
+        df_fail("401 Unauthenticated — token is invalid, expired, or revoked. Regenerate via tinker.");
+        df_end_section();
         echo "</div>\n";
         return;
     }
-    
-    $brand = $api_data['data'][0];
-    $data = $brand; // Use API response directly
-    
-    echo "<p class='test-pass'>✓ Found test brand: <strong>{$brand['name']}</strong></p>\n";
-    echo "<p class='test-info'>API Brand ID: {$brand['id']}</p>\n";
-    
-    // Show available keys in API response
-    echo "<details><summary>View all available keys in API response</summary>\n";
-    echo "<p class='test-info'>Available keys: " . implode(', ', array_keys($brand)) . "</p>\n";
-    echo "</details>\n";
-    
-    echo "</div>\n";
-    
-    // Test all data points
-    $data_points = array(
-        'brand_name' => array(
-            'keys' => array('name', 'brandName', 'title'),
-            'required' => true,
-            'description' => 'Brand/Casino name'
-        ),
-        'logo' => array(
-            'keys' => array('logo', 'logoUrl', 'logo_url', 'image', 'brandLogo', 'logoImage'),
-            'required' => false,
-            'description' => 'Brand logo URL'
-        ),
-        'url' => array(
-            'keys' => array('url', 'website', 'siteUrl', 'homepage'),
-            'required' => false,
-            'description' => 'Brand website URL'
-        ),
-        'rating' => array(
-            'keys' => array('rating', 'averageRating', 'score', 'userRating'),
-            'required' => false,
-            'description' => 'Brand rating (0-5)'
-        ),
-        'licenses' => array(
-            'keys' => array('licenses', 'license', 'licensing'),
-            'required' => false,
-            'description' => 'Gaming licenses'
-        ),
-        'payment_methods' => array(
-            'keys' => array('payment_methods', 'paymentMethods', 'payments'),
-            'required' => false,
-            'description' => 'Accepted payment methods'
-        ),
-    );
-    
-    // Test 3: Test offers data
-    echo "<div class='test-section'>\n";
-    echo "<h3>Test 3: Offers Data (from API)</h3>\n";
-    
-    if (!empty($data['offers']) && is_array($data['offers'])) {
-        $first_offer = reset($data['offers']);
-        echo "<p class='test-pass'>✓ Offers array found with " . count($data['offers']) . " offer(s)</p>\n";
-        
-        $offer_data_points = array(
-            'offerText' => 'Offer text/bonus description',
-            'bonus_wagering_requirement' => 'Bonus wagering requirement',
-            'minimum_deposit' => 'Minimum deposit',
-            'has_free_spins' => 'Has free spins (boolean)',
-            'bonus_expiry_date' => 'Bonus expiry date',
-            'bonus_code' => 'Bonus code',
-            'trackers' => 'Tracking URLs array',
-        );
-        
-        echo "<table>\n";
-        echo "<tr><th>Field</th><th>Description</th><th>Value</th><th>Status</th></tr>\n";
-        
-        foreach ($offer_data_points as $key => $description) {
-            $value = isset($first_offer[$key]) ? $first_offer[$key] : null;
-            $exists = isset($first_offer[$key]);
-            
-            if ($exists) {
-                if (is_array($value)) {
-                    $display_value = 'Array (' . count($value) . ' items)';
-                    if ($key === 'trackers' && !empty($value[0]['trackerLink'])) {
-                        $display_value .= ' - Tracker: ' . $value[0]['trackerLink'];
-                    }
-                } elseif (is_bool($value)) {
-                    $display_value = $value ? 'true' : 'false';
-                } else {
-                    $display_value = strlen($value) > 50 ? substr($value, 0, 50) . '...' : $value;
-                }
-                echo "<tr><td><strong>{$key}</strong></td><td>{$description}</td><td>{$display_value}</td><td class='test-pass'>✓</td></tr>\n";
+    if ($status === 403) {
+        df_fail("403 Forbidden — IP not in whitelist or credential is restricted.");
+        df_end_section();
+        echo "</div>\n";
+        return;
+    }
+    if ($status !== 200) {
+        df_fail("Unexpected status {$status}. Response: " . esc_html(substr($body, 0, 300)));
+        df_end_section();
+        echo "</div>\n";
+        return;
+    }
+    df_pass("HTTP 200 OK");
+
+    $api = json_decode($body, true);
+    if (!is_array($api)) {
+        df_fail("Response body is not valid JSON");
+        df_end_section();
+        echo "</div>\n";
+        return;
+    }
+    df_pass('Response is valid JSON');
+    df_end_section();
+
+    // ── T03: Pagination meta ──────────────────────────────────────────────────
+    df_section('T03 · Pagination Meta');
+    df_assert_key_exists($api, 'data', 'Pagination', true);
+    df_assert_key_exists($api, 'meta', 'Pagination', true);
+    df_assert_key_exists($api, 'links', 'Pagination', true);
+
+    if (isset($api['meta'])) {
+        $meta = $api['meta'];
+        foreach (['current_page', 'per_page', 'total', 'last_page'] as $mkey) {
+            df_assert_key_exists($meta, $mkey, "meta.{$mkey}");
+        }
+        if (isset($meta['per_page'])) {
+            if ($meta['per_page'] === 15) {
+                df_pass("meta.per_page = 15 (default)");
             } else {
-                echo "<tr><td><strong>{$key}</strong></td><td>{$description}</td><td>—</td><td class='test-warning'>⚠</td></tr>\n";
+                df_warn("meta.per_page = {$meta['per_page']} (expected 15 default)");
             }
         }
-        echo "</table>\n";
+        if (isset($meta['total'])) {
+            df_info("meta.total = {$meta['total']} brands in tenant");
+        }
+        if (isset($meta['last_page'])) {
+            df_info("meta.last_page = {$meta['last_page']}");
+        }
+    }
+
+    if (empty($api['data']) || !is_array($api['data'])) {
+        df_warn('No brands in data[] — cannot test brand fields. Ensure active brands exist.');
+        df_end_section();
+        echo "</div>\n";
+        return;
+    }
+    df_info('Brands returned on page 1: ' . count($api['data']));
+    df_end_section();
+
+    // ── T04: False-positive — only ACTIVE brands returned ────────────────────
+    df_section('T04 · False-Positive Check — Only Active Brands Returned');
+    $all_active = true;
+    $statuses   = [];
+    foreach ($api['data'] as $b) {
+        $st = $b['brandStatus'] ?? '(missing)';
+        $statuses[$st] = ($statuses[$st] ?? 0) + 1;
+        if ($st !== 'Active') {
+            $all_active = false;
+            df_fail("Brand '{$b['name']}' (id={$b['id']}) has brandStatus='{$st}' — should not appear (inactive filter broken)");
+        }
+    }
+    if ($all_active) {
+        df_pass('All returned brands have brandStatus = "Active" (inactive brands correctly excluded)');
+    }
+
+    echo "<details><summary>Brand status distribution</summary><pre>";
+    foreach ($statuses as $st => $cnt) {
+        echo esc_html("  {$st}: {$cnt}\n");
+    }
+    echo "</pre></details>\n";
+    df_end_section();
+
+    // ── T05: Core brand fields ────────────────────────────────────────────────
+    df_section('T05 · Core Brand Fields (first brand)');
+    $brand = $api['data'][0];
+    df_info("Testing brand: <strong>" . esc_html($brand['name'] ?? '?') . "</strong> (id={$brand['id']})");
+
+    df_assert_key_exists($brand, 'id',   'Core field');
+    df_assert_key_exists($brand, 'name', 'Core field');
+    df_assert_key_exists($brand, 'slug', 'Core field');
+    df_assert_key_exists($brand, 'brandStatus', 'Core field');
+    df_assert_key_exists($brand, 'rating', 'Core field', false);
+    df_assert_key_exists($brand, 'type',  'Core field', false);
+
+    // brandStatus must be a string
+    if (isset($brand['brandStatus'])) {
+        if (is_string($brand['brandStatus'])) {
+            df_pass("brandStatus is a string: \"{$brand['brandStatus']}\" (not an object)");
+        } else {
+            df_fail('brandStatus should be a string, got ' . gettype($brand['brandStatus']));
+        }
+    }
+    df_end_section();
+
+    // ── T06: Logo object ──────────────────────────────────────────────────────
+    df_section('T06 · Logo Object');
+    if (!array_key_exists('logo', $brand)) {
+        df_fail("'logo' key missing from brand");
+    } elseif ($brand['logo'] === null) {
+        df_pass("logo is null (brand has no logo — valid state)");
+    } elseif (is_array($brand['logo'])) {
+        df_pass("logo is an object (array)");
+        foreach (['rectangular', 'square', 'backgroundColor'] as $logoKey) {
+            df_assert_key_exists($brand['logo'], $logoKey, "logo.{$logoKey}", false);
+        }
+        if (!empty($brand['logo']['rectangular'])) {
+            df_pass("logo.rectangular URL present: " . esc_html(substr($brand['logo']['rectangular'], 0, 60)));
+        } else {
+            df_warn("logo.rectangular is empty (brand may have no rectangular logo)");
+        }
     } else {
-        echo "<p class='test-warning'>⚠ No offers found in brand data</p>\n";
+        df_fail("logo should be null or an object, got " . gettype($brand['logo']));
     }
-    echo "</div>\n";
-    
-    // Test 4: Test main data points
-    echo "<div class='test-section'>\n";
-    echo "<h3>Test 4: Main Brand Data Points (from API)</h3>\n";
-    echo "<table>\n";
-    echo "<tr><th>Field</th><th>Description</th><th>Keys Checked</th><th>Value</th><th>Status</th></tr>\n";
-    
-    foreach ($data_points as $point_name => $point_config) {
-        $found = false;
-        $value = null;
-        $found_key = null;
-        
-        foreach ($point_config['keys'] as $key) {
-            if (isset($data[$key]) && !empty($data[$key])) {
-                $found = true;
-                $value = $data[$key];
-                $found_key = $key;
-                break;
+    df_end_section();
+
+    // ── T07: Array relationship fields ────────────────────────────────────────
+    df_section('T07 · Array Relationship Fields');
+    $array_fields = [
+        'productTypes'       => 'Product Types',
+        'licenses'           => 'Licenses',
+        'paymentMethods'     => 'Payment Methods',
+        'currencies'         => 'Currencies',
+        'gameTypes'          => 'Game Types',
+        'gameProviders'      => 'Game Providers',
+        'restrictedCountries'=> 'Restricted Countries',
+    ];
+
+    echo "<table>\n<tr><th>Field</th><th>Present?</th><th>Type</th><th>Count</th><th>Sample</th></tr>\n";
+    foreach ($array_fields as $key => $label) {
+        $present = array_key_exists($key, $brand);
+        $value   = $brand[$key] ?? '(missing)';
+        $isArr   = is_array($value);
+        $cnt     = $isArr ? count($value) : '—';
+        $sample  = $isArr && !empty($value) ? esc_html(implode(', ', array_slice($value, 0, 3))) : '—';
+        $badge   = $present ? ($isArr ? 'badge-pass' : 'badge-fail') : 'badge-fail';
+        $label_out = $present ? ($isArr ? '✓ yes' : '✗ not array') : '✗ missing';
+        echo "<tr>
+            <td><strong>{$key}</strong></td>
+            <td><span class='{$badge}'>{$label_out}</span></td>
+            <td>" . esc_html(gettype($value)) . "</td>
+            <td>{$cnt}</td>
+            <td>{$sample}</td>
+        </tr>\n";
+
+        if (!$present) {
+            $GLOBALS['_df_fail']++;
+        } elseif (!$isArr) {
+            $GLOBALS['_df_fail']++;
+        } else {
+            $GLOBALS['_df_pass']++;
+            // Extra: empty array is valid (not null)
+            if (empty($value)) {
+                df_pass("{$key}: empty array [] — correct (not null when no relationships)");
             }
         }
-        
-        $status_class = $found ? 'test-pass' : ($point_config['required'] ? 'test-fail' : 'test-warning');
-        $status_icon = $found ? '✓' : ($point_config['required'] ? '✗' : '⚠');
-        
-        $display_value = '—';
-        if ($found) {
-            if (is_array($value)) {
-                $display_value = 'Array (' . count($value) . ' items)';
-            } elseif (is_string($value)) {
-                $display_value = strlen($value) > 50 ? substr($value, 0, 50) . '...' : $value;
-            } else {
-                $display_value = (string)$value;
-            }
-        }
-        
-        $keys_list = implode(', ', $point_config['keys']);
-        echo "<tr>\n";
-        echo "<td><strong>{$point_name}</strong></td>\n";
-        echo "<td>{$point_config['description']}</td>\n";
-        echo "<td>{$keys_list}</td>\n";
-        echo "<td>{$display_value}</td>\n";
-        echo "<td class='{$status_class}'>{$status_icon} " . ($found ? "Found (key: {$found_key})" : 'Not found') . "</td>\n";
-        echo "</tr>\n";
     }
     echo "</table>\n";
-    echo "</div>\n";
-    
-    // Test nested structures
-    echo "<div class='test-section'>\n";
-    echo "<h3>Nested Data Structures</h3>\n";
-    
-    // Test logo object
-    if (!empty($data['logo']) && is_array($data['logo'])) {
-        echo "<p class='test-info'>Logo object structure:</p>\n";
-        echo "<pre>" . print_r($data['logo'], true) . "</pre>\n";
-    }
-    
-    // Test trackers
-    if (!empty($data['offers'][0]['trackers']) && is_array($data['offers'][0]['trackers'])) {
-        echo "<p class='test-info'>First tracker structure:</p>\n";
-        echo "<pre>" . print_r($data['offers'][0]['trackers'][0], true) . "</pre>\n";
-    }
-    
-    echo "</div>\n";
-    
-    // Test 6: Summary
-    echo "<div class='test-section'>\n";
-    echo "<h3>Test 6: Test Summary</h3>\n";
-    
-    $required_found = 0;
-    $required_total = 0;
-    $optional_found = 0;
-    $optional_total = 0;
-    
-    foreach ($data_points as $point_name => $point_config) {
-        $found = false;
-        foreach ($point_config['keys'] as $key) {
-            if (isset($data[$key]) && !empty($data[$key])) {
-                $found = true;
-                break;
+    df_end_section();
+
+    // ── T08: Languages object ─────────────────────────────────────────────────
+    df_section('T08 · Languages Object (website / support / livechat)');
+    if (!array_key_exists('languages', $brand)) {
+        df_fail("'languages' key missing from brand");
+    } elseif (!is_array($brand['languages'])) {
+        df_fail("'languages' should be an object, got " . gettype($brand['languages']));
+    } else {
+        df_pass("'languages' is an object");
+        foreach (['website', 'support', 'livechat'] as $lk) {
+            if (!array_key_exists($lk, $brand['languages'])) {
+                df_fail("languages.{$lk} key missing");
+            } elseif (!is_array($brand['languages'][$lk])) {
+                df_fail("languages.{$lk} should be array, got " . gettype($brand['languages'][$lk]));
+            } else {
+                $cnt = count($brand['languages'][$lk]);
+                df_pass("languages.{$lk}: array ({$cnt} items)" . ($cnt > 0 ? ' — e.g. "' . esc_html($brand['languages'][$lk][0]) . '"' : ' — empty (valid)'));
             }
         }
-        
-        if ($point_config['required']) {
-            $required_total++;
-            if ($found) $required_found++;
-        } else {
-            $optional_total++;
-            if ($found) $optional_found++;
+    }
+    df_end_section();
+
+    // ── T09: topGeos object ───────────────────────────────────────────────────
+    df_section('T09 · topGeos Object (countries / markets)');
+    if (!array_key_exists('topGeos', $brand)) {
+        df_fail("'topGeos' key missing");
+    } elseif (!is_array($brand['topGeos'])) {
+        df_fail("'topGeos' should be an object, got " . gettype($brand['topGeos']));
+    } else {
+        df_pass("'topGeos' is an object");
+        foreach (['countries', 'markets'] as $gk) {
+            if (!array_key_exists($gk, $brand['topGeos'])) {
+                df_fail("topGeos.{$gk} key missing");
+            } elseif (!is_array($brand['topGeos'][$gk])) {
+                df_fail("topGeos.{$gk} should be array");
+            } else {
+                $cnt = count($brand['topGeos'][$gk]);
+                df_pass("topGeos.{$gk}: array ({$cnt} items)");
+            }
         }
     }
-    
-    echo "<p class='test-info'>Required fields: {$required_found}/{$required_total} found</p>\n";
-    echo "<p class='test-info'>Optional fields: {$optional_found}/{$optional_total} found</p>\n";
-    
-    if ($required_found === $required_total) {
-        echo "<p class='test-pass'>✓ All required fields are present</p>\n";
+    df_end_section();
+
+    // ── T10: Offers + trackers ────────────────────────────────────────────────
+    df_section('T10 · Offers Array + Trackers');
+    if (!array_key_exists('offers', $brand)) {
+        df_fail("'offers' key missing");
+    } elseif (!is_array($brand['offers'])) {
+        df_fail("'offers' should be array");
     } else {
-        echo "<p class='test-fail'>✗ Some required fields are missing</p>\n";
+        $offerCount = count($brand['offers']);
+        df_pass("'offers' is array ({$offerCount} offer(s))");
+
+        if ($offerCount === 0) {
+            df_warn("No offers on this brand — cannot test offer fields. Try a brand with active offers.");
+        } else {
+            $offer = $brand['offers'][0];
+            df_info("First offer keys: " . implode(', ', array_keys($offer)));
+
+            foreach (['id', 'offerText'] as $ok) {
+                df_assert_key_exists($offer, $ok, "offer.{$ok}", false);
+            }
+
+            // Trackers
+            if (!array_key_exists('trackers', $offer)) {
+                df_fail("offer.trackers key missing");
+            } elseif (!is_array($offer['trackers'])) {
+                df_fail("offer.trackers should be array");
+            } else {
+                $tCount = count($offer['trackers']);
+                df_pass("offer.trackers: array ({$tCount} tracker(s))");
+                if ($tCount > 0) {
+                    $t = $offer['trackers'][0];
+                    df_info("First tracker keys: " . implode(', ', array_keys($t)));
+                    foreach (['id', 'trackerLink'] as $tk) {
+                        df_assert_key_exists($t, $tk, "tracker.{$tk}", false);
+                    }
+                    if (!empty($t['trackerLink'])) {
+                        df_pass("tracker.trackerLink present: " . esc_html(substr($t['trackerLink'], 0, 60)));
+                    }
+                }
+            }
+        }
     }
-    
+    df_end_section();
+
+    // ── T11: Empty arrays, not null ───────────────────────────────────────────
+    df_section('T11 · All brands — Empty Arrays Are [] Not null');
+    $null_violations = [];
+    foreach ($api['data'] as $b) {
+        foreach (['productTypes','licenses','paymentMethods','currencies','gameTypes','gameProviders','restrictedCountries','offers'] as $field) {
+            if (array_key_exists($field, $b) && $b[$field] === null) {
+                $null_violations[] = "Brand '{$b['name']}' (id={$b['id']}): '{$field}' is null (should be [])";
+            }
+        }
+    }
+    if (empty($null_violations)) {
+        df_pass('All array fields return [] (not null) for brands without that relationship');
+    } else {
+        foreach ($null_violations as $v) {
+            df_fail($v);
+        }
+    }
+    df_end_section();
+
+    // ── T12: Alphabetical order ───────────────────────────────────────────────
+    df_section('T12 · Alphabetical Ordering (default sort)');
+    if (count($api['data']) >= 2) {
+        $names = array_column($api['data'], 'name');
+        $sorted = $names;
+        sort($sorted, SORT_STRING | SORT_FLAG_CASE);
+        if ($names === $sorted) {
+            df_pass('Brands are returned in alphabetical order');
+        } else {
+            df_warn('Brands are NOT alphabetically ordered. First few: ' . implode(', ', array_slice($names, 0, 5)));
+            df_info('Sorted expected: ' . implode(', ', array_slice($sorted, 0, 5)));
+        }
+    } else {
+        df_warn('Only ' . count($api['data']) . ' brand(s) returned — cannot test ordering');
+    }
+    df_end_section();
+
+    // ── T13: Pagination — page 2 ──────────────────────────────────────────────
+    df_section('T13 · Pagination — Fetch Page 2');
+    $last_page = $api['meta']['last_page'] ?? 1;
+    if ($last_page < 2) {
+        df_warn("Only 1 page of brands ({$api['meta']['total']} total) — cannot test page 2 navigation");
+    } else {
+        $page2_url  = $brands_url . '?page=2';
+        $r2 = wp_remote_get($page2_url, [
+            'headers' => ['Authorization' => "Bearer {$api_token}", 'Accept' => 'application/json'],
+            'timeout' => 15,
+        ]);
+        $s2 = is_wp_error($r2) ? 0 : wp_remote_retrieve_response_code($r2);
+        if ($s2 === 200) {
+            $d2 = json_decode(wp_remote_retrieve_body($r2), true);
+            if (!empty($d2['data'])) {
+                df_pass("Page 2 returns HTTP 200 with " . count($d2['data']) . " brands");
+                if (isset($d2['meta']['current_page']) && $d2['meta']['current_page'] === 2) {
+                    df_pass("meta.current_page = 2 on page 2 response");
+                } else {
+                    df_fail("meta.current_page should be 2, got " . ($d2['meta']['current_page'] ?? 'missing'));
+                }
+            } else {
+                df_fail("Page 2 returned 200 but data[] is empty");
+            }
+        } else {
+            df_fail("Page 2 returned status {$s2} (expected 200)");
+        }
+    }
+    df_end_section();
+
+    // ── T14: per_page parameter ───────────────────────────────────────────────
+    df_section('T14 · per_page Parameter (request 5 brands)');
+    $pp_url = $brands_url . '?per_page=5';
+    $rpp = wp_remote_get($pp_url, [
+        'headers' => ['Authorization' => "Bearer {$api_token}", 'Accept' => 'application/json'],
+        'timeout' => 15,
+    ]);
+    $spp = is_wp_error($rpp) ? 0 : wp_remote_retrieve_response_code($rpp);
+    if ($spp === 200) {
+        $dpp = json_decode(wp_remote_retrieve_body($rpp), true);
+        $returned = count($dpp['data'] ?? []);
+        $expected = min(5, $api['meta']['total'] ?? 5);
+        if ($returned <= 5) {
+            df_pass("per_page=5 returned {$returned} brand(s) — within limit");
+        } else {
+            df_fail("per_page=5 returned {$returned} brands — exceeds requested limit");
+        }
+        if (isset($dpp['meta']['per_page']) && (int)$dpp['meta']['per_page'] === 5) {
+            df_pass("meta.per_page reflects the requested value (5)");
+        } else {
+            df_warn("meta.per_page = " . ($dpp['meta']['per_page'] ?? 'missing') . " (expected 5)");
+        }
+    } else {
+        df_warn("per_page parameter test skipped — status {$spp}");
+    }
+    df_end_section();
+
+    // ── T15: Full brand dump (collapsible) ────────────────────────────────────
+    df_section('T15 · Raw API Response (first brand — for inspection)');
+    echo "<details><summary>View full brand JSON (click to expand)</summary>\n";
+    echo "<pre>" . esc_html(json_encode($brand, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . "</pre>\n";
+    echo "</details>\n";
+    df_end_section();
+
+    // ── Summary ───────────────────────────────────────────────────────────────
+    $pass = $GLOBALS['_df_pass'];
+    $fail = $GLOBALS['_df_fail'];
+    $warn = $GLOBALS['_df_warn'];
+    $total = $pass + $fail;
+
+    echo "<div class='test-section' style='border-left-color: " . ($fail === 0 ? '#00a32a' : '#d63638') . ";'>\n";
+    echo "<h3>📊 Test Summary — Brand Data</h3>\n";
+    echo "<p class='test-pass'>✓ {$pass} passed</p>\n";
+    if ($fail > 0)  echo "<p class='test-fail'>✗ {$fail} failed</p>\n";
+    if ($warn > 0)  echo "<p class='test-warning'>⚠ {$warn} warnings</p>\n";
+    echo "<p class='test-info'>Total assertions: {$total}</p>\n";
+    if ($fail === 0) {
+        echo "<p class='test-pass' style='font-size:16px;'>🎉 All tests passed!</p>\n";
+    } else {
+        echo "<p class='test-fail' style='font-size:16px;'>❌ {$fail} test(s) failed — review above</p>\n";
+    }
     echo "</div>\n";
-    
+
     echo "</div>\n";
 }
 
-// Run test
-if (php_sapi_name() !== 'cli' && isset($_GET['run_test'])) {
-    test_brand_data_extraction();
-} elseif (php_sapi_name() === 'cli') {
-    test_brand_data_extraction();
+// ── Entry points ──────────────────────────────────────────────────────────────
+if (php_sapi_name() === 'cli' || isset($_GET['run_test']) || isset($_GET['test'])) {
+    test_brand_data_comprehensive();
 }

@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.0.0
+ * Version: 1.4.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.3.0');
+define('DATAFLAIR_VERSION', '1.4.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -82,9 +82,13 @@ class DataFlair_Toplists {
         add_action('dataflair_sync_cron', array($this, 'cron_sync_toplists'));
         add_action('dataflair_brands_sync_cron', array($this, 'cron_sync_brands'));
         
-        // Custom cron schedule
+        // Custom cron schedule — must be registered before any wp_schedule_event calls
         add_filter('cron_schedules', array($this, 'add_custom_cron_schedules'));
-        
+
+        // Self-healing cron: reschedule on init so the custom schedule is already
+        // registered when wp_schedule_event runs (activation fires too early).
+        add_action('init', array($this, 'ensure_cron_scheduled'));
+
         // Enqueue frontend styles and scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_assets'));
         
@@ -161,15 +165,10 @@ class DataFlair_Toplists {
         dbDelta($brands_sql);
         dbDelta($alternative_toplists_sql);
         
-        // Schedule cron (every 2 days)
-        if (!wp_next_scheduled('dataflair_sync_cron')) {
-            wp_schedule_event(time(), 'twicedaily', 'dataflair_sync_cron');
-        }
-        
-        // Schedule brands cron (every 15 minutes)
-        if (!wp_next_scheduled('dataflair_brands_sync_cron')) {
-            wp_schedule_event(time(), 'dataflair_15min', 'dataflair_brands_sync_cron');
-        }
+        // Cron scheduling is handled by ensure_cron_scheduled() on 'init',
+        // where the dataflair_15min custom schedule is already registered.
+        // Scheduling here (during activation) happens before cron_schedules
+        // filters run, so the custom interval would be silently ignored.
     }
     
     /**
@@ -299,6 +298,48 @@ class DataFlair_Toplists {
         );
         return $schedules;
     }
+
+    /**
+     * Ensure cron jobs are correctly scheduled.
+     *
+     * Called on 'init' so that the dataflair_15min custom schedule is already
+     * registered (via the cron_schedules filter above) before we call
+     * wp_schedule_event(). The activate() hook fires too early for custom
+     * schedules to be recognised, which causes the brands cron to be stored
+     * with an unknown interval and never fire. This method self-heals that.
+     */
+    public function ensure_cron_scheduled() {
+        // Toplists cron — twice daily (built-in schedule, safe from activation too)
+        if ( ! wp_next_scheduled( 'dataflair_sync_cron' ) ) {
+            wp_schedule_event( time(), 'twicedaily', 'dataflair_sync_cron' );
+        }
+
+        // Brands cron — every 15 minutes using our custom schedule.
+        // If the event exists but is registered with a different/unknown recurrence
+        // (the activation-time bug), clear and reschedule it correctly.
+        $next = wp_next_scheduled( 'dataflair_brands_sync_cron' );
+        if ( ! $next ) {
+            wp_schedule_event( time(), 'dataflair_15min', 'dataflair_brands_sync_cron' );
+        } else {
+            // Detect wrong recurrence: fetch the cron array and verify the schedule name
+            $crons = _get_cron_array();
+            $correct = false;
+            foreach ( $crons as $timestamp => $hooks ) {
+                if ( isset( $hooks['dataflair_brands_sync_cron'] ) ) {
+                    foreach ( $hooks['dataflair_brands_sync_cron'] as $event ) {
+                        if ( isset( $event['schedule'] ) && $event['schedule'] === 'dataflair_15min' ) {
+                            $correct = true;
+                        }
+                    }
+                }
+            }
+            if ( ! $correct ) {
+                // Wrong schedule stored — clear and reschedule with the correct one
+                wp_clear_scheduled_hook( 'dataflair_brands_sync_cron' );
+                wp_schedule_event( time(), 'dataflair_15min', 'dataflair_brands_sync_cron' );
+            }
+        }
+    }
     
     /**
      * Add admin menu
@@ -365,6 +406,9 @@ class DataFlair_Toplists {
                 <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=logo-url'); ?>" class="button">Logo URL Structure Test</a>
                 <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=brand'); ?>" class="button">Brand Data Test</a>
                 <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=toplist'); ?>" class="button">Toplist Fetch Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=toplist-render'); ?>" class="button">Toplist Render Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=api-edge'); ?>" class="button">API Edge Cases Test</a>
+                <a href="<?php echo admin_url('admin.php?page=dataflair-tests&test=cron'); ?>" class="button">Cron Jobs Test</a>
             </div>
             
             <hr>
@@ -380,6 +424,12 @@ class DataFlair_Toplists {
                 include $tests_dir . 'test-brand-data.php';
             } elseif ($test_file === 'toplist') {
                 include $tests_dir . 'test-toplist-fetch.php';
+            } elseif ($test_file === 'toplist-render') {
+                include $tests_dir . 'test-toplist-render.php';
+            } elseif ($test_file === 'api-edge') {
+                include $tests_dir . 'test-api-edge-cases.php';
+            } elseif ($test_file === 'cron') {
+                include $tests_dir . 'test-cron.php';
             } else {
                 echo '<p>Invalid test selected.</p>';
             }
@@ -403,7 +453,11 @@ class DataFlair_Toplists {
         register_setting('dataflair_settings', 'dataflair_api_endpoints', $args);
         // API base URL - can be auto-detected or manually set
         register_setting('dataflair_settings', 'dataflair_api_base_url', $args);
-        
+
+        // HTTP Basic Auth for staging/protected environments
+        register_setting('dataflair_settings', 'dataflair_http_auth_user', $args);
+        register_setting('dataflair_settings', 'dataflair_http_auth_pass', $args);
+
         // Default customization settings
         register_setting('dataflair_settings', 'dataflair_ribbon_bg_color', $args);
         register_setting('dataflair_settings', 'dataflair_ribbon_text_color', $args);
@@ -433,17 +487,26 @@ class DataFlair_Toplists {
         if (isset($_POST['dataflair_api_base_url'])) {
             $base_url = trim($_POST['dataflair_api_base_url']);
             if (!empty($base_url)) {
-                // Ensure it ends with /api/v1 or similar
-                if (!preg_match('#/api/v\d+/?$#', $base_url)) {
-                    $base_url = rtrim($base_url, '/') . '/api/v1';
-                }
+                // Clean the URL: remove trailing slashes, sanitize
+                $base_url = rtrim(esc_url_raw($base_url), '/');
+                // Strip any path segments after /api/v1 (e.g. /api/v1/toplists → /api/v1)
+                $base_url = preg_replace('#(/api/v\d+)/.*$#', '$1', $base_url);
                 update_option('dataflair_api_base_url', $base_url);
+            } else {
+                // Empty = clear the stored value so auto-detect kicks in
+                delete_option('dataflair_api_base_url');
             }
         }
-        if (isset($_POST['dataflair_api_base_url'])) {
-            update_option('dataflair_api_base_url', esc_url_raw($_POST['dataflair_api_base_url']));
+
+        // Save HTTP Basic Auth credentials (for staging environments)
+        if (isset($_POST['dataflair_http_auth_user'])) {
+            update_option('dataflair_http_auth_user', sanitize_text_field($_POST['dataflair_http_auth_user']));
         }
-        
+        if (isset($_POST['dataflair_http_auth_pass'])) {
+            // Don't sanitize password — it may contain special characters
+            update_option('dataflair_http_auth_pass', trim($_POST['dataflair_http_auth_pass']));
+        }
+
         // Save customization settings
         if (isset($_POST['dataflair_ribbon_bg_color'])) {
             update_option('dataflair_ribbon_bg_color', sanitize_text_field($_POST['dataflair_ribbon_bg_color']));
@@ -601,13 +664,13 @@ class DataFlair_Toplists {
                         </td>
                     </tr>
                 </table>
-                
+
                 <?php submit_button('Save Settings', 'primary', 'submit', false, array('id' => 'dataflair-save-settings')); ?>
                 <span id="dataflair-save-message" style="margin-left: 10px;"></span>
                     </div>
-            
+
             <hr>
-            
+
             <h2>Sync Toplists</h2>
                     <button type="button" id="dataflair-fetch-all-toplists" class="button button-primary">
                         Fetch All Toplists from API
@@ -880,15 +943,49 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Check if a URL points to a local development domain (no SSL).
+     *
+     * @param string $url The URL to check
+     * @return bool True if local dev domain
+     */
+    private function is_local_url($url) {
+        $parsed = parse_url($url);
+        $host = isset($parsed['host']) ? $parsed['host'] : '';
+        return (
+            preg_match('/\.(test|local|localhost|invalid|example)$/i', $host) ||
+            $host === 'localhost' ||
+            $host === '127.0.0.1' ||
+            $host === '::1'
+        );
+    }
+
+    /**
+     * Force HTTPS on a URL unless it's a local dev domain.
+     * Production/staging servers redirect HTTP→HTTPS which strips Authorization headers.
+     *
+     * @param string $url The URL to upgrade
+     * @return string The URL, with https:// if non-local
+     */
+    private function maybe_force_https($url) {
+        if (!$this->is_local_url($url)) {
+            $url = preg_replace('#^http://#i', 'https://', $url);
+        }
+        return $url;
+    }
+
+    /**
      * Get API base URL - auto-detect from stored endpoints or use default
-     * 
+     *
      * @return string API base URL
      */
     private function get_api_base_url() {
         // First, try to get from stored option (manually set or auto-detected)
         $base_url = get_option('dataflair_api_base_url');
         if (!empty($base_url)) {
-            return rtrim($base_url, '/'); // Remove trailing slash if present
+            $base_url = $this->maybe_force_https($base_url);
+            // Safety: strip anything after /api/v1 (e.g. /api/v1/toplists → /api/v1)
+            $base_url = preg_replace('#(/api/v\d+)/.*$#', '$1', $base_url);
+            return rtrim($base_url, '/');
         }
         
         // Try to extract from stored endpoints
@@ -900,6 +997,7 @@ class DataFlair_Toplists {
                 // Extract base URL from endpoint (e.g., https://tenant.dataflair.ai/api/v1/toplists/3)
                 if (preg_match('#^(https?://[^/]+/api/v\d+)/#', $first_endpoint, $matches)) {
                     $base_url = $matches[1];
+                    $base_url = $this->maybe_force_https($base_url);
                     // Store it for future use
                     update_option('dataflair_api_base_url', $base_url);
                     return rtrim($base_url, '/');
@@ -910,7 +1008,195 @@ class DataFlair_Toplists {
         // Fallback to default
         return 'https://sigma.dataflair.ai/api/v1';
     }
-    
+
+    /**
+     * Make an authenticated API GET request, handling both Bearer token and HTTP Basic Auth.
+     *
+     * @param string $url    The API endpoint URL
+     * @param string $token  The Bearer token
+     * @param int    $timeout Timeout in seconds
+     * @return array|WP_Error The response
+     */
+    private function api_get($url, $token, $timeout = 30) {
+        // Force HTTPS on production/staging (skip for local .test/.local domains)
+        $url = $this->maybe_force_https($url);
+
+        $headers = array(
+            'Accept'        => 'application/json',
+            'Authorization' => 'Bearer ' . trim($token),
+        );
+
+        // Docker compatibility: when WordPress runs inside Docker (wp-env),
+        // .test/.local domains from the host machine can't be resolved inside the container.
+        // We swap the hostname to host.docker.internal (Docker's alias for the host machine)
+        // and send the original hostname as the Host header so Laravel's tenancy middleware
+        // can still resolve the correct tenant.
+        $parsed = parse_url($url);
+        $host = isset($parsed['host']) ? $parsed['host'] : '';
+
+        if ($this->is_local_url($url) && $this->is_running_in_docker()) {
+            $original_host = $host;
+            // Replace the .test/.local hostname with host.docker.internal
+            $url = str_replace($original_host, 'host.docker.internal', $url);
+            // Tell the server which vhost/tenant we want
+            $headers['Host'] = $original_host;
+            error_log('DataFlair api_get() Docker detected: rewrote ' . $original_host . ' → host.docker.internal');
+        }
+
+        // If HTTP Basic Auth is configured (e.g. staging behind .htpasswd),
+        // inject credentials into the URL so cURL sends them at the transport layer.
+        $http_user = trim(get_option('dataflair_http_auth_user', ''));
+        $http_pass = trim(get_option('dataflair_http_auth_pass', ''));
+
+        if (!empty($http_user) && !empty($http_pass)) {
+            $url = preg_replace('#^(https?://)#i', '$1' . urlencode($http_user) . ':' . urlencode($http_pass) . '@', $url);
+        }
+
+        error_log('DataFlair api_get() FINAL URL: ' . $url);
+        error_log('DataFlair api_get() Host header: ' . (isset($headers['Host']) ? $headers['Host'] : '(from URL)'));
+        error_log('DataFlair api_get() Token: ' . substr(trim($token), 0, 15) . '... (len=' . strlen(trim($token)) . ')');
+
+        return wp_remote_get($url, array(
+            'timeout' => $timeout,
+            'headers' => $headers,
+        ));
+    }
+
+    /**
+     * Detect if WordPress is running inside a Docker container.
+     *
+     * @return bool
+     */
+    private function is_running_in_docker() {
+        // Method 1: Check for .dockerenv file (most reliable)
+        if (file_exists('/.dockerenv')) {
+            return true;
+        }
+        // Method 2: Check cgroup (Linux containers)
+        if (is_readable('/proc/1/cgroup')) {
+            $cgroup = file_get_contents('/proc/1/cgroup');
+            if (strpos($cgroup, 'docker') !== false || strpos($cgroup, 'kubepods') !== false) {
+                return true;
+            }
+        }
+        // Method 3: Check if host.docker.internal resolves (Docker Desktop for Mac/Windows)
+        $resolved = gethostbyname('host.docker.internal');
+        if ($resolved !== 'host.docker.internal') {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Build a detailed, human-readable error message for failed API responses.
+     * Helps diagnose whether it's HTTP Basic Auth, Bearer token, server error, etc.
+     *
+     * @param int          $status_code     HTTP status code
+     * @param string       $body            Response body
+     * @param array|object $headers         Response headers
+     * @param string       $url             The requested URL
+     * @return string Detailed error message
+     */
+    private function build_detailed_api_error($status_code, $body, $headers, $url) {
+        $parsed = parse_url($url);
+        $host = isset($parsed['host']) ? $parsed['host'] : 'unknown';
+
+        // Try to decode JSON body for structured error info
+        $json = json_decode($body, true);
+        $api_message = '';
+        if (is_array($json) && isset($json['message'])) {
+            $api_message = $json['message'];
+        }
+
+        // Check for WWW-Authenticate header — tells us if it's HTTP Basic Auth or Bearer
+        $www_auth = '';
+        if (is_object($headers) && isset($headers['www-authenticate'])) {
+            $www_auth = $headers['www-authenticate'];
+        } elseif (is_array($headers) && isset($headers['www-authenticate'])) {
+            $www_auth = $headers['www-authenticate'];
+        }
+
+        // Check content-type to see if the response is HTML (web server error page) vs JSON (API error)
+        $content_type = '';
+        if (is_object($headers) && isset($headers['content-type'])) {
+            $content_type = $headers['content-type'];
+        } elseif (is_array($headers) && isset($headers['content-type'])) {
+            $content_type = $headers['content-type'];
+        }
+        $is_html_response = (stripos($content_type, 'text/html') !== false);
+
+        switch ($status_code) {
+            case 401:
+                // Distinguish between HTTP Basic Auth 401 and API Bearer 401
+                if (stripos($www_auth, 'Basic') !== false) {
+                    $has_http_auth = !empty(trim(get_option('dataflair_http_auth_user', '')));
+                    if ($has_http_auth) {
+                        return 'HTTP Basic Auth failed (401). Your staging username/password was rejected by the web server at ' . $host . '. '
+                             . 'Check that the HTTP Auth Username and Password in plugin settings match your .htpasswd or nginx auth_basic credentials. '
+                             . 'This is the web server blocking the request before it reaches the DataFlair API.';
+                    } else {
+                        return 'HTTP Basic Auth required (401). The server at ' . $host . ' requires HTTP Basic Authentication (e.g. .htpasswd). '
+                             . 'This is common on staging environments. Go to DataFlair plugin settings and fill in the "HTTP Auth Username" and "HTTP Auth Password" fields. '
+                             . 'These are your web server credentials — not your DataFlair API token.';
+                    }
+                } elseif (stripos($www_auth, 'Bearer') !== false || !empty($api_message)) {
+                    return 'API authentication failed (401). The DataFlair API rejected your Bearer token. '
+                         . 'API says: "' . ($api_message ?: 'Unauthenticated') . '". '
+                         . 'Possible causes: (1) Token is expired or revoked — generate a new one in DataFlair > Configuration > API Credentials. '
+                         . '(2) Token is an API Key (dfk_) instead of a Plugin Token (dfp_) — only dfp_ tokens work for this plugin. '
+                         . '(3) Token was copy-pasted with extra spaces or line breaks — re-copy it carefully. '
+                         . 'Token starts with: ' . substr(trim(get_option('dataflair_api_token', '')), 0, 10) . '...';
+                } elseif ($is_html_response) {
+                    return 'Authentication failed (401) — the server at ' . $host . ' returned an HTML page instead of a JSON API response. '
+                         . 'This usually means the web server itself (nginx/Apache) is blocking the request before it reaches the DataFlair API. '
+                         . 'Most likely cause: HTTP Basic Auth (.htpasswd) is enabled on staging. '
+                         . 'Go to plugin settings and fill in the "HTTP Auth Username" and "HTTP Auth Password" fields.';
+                } else {
+                    return 'Authentication failed (401) at ' . $host . '. '
+                         . 'Could not determine the specific cause. Response body: ' . substr($body, 0, 300) . '. '
+                         . 'Check: (1) Is staging behind HTTP Basic Auth? Add credentials in plugin settings. '
+                         . '(2) Is your dfp_ token valid and not expired? (3) Is the API Base URL correct?';
+                }
+
+            case 403:
+                return 'Access forbidden (403). The server accepted your credentials but your token does not have permission to access this resource. '
+                     . 'API says: "' . ($api_message ?: 'Forbidden') . '". '
+                     . 'Check that your API credential in DataFlair has the correct permissions and is marked as active.';
+
+            case 404:
+                return 'Endpoint not found (404) at ' . $url . '. '
+                     . 'This usually means the API Base URL is wrong or the route does not exist. '
+                     . 'Expected format: https://tenant.dataflair.ai/api/v1. '
+                     . 'Currently configured: ' . get_option('dataflair_api_base_url', '(not set)');
+
+            case 419:
+                return 'CSRF token mismatch (419). The API returned a Laravel session error. '
+                     . 'This should not happen for API routes. Check that the API Base URL points to /api/v1 routes, not web routes.';
+
+            case 429:
+                return 'Rate limited (429). Too many requests to the DataFlair API. '
+                     . 'API says: "' . ($api_message ?: 'Too Many Requests') . '". '
+                     . 'Wait a few minutes and try again, or check your API credential rate limit settings.';
+
+            case 500:
+                return 'Server error (500). The DataFlair API encountered an internal error. '
+                     . 'This is a server-side issue, not a plugin configuration problem. '
+                     . 'API says: "' . ($api_message ?: substr($body, 0, 200)) . '". '
+                     . 'Contact DataFlair support if this persists.';
+
+            case 502:
+            case 503:
+            case 504:
+                return 'Server unavailable (' . $status_code . '). The DataFlair API at ' . $host . ' is temporarily unavailable. '
+                     . 'This could be a deployment in progress, server overload, or infrastructure issue. Try again in a few minutes.';
+
+            default:
+                return 'Unexpected HTTP ' . $status_code . ' from ' . $host . '. '
+                     . ($api_message ? 'API says: "' . $api_message . '". ' : '')
+                     . 'Response body: ' . substr($body, 0, 300);
+        }
+    }
+
     /**
      * AJAX handler to fetch all toplists from API and sync them
      */
@@ -926,70 +1212,37 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
         
-        // Debug: Log token length (not the actual token for security)
-        error_log('DataFlair API Token length: ' . strlen($token) . ' characters');
-        
+        // Debug: Log token details (prefix only for security)
+        error_log('DataFlair DEBUG: Token length=' . strlen($token) . ', starts with=' . substr($token, 0, 15) . '...');
+
         // Get API base URL (auto-detected or manually set)
         $base_url = $this->get_api_base_url();
-        
-        // Fetch list of all toplists
-        // Add token as query parameter (as per README documentation)
-        // add_query_arg automatically URL-encodes the value
-        $list_url = add_query_arg('token', $token, $base_url . '/toplists');
-        
-        // Try query parameter only first (as per README)
-        $headers = array(
-            'Accept' => 'application/json'
-        );
-        
-        error_log('DataFlair API Request URL: ' . $list_url);
-        error_log('DataFlair API Request Headers: ' . print_r($headers, true));
-        
-        $response = wp_remote_get($list_url, array(
-            'timeout' => 30,
-            'headers' => $headers
-        ));
-        
+        $list_url = $base_url . '/toplists';
+
+        error_log('DataFlair DEBUG: Base URL from get_api_base_url()=' . $base_url);
+        error_log('DataFlair DEBUG: Full request URL=' . $list_url);
+        error_log('DataFlair DEBUG: Stored option dataflair_api_base_url=' . get_option('dataflair_api_base_url', '(not set)'));
+
+        $response = $this->api_get($list_url, $token);
+
         if (is_wp_error($response)) {
             $error_msg = 'Failed to fetch toplist list: ' . $response->get_error_message();
             error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
             wp_send_json_error(array('message' => $error_msg));
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
-        // If we get 401, try with Authorization header as well
-        if ($status_code === 401) {
-            error_log('DataFlair: Got 401 with query parameter, trying with Authorization header');
-            $headers_with_auth = array(
-                'Accept' => 'application/json',
-                'Authorization' => 'Bearer ' . $token
-            );
-            $response = wp_remote_get($list_url, array(
-                'timeout' => 30,
-                'headers' => $headers_with_auth
-            ));
-            
-            if (is_wp_error($response)) {
-                $error_msg = 'Failed to fetch toplist list: ' . $response->get_error_message();
-                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
-                wp_send_json_error(array('message' => $error_msg));
-            }
-            
-            $status_code = wp_remote_retrieve_response_code($response);
-            $body = wp_remote_retrieve_body($response);
-        }
-        
+        $response_headers = wp_remote_retrieve_headers($response);
+
         error_log('DataFlair /toplists API Response Code: ' . $status_code);
         error_log('DataFlair /toplists API Response Body (first 500 chars): ' . substr($body, 0, 500));
-        
+
         // Auto-detect and store base URL from successful response
         if ($status_code === 200) {
             $parsed_url = parse_url($list_url);
             if (isset($parsed_url['scheme']) && isset($parsed_url['host'])) {
                 $detected_base = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/api/v1';
-                // Only update if not already set or if different
                 $current_base = get_option('dataflair_api_base_url');
                 if (empty($current_base) || $current_base !== $detected_base) {
                     update_option('dataflair_api_base_url', $detected_base);
@@ -997,9 +1250,9 @@ class DataFlair_Toplists {
                 }
             }
         }
-        
+
         if ($status_code !== 200) {
-            $error_msg = 'API returned status ' . $status_code . '. Response: ' . substr($body, 0, 200);
+            $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
             error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
             wp_send_json_error(array('message' => $error_msg));
         }
@@ -1111,13 +1364,17 @@ class DataFlair_Toplists {
             }
         }
         
+        // Record sync time so the admin UI shows "Last sync: X ago" whether
+        // the sync was triggered by cron or manually via the admin panel.
+        update_option('dataflair_last_toplists_cron_run', time());
+
         return array(
             'success' => true,
             'synced' => $synced,
             'errors' => $errors
         );
     }
-    
+
     /**
      * Clear all DataFlair tracker transients
      * Called before syncing to expire old campaign mappings
@@ -2498,26 +2755,21 @@ class DataFlair_Toplists {
     private function sync_brands_page($page, $token) {
         $base_url = $this->get_api_base_url();
         $brands_url = $base_url . '/brands?page=' . $page;
-        
-        $response = wp_remote_get($brands_url, array(
-            'timeout' => 30,
-            'headers' => array(
-                'Accept' => 'application/json',
-                'Authorization' => 'Bearer ' . trim($token)
-            )
-        ));
-        
+
+        $response = $this->api_get($brands_url, $token);
+
         if (is_wp_error($response)) {
             $error_msg = 'Failed to fetch brands page ' . $page . ': ' . $response->get_error_message();
             error_log('DataFlair sync_brands_page error: ' . $error_msg);
             return array('success' => false, 'message' => $error_msg);
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
+        $response_headers = wp_remote_retrieve_headers($response);
+
         if ($status_code !== 200) {
-            $error_msg = 'API returned status ' . $status_code . ' for page ' . $page;
+            $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $brands_url);
             error_log('DataFlair sync_brands_page error: ' . $error_msg);
             return array('success' => false, 'message' => $error_msg);
         }
@@ -2710,26 +2962,21 @@ class DataFlair_Toplists {
         // Loop through all pages
         do {
             $brands_url = $base_url . '/brands?page=' . $current_page;
-            
-            $response = wp_remote_get($brands_url, array(
-                'timeout' => 30,
-                'headers' => array(
-                    'Accept' => 'application/json',
-                    'Authorization' => 'Bearer ' . trim($token)
-                )
-            ));
-            
+
+            $response = $this->api_get($brands_url, $token);
+
             if (is_wp_error($response)) {
                 $error_msg = 'Failed to fetch brands page ' . $current_page . ': ' . $response->get_error_message();
                 error_log('DataFlair fetch_all_brands error: ' . $error_msg);
                 return array('success' => false, 'message' => $error_msg);
             }
-            
+
             $status_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
-            
+            $response_headers = wp_remote_retrieve_headers($response);
+
             if ($status_code !== 200) {
-                $error_msg = 'API returned status ' . $status_code . ' for page ' . $current_page;
+                $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $brands_url);
                 error_log('DataFlair fetch_all_brands error: ' . $error_msg);
                 return array('success' => false, 'message' => $error_msg);
             }
@@ -2866,14 +3113,18 @@ class DataFlair_Toplists {
         } while ($current_page <= $last_page);
         
         error_log('DataFlair: Brands sync complete. Total synced: ' . $synced . ', Errors: ' . $errors);
-        
+
+        // Record sync time so the admin UI shows "Last sync: X ago" whether
+        // the sync was triggered by cron or manually via the admin panel.
+        update_option('dataflair_last_brands_cron_run', time());
+
         return array(
             'success' => true,
             'synced' => $synced,
             'errors' => $errors
         );
     }
-    
+
     /**
      * AJAX handler to get alternative toplists for a toplist
      */
@@ -3051,60 +3302,26 @@ class DataFlair_Toplists {
     private function fetch_and_store_toplist($endpoint, $token) {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        
-        // Trim token to ensure no whitespace issues
-        $token = trim($token);
-        
-        // Add token as query parameter (as per README documentation)
-        // add_query_arg automatically URL-encodes the value
-        $url = add_query_arg('token', $token, $endpoint);
-        
-        // Try query parameter only first (as per README)
-        $response = wp_remote_get($url, array(
-            'timeout' => 30,
-            'headers' => array(
-                'Accept' => 'application/json'
-            )
-        ));
-        
+
+        $response = $this->api_get($endpoint, $token);
+
         if (is_wp_error($response)) {
             $error_message = 'DataFlair API Error for ' . $endpoint . ': ' . $response->get_error_message();
             error_log($error_message);
             add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
             return false;
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
-        // If we get 401, try with Authorization header as well
-        if ($status_code === 401) {
-            error_log('DataFlair: Got 401 with query parameter for ' . $endpoint . ', trying with Authorization header');
-            $response = wp_remote_get($url, array(
-                'timeout' => 30,
-                'headers' => array(
-                    'Accept' => 'application/json',
-                    'Authorization' => 'Bearer ' . $token
-                )
-            ));
-            
-            if (is_wp_error($response)) {
-                $error_message = 'DataFlair API Error for ' . $endpoint . ': ' . $response->get_error_message();
-                error_log($error_message);
-                add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
-                return false;
-            }
-            
-            $status_code = wp_remote_retrieve_response_code($response);
-            $body = wp_remote_retrieve_body($response);
-        }
-        
+        $response_headers = wp_remote_retrieve_headers($response);
+
         // Log response for debugging
-        error_log('DataFlair API Response Code: ' . $status_code . ' for URL: ' . $url);
-        
+        error_log('DataFlair API Response Code: ' . $status_code . ' for endpoint: ' . $endpoint);
+
         if ($status_code !== 200) {
-            $error_message = 'DataFlair API returned status ' . $status_code . ' for ' . $endpoint . '. Response: ' . substr($body, 0, 200);
-            error_log($error_message);
+            $error_message = $this->build_detailed_api_error($status_code, $body, $response_headers, $endpoint);
+            error_log('DataFlair fetch_and_store_toplist error: ' . $error_message);
             add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
             return false;
         }
