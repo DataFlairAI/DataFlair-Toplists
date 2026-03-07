@@ -36,6 +36,10 @@
     "support": {
         "issues": "https://github.com/dataflair/toplists/issues",
         "source": "https://github.com/dataflair/toplists"
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true
+        }
     }
 }
-
