@@ -1,0 +1,361 @@
+{
+    "data": {
+        "type": "toplist",
+        "id": 42,
+        "name": "Best Brazil Casinos",
+        "status": "published",
+        "locked": false,
+        "version": "2026-03-01T12:00:00+00:00",
+        "slug": "brazil-casinos",
+        "currentPeriod": "2026-03",
+        "publishedAt": "2026-03-01T12:00:00+00:00",
+        "shortcode": "[dataflair_toplist id=\"42\"]",
+        "createdAt": "2025-01-01T00:00:00+00:00",
+        "updatedAt": "2026-03-01T12:00:00+00:00",
+        "template": {
+            "type": "listTemplate",
+            "id": 1,
+            "name": "Casino Standard",
+            "productTypeId": 1,
+            "productType": "Casino",
+            "listClassificationTypeId": 1,
+            "listClassificationType": "Best"
+        },
+        "site": {
+            "id": 1,
+            "domain": "example.com"
+        },
+        "geo": {
+            "geo_type": "country",
+            "name": "Brazil"
+        },
+        "items": [
+            {
+                "type": "topListItem",
+                "id": 101,
+                "position": 1,
+                "isLocked": true,
+                "dealId": "deal-abc-001",
+                "brand": {
+                    "type": "brand",
+                    "id": 201,
+                    "name": "Casino Alpha",
+                    "slug": "casino-alpha",
+                    "rating": 4.8,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-alpha-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-alpha-sq.png",
+                        "backgroundColor": "#1a1a2e"
+                    },
+                    "licenses": ["MGA", "UK Gambling Commission"],
+                    "paymentMethods": ["Visa", "Mastercard", "PayPal", "Pix"],
+                    "restrictedCountries": ["US", "FR"]
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 301,
+                    "name": "Welcome Package",
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "100% up to R$500 + 50 Free Spins",
+                    "currencies": ["BRL", "USD"],
+                    "has_free_spins": true,
+                    "bonus_wagering_requirement": 35,
+                    "bonus_expiry_date": "2026-12-31",
+                    "bonus_code": "WELCOME100",
+                    "minimum_deposit": 50,
+                    "max_payout": null,
+                    "max_bonus_amount": 500,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil", "Mexico"],
+                        "markets": ["LATAM"]
+                    },
+                    "trackers": [
+                        {
+                            "id": 401,
+                            "campaignName": "Brazil Main",
+                            "trackerLink": "https://track.example.com/go/casino-alpha-br",
+                            "tcLink": "https://casino-alpha.com/terms",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 102,
+                "position": 2,
+                "isLocked": true,
+                "dealId": "deal-abc-002",
+                "brand": {
+                    "type": "brand",
+                    "id": 202,
+                    "name": "Casino Beta",
+                    "slug": "casino-beta",
+                    "rating": 4.6,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-beta-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-beta-sq.png",
+                        "backgroundColor": "#16213e"
+                    },
+                    "licenses": ["Curacao"],
+                    "paymentMethods": ["Visa", "Bitcoin", "Pix"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 302,
+                    "name": "First Deposit Bonus",
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "200% up to R$1000",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 40,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 30,
+                    "max_payout": null,
+                    "max_bonus_amount": 1000,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil"],
+                        "markets": ["LATAM"]
+                    },
+                    "trackers": [
+                        {
+                            "id": 402,
+                            "campaignName": "Brazil Campaign",
+                            "trackerLink": "https://track.example.com/go/casino-beta-br",
+                            "tcLink": "https://casino-beta.com/tc",
+                            "pageType": "review",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": ["LATAM"]
+                            }
+                        },
+                        {
+                            "id": 403,
+                            "campaignName": "LATAM Campaign",
+                            "trackerLink": "https://track.example.com/go/casino-beta-latam",
+                            "tcLink": "https://casino-beta.com/tc",
+                            "pageType": "toplist",
+                            "geos": {
+                                "countries": [],
+                                "markets": ["LATAM"]
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 103,
+                "position": 3,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 203,
+                    "name": "Casino Gamma",
+                    "slug": "casino-gamma",
+                    "rating": 4.4,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-gamma-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-gamma-sq.png",
+                        "backgroundColor": "#0f3460"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa", "Mastercard"],
+                    "restrictedCountries": ["US"]
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 303,
+                    "name": "Standard Offer",
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "150% up to R$750",
+                    "currencies": ["BRL", "USD", "EUR"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 30,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 20,
+                    "max_payout": null,
+                    "max_bonus_amount": 750,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil", "Argentina", "Colombia"],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 404,
+                            "campaignName": "BR Standard",
+                            "trackerLink": "https://track.example.com/go/casino-gamma-br",
+                            "tcLink": "https://casino-gamma.com/terms-and-conditions",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil", "Argentina", "Colombia"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 104,
+                "position": 4,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 204,
+                    "name": "Casino Delta",
+                    "slug": "casino-delta",
+                    "rating": 4.2,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-delta-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-delta-sq.png",
+                        "backgroundColor": "#533483"
+                    },
+                    "licenses": ["Curacao", "Isle of Man"],
+                    "paymentMethods": ["Visa", "PayPal", "Pix", "Boleto"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 304,
+                    "name": "Delta Welcome",
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "50 Free Spins on First Deposit",
+                    "currencies": ["BRL"],
+                    "has_free_spins": true,
+                    "bonus_wagering_requirement": 45,
+                    "bonus_expiry_date": null,
+                    "bonus_code": "DELTA50",
+                    "minimum_deposit": 40,
+                    "max_payout": null,
+                    "max_bonus_amount": null,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": 50,
+                    "geos": {
+                        "countries": ["Brazil"],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 405,
+                            "campaignName": "Delta Brazil",
+                            "trackerLink": "https://track.example.com/go/casino-delta-br",
+                            "tcLink": "https://casino-delta.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 105,
+                "position": 5,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 205,
+                    "name": "Casino Epsilon",
+                    "slug": "casino-epsilon",
+                    "rating": 4.0,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-epsilon-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-epsilon-sq.png",
+                        "backgroundColor": "#2c3e50"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa", "Mastercard", "Pix"],
+                    "restrictedCountries": ["US", "UK"]
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 305,
+                    "name": "Epsilon Bonus",
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "100% up to R$300",
+                    "currencies": ["BRL", "USD"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 30,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 25,
+                    "max_payout": null,
+                    "max_bonus_amount": 300,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil", "Mexico", "Chile"],
+                        "markets": ["LATAM"]
+                    },
+                    "trackers": [
+                        {
+                            "id": 406,
+                            "campaignName": "Epsilon LATAM",
+                            "trackerLink": "https://track.example.com/go/casino-epsilon-latam",
+                            "tcLink": "https://casino-epsilon.com/terms",
+                            "pageType": "toplist",
+                            "geos": {
+                                "countries": ["Brazil", "Mexico", "Chile"],
+                                "markets": ["LATAM"]
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

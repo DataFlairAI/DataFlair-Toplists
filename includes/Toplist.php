@@ -335,10 +335,100 @@ class Toplist {
     
     /**
      * Get version
-     * 
+     *
      * @return string|null
      */
     public function getVersion() {
         return $this->getAttribute('version');
+    }
+
+    /**
+     * Get slug
+     *
+     * @return string|null
+     */
+    public function getSlug() {
+        return $this->getAttribute('slug');
+    }
+
+    /**
+     * Get current period (e.g. "2026-06")
+     *
+     * @return string|null
+     */
+    public function getCurrentPeriod() {
+        return $this->getAttribute('current_period');
+    }
+
+    /**
+     * Get published_at datetime string
+     *
+     * @return string|null
+     */
+    public function getPublishedAt() {
+        return $this->getAttribute('published_at');
+    }
+
+    /**
+     * Get item count (extracted at sync time)
+     *
+     * @return int
+     */
+    public function getItemCount() {
+        return (int) $this->getAttribute('item_count', 0);
+    }
+
+    /**
+     * Get locked item count (extracted at sync time)
+     *
+     * @return int
+     */
+    public function getLockedCount() {
+        return (int) $this->getAttribute('locked_count', 0);
+    }
+
+    /**
+     * Get decoded sync warnings array
+     *
+     * @return array
+     */
+    public function getSyncWarnings() {
+        $raw = $this->getAttribute('sync_warnings');
+        if (empty($raw)) {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Check if the last sync produced any warnings
+     *
+     * @return bool
+     */
+    public function hasSyncWarnings() {
+        return !empty($this->getSyncWarnings());
+    }
+
+    /**
+     * Find toplist by slug column
+     *
+     * @param string $slug
+     * @return Toplist|null
+     */
+    public static function findBySlug($slug) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . self::$table_name;
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE slug = %s LIMIT 1",
+            $slug
+        ), ARRAY_A);
+
+        if (!$row) {
+            return null;
+        }
+
+        return self::make($row);
     }
 }

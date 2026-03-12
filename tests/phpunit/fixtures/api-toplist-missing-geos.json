@@ -1,0 +1,342 @@
+{
+    "data": {
+        "type": "toplist",
+        "id": 43,
+        "name": "Missing Geos Toplist",
+        "status": "published",
+        "locked": false,
+        "version": "2026-03-01T12:00:00+00:00",
+        "slug": "missing-geos-test",
+        "currentPeriod": "2026-03",
+        "publishedAt": "2026-03-01T12:00:00+00:00",
+        "shortcode": "[dataflair_toplist id=\"43\"]",
+        "createdAt": "2025-01-01T00:00:00+00:00",
+        "updatedAt": "2026-03-01T12:00:00+00:00",
+        "template": {
+            "type": "listTemplate",
+            "id": 1,
+            "name": "Casino Standard",
+            "productTypeId": 1,
+            "productType": "Casino",
+            "listClassificationTypeId": 1,
+            "listClassificationType": "Best"
+        },
+        "site": {
+            "id": 1,
+            "domain": "example.com"
+        },
+        "geo": {
+            "geo_type": "country",
+            "name": "Brazil"
+        },
+        "items": [
+            {
+                "type": "topListItem",
+                "id": 201,
+                "position": 1,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 301,
+                    "name": "Casino Good",
+                    "slug": "casino-good",
+                    "rating": 4.5,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-good-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-good-sq.png",
+                        "backgroundColor": "#000000"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 401,
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "100% up to R$500",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 35,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 50,
+                    "max_payout": null,
+                    "max_bonus_amount": 500,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil"],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 501,
+                            "campaignName": "Good BR",
+                            "trackerLink": "https://track.example.com/go/casino-good-br",
+                            "tcLink": "https://casino-good.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 202,
+                "position": 2,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 302,
+                    "name": "Casino Good Two",
+                    "slug": "casino-good-two",
+                    "rating": 4.3,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-good-two-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-good-two-sq.png",
+                        "backgroundColor": "#111111"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 402,
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "200% up to R$1000",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 40,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 30,
+                    "max_payout": null,
+                    "max_bonus_amount": 1000,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil"],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 502,
+                            "campaignName": "Good Two BR",
+                            "trackerLink": "https://track.example.com/go/casino-good-two-br",
+                            "tcLink": "https://casino-good-two.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 203,
+                "position": 3,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 303,
+                    "name": "Casino No Geos",
+                    "slug": "casino-no-geos",
+                    "rating": 4.1,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-no-geos-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-no-geos-sq.png",
+                        "backgroundColor": "#222222"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 403,
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "No Geos Offer",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 35,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 20,
+                    "max_payout": null,
+                    "max_bonus_amount": 300,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": null,
+                    "trackers": [
+                        {
+                            "id": 503,
+                            "campaignName": "No Geos BR",
+                            "trackerLink": "https://track.example.com/go/casino-no-geos-br",
+                            "tcLink": "https://casino-no-geos.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 204,
+                "position": 4,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 304,
+                    "name": "Casino Good Three",
+                    "slug": "casino-good-three",
+                    "rating": 3.9,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-good-three-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-good-three-sq.png",
+                        "backgroundColor": "#333333"
+                    },
+                    "licenses": ["Curacao"],
+                    "paymentMethods": ["Visa"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 404,
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "75% up to R$200",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 30,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 20,
+                    "max_payout": null,
+                    "max_bonus_amount": 200,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": [],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 504,
+                            "campaignName": "Three BR",
+                            "trackerLink": "https://track.example.com/go/casino-good-three-br",
+                            "tcLink": "https://casino-good-three.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "topListItem",
+                "id": 205,
+                "position": 5,
+                "isLocked": false,
+                "dealId": null,
+                "brand": {
+                    "type": "brand",
+                    "id": 305,
+                    "name": "Casino Good Four",
+                    "slug": "casino-good-four",
+                    "rating": 3.8,
+                    "logo": {
+                        "rectangular": "https://cdn.example.com/logos/casino-good-four-rect.png",
+                        "square": "https://cdn.example.com/logos/casino-good-four-sq.png",
+                        "backgroundColor": "#444444"
+                    },
+                    "licenses": ["MGA"],
+                    "paymentMethods": ["Visa"],
+                    "restrictedCountries": []
+                },
+                "offer": {
+                    "type": "offer",
+                    "id": 405,
+                    "offerTypeId": 1,
+                    "offerTypeName": "Welcome Bonus",
+                    "offerText": "50% Cashback",
+                    "currencies": ["BRL"],
+                    "has_free_spins": false,
+                    "bonus_wagering_requirement": 25,
+                    "bonus_expiry_date": null,
+                    "bonus_code": null,
+                    "minimum_deposit": 15,
+                    "max_payout": null,
+                    "max_bonus_amount": 150,
+                    "is_sticky_bonus": false,
+                    "minimum_odds": null,
+                    "free_bet_value": null,
+                    "stake_returned": null,
+                    "bet_type": null,
+                    "tournament_ticket_value": null,
+                    "rakeback_percentage": null,
+                    "free_tickets": null,
+                    "geos": {
+                        "countries": ["Brazil"],
+                        "markets": []
+                    },
+                    "trackers": [
+                        {
+                            "id": 505,
+                            "campaignName": "Four BR",
+                            "trackerLink": "https://track.example.com/go/casino-good-four-br",
+                            "tcLink": "https://casino-good-four.com/tc",
+                            "pageType": "homepage",
+                            "geos": {
+                                "countries": ["Brazil"],
+                                "markets": []
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}
