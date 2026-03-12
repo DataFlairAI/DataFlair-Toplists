@@ -28,9 +28,6 @@ if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
-// Load plugin includes
-require_once DATAFLAIR_PLUGIN_DIR . 'includes/ProductTypeLabels.php';
-
 /**
  * Main DataFlair Plugin Class
  */
@@ -1560,7 +1557,13 @@ class DataFlair_Toplists {
         
         // Clear old tracker transients before syncing new data
         $this->clear_tracker_transients();
-        
+
+        // Purge all existing toplists so stale records from a previous API key
+        // (or removed toplists) are not left behind after a full sync.
+        global $wpdb;
+        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+        $wpdb->query("TRUNCATE TABLE {$table_name}");
+
         $endpoints_array = array_filter(array_map('trim', explode("\n", $endpoints)));
         $synced = 0;
         $errors = 0;
@@ -2812,7 +2815,15 @@ class DataFlair_Toplists {
         
         // Get the page number from request
         $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
-        
+
+        // On the first page of a full sync, purge all existing brand records so
+        // stale brands from a previous API key are not left behind.
+        if ($page === 1) {
+            global $wpdb;
+            $brands_table = $wpdb->prefix . 'dataflair_brands';
+            $wpdb->query("TRUNCATE TABLE {$brands_table}");
+        }
+
         // Sync one page of brands (15 brands per page)
         $result = $this->sync_brands_page($page, $token);
         
@@ -3742,12 +3753,7 @@ class DataFlair_Toplists {
         $is_stale = (time() - $last_synced) > (3 * 24 * 60 * 60);
         
         $items = $data['data']['items'];
-
-        // Extract product type from template metadata (defaults to Casino)
-        $product_type = !empty($data['data']['template']['productType'])
-            ? $data['data']['template']['productType']
-            : 'Casino';
-
+        
         // Apply limit
         if ($atts['limit'] > 0) {
             $items = array_slice($items, 0, $atts['limit']);
@@ -3774,8 +3780,8 @@ class DataFlair_Toplists {
             <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
             <?php endif; ?>
             
-                        <?php foreach ($items as $item):
-                echo $this->render_casino_card($item, $atts['id'], $customizations, $pros_cons_data, $product_type);
+                        <?php foreach ($items as $item): 
+                echo $this->render_casino_card($item, $atts['id'], $customizations, $pros_cons_data);
             endforeach; ?>
         </div>
         <?php
@@ -3790,7 +3796,7 @@ class DataFlair_Toplists {
      * @param array $item Full toplist item data
      * @return int|false Post ID of review, or false on failure
      */
-    private function get_or_create_review_post($brand, $item, $product_type = 'Casino') {
+    private function get_or_create_review_post($brand, $item) {
         // Check if review post type exists
         if (!post_type_exists('review')) {
             error_log('DataFlair: Review post type not registered');
@@ -3861,8 +3867,7 @@ class DataFlair_Toplists {
             $licenses = is_array($brand['licenses']) ? $brand['licenses'] : explode(',', $brand['licenses']);
         }
         update_post_meta($review_id, '_review_licenses', implode(', ', $licenses));
-        update_post_meta($review_id, '_review_product_type', $product_type);
-
+        
         error_log('DataFlair: Auto-created draft review post #' . $review_id . ' for ' . $brand_name);
         
         return $review_id;
@@ -3872,7 +3877,7 @@ class DataFlair_Toplists {
      * Render individual casino card
      * Uses the new structured template for better layout
      */
-    private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array(), $product_type = 'Casino') {
+    private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array()) {
         // Check if new template exists
         $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
         
@@ -3923,7 +3928,7 @@ class DataFlair_Toplists {
                 }
             }
             
-            $review_id = $this->get_or_create_review_post($brand, $item, $product_type);
+            $review_id = $this->get_or_create_review_post($brand, $item);
             
             if ($review_id) {
                 // Get permalink - works for both published and draft posts
@@ -3949,9 +3954,6 @@ class DataFlair_Toplists {
             // Update item with processed brand data (including local_logo)
             $item['brand'] = $brand;
             
-            // Resolve labels for this product type
-            $labels = ProductTypeLabels::getLabels($product_type);
-
             // Use new template
             ob_start();
             include $template_path;
@@ -3959,8 +3961,6 @@ class DataFlair_Toplists {
         }
         
         // Fallback to original rendering (legacy support)
-        $labels = ProductTypeLabels::getLabels($product_type);
-
         // Get customization values with defaults
         $ribbon_bg = !empty($customizations['ribbonBgColor']) ? $customizations['ribbonBgColor'] : 'brand-600';
         $ribbon_text_color = !empty($customizations['ribbonTextColor']) ? $customizations['ribbonTextColor'] : 'white';
@@ -4160,7 +4160,7 @@ class DataFlair_Toplists {
                             class="<?php echo esc_attr($bonus_label); ?> text-sm leading-5.5"
                             data-gtm-element="bonus-label"
                         >
-                            <?php echo esc_html($labels['offer_text_label']); ?>:
+                            Welcome bonus:
                         </span>
                         <div>
                             <a
@@ -4281,7 +4281,7 @@ class DataFlair_Toplists {
                                             data-gtm-metric="bonus-wagering"
                                             data-gtm-value="<?php echo esc_attr($bonus_wagering); ?>x-bonus"
                                         >
-                                            <?php echo esc_html($labels['bonus_wagering_label']); ?>
+                                            Bonus Wagering
                                             <div>
                                                 <span class="geot-element <?php echo esc_attr($metric_value); ?>">
                                                     <?php echo esc_html($bonus_wagering); ?>x bonus
@@ -4296,7 +4296,7 @@ class DataFlair_Toplists {
                                             data-gtm-metric="payout-time"
                                             data-gtm-value="<?php echo esc_attr($payout_time); ?>"
                                         >
-                                            <?php echo esc_html($labels['payout_time_label']); ?>
+                                            Payout Time
                                             <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($payout_time); ?></span>
                                         </div>
                                     <?php endif; ?>
@@ -4312,7 +4312,7 @@ class DataFlair_Toplists {
                                     data-gtm-metric="bonus-wagering"
                                     data-gtm-value="<?php echo esc_attr($bonus_wagering); ?>x-bonus"
                                 >
-                                    <?php echo esc_html($labels['bonus_wagering_label']); ?>
+                                    Bonus Wagering
                                     <div>
                                         <span class="geot-element <?php echo esc_attr($metric_value); ?>">
                                             <?php echo esc_html($bonus_wagering); ?>x bonus
@@ -4328,7 +4328,7 @@ class DataFlair_Toplists {
                                     data-gtm-metric="min-deposit"
                                     data-gtm-value="<?php echo esc_attr($min_deposit); ?>"
                                 >
-                                    <?php echo esc_html($labels['min_deposit_label']); ?>
+                                    Min Deposit
                                     <div>
                                         <span class="geot-element <?php echo esc_attr($metric_value); ?>">
                                             <?php echo esc_html($min_deposit); ?>
@@ -4337,14 +4337,14 @@ class DataFlair_Toplists {
                                 </div>
                             <?php endif; ?>
 
-                            <?php if (!empty($games_count) && ProductTypeLabels::isFieldVisible($product_type, 'games_count')): ?>
+                            <?php if (!empty($games_count)): ?>
                                 <div
                                     class="flex flex-col tablet:w-1/2 desktop:w-full text-base <?php echo esc_attr($metric_label); ?>"
                                     data-gtm-element="metric"
                                     data-gtm-metric="casino-games"
                                     data-gtm-value="<?php echo esc_attr($games_count); ?>"
                                 >
-                                    <?php echo esc_html($labels['games_count_label']); ?>
+                                    Casino Games
                                     <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($games_count); ?></span>
                                 </div>
                             <?php endif; ?>
@@ -4357,7 +4357,7 @@ class DataFlair_Toplists {
                                         data-gtm-metric="payout-time"
                                         data-gtm-value="<?php echo esc_attr($payout_time); ?>"
                                     >
-                                        <?php echo esc_html($labels['payout_time_label']); ?>
+                                        Payout Time
                                         <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($payout_time); ?></span>
                                     </div>
                                 </div>
@@ -4370,7 +4370,7 @@ class DataFlair_Toplists {
                                     data-gtm-metric="max-payout"
                                     data-gtm-value="<?php echo esc_attr($max_payout); ?>"
                                 >
-                                    <?php echo esc_html($labels['max_payout_label']); ?>
+                                    Max Payout
                                     <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($max_payout); ?></span>
                                 </div>
                             <?php endif; ?>
@@ -4382,7 +4382,7 @@ class DataFlair_Toplists {
                                     data-gtm-metric="licences"
                                     data-gtm-value="<?php echo esc_attr(strtolower(str_replace(' ', '-', $licenses))); ?>"
                                 >
-                                    <?php echo esc_html($labels['licences_label']); ?>
+                                    Licences
                                     <span class="<?php echo esc_attr($metric_value); ?>"><?php echo $licenses; ?></span>
                                 </div>
                             <?php endif; ?>
