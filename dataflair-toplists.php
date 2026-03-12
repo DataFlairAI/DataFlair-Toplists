@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.4.1
+ * Version: 1.5.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.4.1');
+define('DATAFLAIR_VERSION', '1.5.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -65,6 +65,7 @@ class DataFlair_Toplists {
         add_action('wp_ajax_dataflair_save_alternative_toplist', array($this, 'ajax_save_alternative_toplist'));
         add_action('wp_ajax_dataflair_delete_alternative_toplist', array($this, 'ajax_delete_alternative_toplist'));
         add_action('wp_ajax_dataflair_get_available_geos', array($this, 'ajax_get_available_geos'));
+        add_action('wp_ajax_dataflair_api_preview', array($this, 'ajax_api_preview'));
         
         // Shortcode
         add_shortcode('dataflair_toplist', array($this, 'toplist_shortcode'));
@@ -184,13 +185,13 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.2'; // Updated version with alternative toplists table
-        
+        $current_version = '1.5'; // Updated version with snapshot + integrity columns
+
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
             update_option('dataflair_db_version', $current_version);
         }
-        
+
         // Migrate to JSON type if supported
         $this->migrate_to_json_type();
     }
@@ -200,17 +201,49 @@ class DataFlair_Toplists {
      */
     private function upgrade_database() {
         global $wpdb;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        $alternative_toplists_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        $charset_collate = $wpdb->get_charset_collate();
-        
-        // Check if brands table exists
-        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
-        
-        if ($table_exists) {
-            // Check if new columns exist
+        $table_name             = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+        $brands_table_name      = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+        $charset_collate        = $wpdb->get_charset_collate();
+
+        // ── Toplists table: add snapshot + integrity columns (v1.5) ──
+        $tl_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        if ($tl_table_exists) {
+            $tl_columns = $wpdb->get_col("DESCRIBE $table_name");
+
+            if (!in_array('slug', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN slug VARCHAR(255) DEFAULT NULL AFTER name");
+            }
+            if (!in_array('current_period', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN current_period VARCHAR(7) DEFAULT NULL AFTER slug");
+            }
+            if (!in_array('published_at', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN published_at DATETIME DEFAULT NULL AFTER current_period");
+            }
+            if (!in_array('item_count', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN item_count INT DEFAULT 0 AFTER published_at");
+            }
+            if (!in_array('locked_count', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN locked_count INT DEFAULT 0 AFTER item_count");
+            }
+            if (!in_array('sync_warnings', $tl_columns)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN sync_warnings TEXT DEFAULT NULL AFTER locked_count");
+            }
+
+            // Add slug index if it doesn't already exist
+            $idx = $wpdb->get_results("SHOW INDEX FROM $table_name WHERE Key_name = 'idx_slug'");
+            if (empty($idx)) {
+                $wpdb->query("CREATE INDEX idx_slug ON $table_name (slug)");
+            }
+
+            error_log('DataFlair: Toplists table upgraded to v1.5 (snapshot + integrity columns)');
+        }
+
+        // ── Brands table: add columns if missing (v1.2 compat) ──
+        $brands_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
+
+        if ($brands_table_exists) {
             $columns = $wpdb->get_col("DESCRIBE $brands_table_name");
-            
+
             if (!in_array('product_types', $columns)) {
                 $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN product_types text AFTER status");
             }
@@ -226,8 +259,8 @@ class DataFlair_Toplists {
             if (!in_array('trackers_count', $columns)) {
                 $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN trackers_count int(11) DEFAULT 0 AFTER offers_count");
             }
-            
-            error_log('DataFlair: Database schema upgraded to version 1.2');
+
+            error_log('DataFlair: Database schema upgraded to version 1.5');
         } else {
             // Table doesn't exist, create it with full schema
             $brands_sql = "CREATE TABLE IF NOT EXISTS $brands_table_name (
@@ -246,13 +279,13 @@ class DataFlair_Toplists {
                 PRIMARY KEY (id),
                 UNIQUE KEY api_brand_id (api_brand_id)
             ) $charset_collate;";
-            
+
             require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
             dbDelta($brands_sql);
-            
+
             error_log('DataFlair: Brands table created with full schema');
         }
-        
+
         // Check if alternative toplists table exists, create if not
         $this->ensure_alternative_toplists_table();
     }
@@ -604,6 +637,9 @@ class DataFlair_Toplists {
                 <a href="?page=dataflair-toplists&tab=customizations" class="nav-tab <?php echo $current_tab === 'customizations' ? 'nav-tab-active' : ''; ?>">
                     Customizations
                 </a>
+                <a href="?page=dataflair-toplists&tab=api_preview" class="nav-tab <?php echo $current_tab === 'api_preview' ? 'nav-tab-active' : ''; ?>">
+                    API Preview
+                </a>
             </nav>
             
             <form id="dataflair-settings-form">
@@ -722,13 +758,17 @@ class DataFlair_Toplists {
                             <th>WP ID</th>
                             <th>API ID</th>
                             <th>Name</th>
+                            <th>Slug</th>
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="template">Template <span class="toplist-sort-indicator"></span></a>
                             </th>
+                            <th>Period</th>
                             <th>Version</th>
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="items">Items <span class="toplist-sort-indicator"></span></a>
                             </th>
+                            <th>Locked</th>
+                            <th>Sync Health</th>
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="last_synced">Last Synced <span class="toplist-sort-indicator"></span></a>
                             </th>
@@ -738,8 +778,26 @@ class DataFlair_Toplists {
                     <tbody>
                         <?php foreach ($toplists as $toplist):
                             $data = json_decode($toplist->data, true);
-                            $items_count = isset($data['data']['items']) ? count($data['data']['items']) : 0;
                             $template_name = isset($data['data']['template']['name']) ? $data['data']['template']['name'] : '';
+
+                            // Prefer extracted columns; fall back to decoding JSON (for rows synced before v1.5)
+                            $items_count  = isset($toplist->item_count)   ? (int) $toplist->item_count   : (isset($data['data']['items']) ? count($data['data']['items']) : 0);
+                            $locked_count = isset($toplist->locked_count) ? (int) $toplist->locked_count : 0;
+
+                            // Sync health
+                            $sync_warnings_raw  = isset($toplist->sync_warnings) ? $toplist->sync_warnings : null;
+                            $sync_warnings_arr  = (!empty($sync_warnings_raw)) ? json_decode($sync_warnings_raw, true) : [];
+                            $warning_count      = is_array($sync_warnings_arr) ? count($sync_warnings_arr) : 0;
+                            $last_synced_ts     = $toplist->last_synced ? strtotime($toplist->last_synced) : 0;
+                            $is_stale           = $last_synced_ts && (time() - $last_synced_ts) > 3600;
+
+                            if ($is_stale) {
+                                $health_html = '<span style="color:#d63638;" title="Last sync was over 1 hour ago">&#128308; Stale</span>';
+                            } elseif ($warning_count > 0) {
+                                $health_html = '<a href="#" class="toplist-warnings-toggle" data-toplist-id="' . esc_attr($toplist->id) . '" style="color:#dba617; text-decoration:none;" title="Click to view warnings">&#9888;&#65039; ' . $warning_count . ' warning' . ($warning_count !== 1 ? 's' : '') . '</a>';
+                            } else {
+                                $health_html = '<span style="color:#00a32a;" title="All data validated OK">&#9989;</span>';
+                            }
                         ?>
                         <tr class="toplist-row"
                             data-toplist-id="<?php echo esc_attr($toplist->id); ?>"
@@ -754,16 +812,34 @@ class DataFlair_Toplists {
                             <td><?php echo esc_html($toplist->id); ?></td>
                             <td><?php echo esc_html($toplist->api_toplist_id); ?></td>
                             <td><?php echo esc_html($toplist->name); ?></td>
-                            <td><?php echo esc_html(isset($data['data']['template']['name']) ? $data['data']['template']['name'] : '—'); ?></td>
+                            <td><?php echo isset($toplist->slug) && !empty($toplist->slug) ? '<code>' . esc_html($toplist->slug) . '</code>' : '<span style="color:#999;">—</span>'; ?></td>
+                            <td><?php echo esc_html($template_name ?: '—'); ?></td>
+                            <td><?php echo isset($toplist->current_period) && !empty($toplist->current_period) ? esc_html($toplist->current_period) : '<span style="color:#999;">—</span>'; ?></td>
                             <td><?php echo esc_html($toplist->version); ?></td>
                             <td><?php echo esc_html($items_count); ?></td>
+                            <td><?php echo esc_html($locked_count); ?></td>
+                            <td><?php echo $health_html; ?></td>
                             <td><?php echo esc_html($toplist->last_synced); ?></td>
                             <td>
                                 <code>[dataflair_toplist id="<?php echo esc_attr($toplist->api_toplist_id); ?>"]</code>
                             </td>
                         </tr>
+                        <?php if ($warning_count > 0): ?>
+                        <tr class="toplist-warnings-row" id="warnings-<?php echo esc_attr($toplist->id); ?>" style="display:none;">
+                            <td colspan="13" style="padding: 0;">
+                                <div style="padding: 12px 20px; background: #fff8e5; border-left: 4px solid #dba617;">
+                                    <strong style="color:#dba617;">&#9888;&#65039; Sync warnings for <?php echo esc_html($toplist->name); ?>:</strong>
+                                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                                        <?php foreach ($sync_warnings_arr as $w): ?>
+                                        <li style="font-family: monospace; font-size: 12px; margin: 2px 0;"><?php echo esc_html($w); ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endif; ?>
                         <tr class="toplist-accordion-content" data-toplist-id="<?php echo esc_attr($toplist->id); ?>" style="display: none;">
-                            <td colspan="9" style="padding: 0;">
+                            <td colspan="13" style="padding: 0;">
                                 <div class="toplist-accordion-inner" style="padding: 20px; background: #f9f9f9; border-left: 4px solid #0073aa;">
                                     <h3 style="margin-top: 0;">Alternative Toplists for Different Geos</h3>
                                     <p class="description">Set alternative toplists to show when a user from a specific geo visits a page where this toplist is displayed.</p>
@@ -815,11 +891,23 @@ class DataFlair_Toplists {
             <h2>Shortcode Usage</h2>
             <p>Use the shortcode with these parameters:</p>
             <ul>
-                <li><strong>id</strong> (required): API toplist ID</li>
+                <li><strong>id</strong> (required unless <em>slug</em> is used): API toplist ID</li>
+                <li><strong>slug</strong> (optional): Toplist slug (alternative to id)</li>
                 <li><strong>title</strong> (optional): Custom title for the toplist</li>
                 <li><strong>limit</strong> (optional): Number of casinos to show (default: all)</li>
             </ul>
-            <p>Example: <code>[dataflair_toplist id="3" title="Best UK Casinos" limit="5"]</code></p>
+            <p>By ID: <code>[dataflair_toplist id="3" title="Best UK Casinos" limit="5"]</code></p>
+            <p>By slug: <code>[dataflair_toplist slug="brazil-casinos"]</code></p>
+
+            <script>
+            jQuery(document).ready(function($) {
+                $(document).on('click', '.toplist-warnings-toggle', function(e) {
+                    e.preventDefault();
+                    var id = $(this).data('toplist-id');
+                    $('#warnings-' + id).toggle();
+                });
+            });
+            </script>
                     
                 <?php elseif ($current_tab === 'customizations'): ?>
                     <!-- Customizations Tab -->
@@ -889,9 +977,128 @@ class DataFlair_Toplists {
                         <?php submit_button('Save Settings', 'primary', 'submit', false, array('id' => 'dataflair-save-settings-custom')); ?>
                         <span id="dataflair-save-message-custom" style="margin-left: 10px;"></span>
                     </div>
+                <?php elseif ($current_tab === 'api_preview'): ?>
+                    <!-- API Preview Tab -->
+                    <div class="tab-content">
+                        <h2>API Response Preview</h2>
+                        <p class="description">Fetch a live response from the DataFlair API using your stored token. Select an endpoint and click <strong>Fetch Preview</strong> to inspect the raw JSON.</p>
+
+                        <?php
+                        $token = trim(get_option('dataflair_api_token', ''));
+                        $base_url = $this->get_api_base_url();
+                        if (empty($token)): ?>
+                            <div class="notice notice-warning inline"><p>No API token configured. Set your token on the <a href="?page=dataflair-toplists&tab=api">API Settings</a> tab first.</p></div>
+                        <?php else: ?>
+                        <table class="form-table">
+                            <tr>
+                                <th scope="row"><label for="df-preview-endpoint">Endpoint</label></th>
+                                <td>
+                                    <select id="df-preview-endpoint" style="min-width:320px;">
+                                        <option value="toplists">GET /toplists (list all)</option>
+                                        <option value="toplists/custom">GET /toplists/{id} (single — enter ID below)</option>
+                                        <option value="brands">GET /brands (list all)</option>
+                                        <option value="brands/custom">GET /brands/{id} (single — enter ID below)</option>
+                                    </select>
+                                </td>
+                            </tr>
+                            <tr id="df-preview-id-row" style="display:none;">
+                                <th scope="row"><label for="df-preview-id">Resource ID</label></th>
+                                <td><input type="number" id="df-preview-id" class="small-text" placeholder="42"></td>
+                            </tr>
+                            <tr>
+                                <th scope="row"></th>
+                                <td>
+                                    <button type="button" id="df-preview-fetch" class="button button-primary">Fetch Preview</button>
+                                    <span id="df-preview-status" style="margin-left:10px;"></span>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <div id="df-preview-result" style="display:none;margin-top:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                <strong id="df-preview-url-label" style="font-family:monospace;font-size:12px;color:#666;"></strong>
+                                <button type="button" id="df-preview-copy" class="button button-secondary button-small">Copy JSON</button>
+                            </div>
+                            <pre id="df-preview-json" style="
+                                background:#1e1e1e;
+                                color:#d4d4d4;
+                                padding:16px;
+                                border-radius:4px;
+                                max-height:600px;
+                                overflow:auto;
+                                font-size:12px;
+                                line-height:1.5;
+                                white-space:pre-wrap;
+                                word-break:break-all;
+                            "></pre>
+                        </div>
+
+                        <script>
+                        (function($){
+                            var nonce = '<?php echo wp_create_nonce('dataflair_api_preview'); ?>';
+                            var $endpoint = $('#df-preview-endpoint');
+                            var $idRow    = $('#df-preview-id-row');
+                            var $idInput  = $('#df-preview-id');
+                            var $fetch    = $('#df-preview-fetch');
+                            var $status   = $('#df-preview-status');
+                            var $result   = $('#df-preview-result');
+                            var $json     = $('#df-preview-json');
+                            var $urlLabel = $('#df-preview-url-label');
+                            var $copy     = $('#df-preview-copy');
+
+                            $endpoint.on('change', function(){
+                                var v = $(this).val();
+                                $idRow.toggle(v === 'toplists/custom' || v === 'brands/custom');
+                            });
+
+                            $fetch.on('click', function(){
+                                var ep = $endpoint.val();
+                                var resourceId = $idInput.val().trim();
+
+                                if ((ep === 'toplists/custom' || ep === 'brands/custom') && !resourceId) {
+                                    alert('Please enter a resource ID.');
+                                    return;
+                                }
+
+                                $fetch.prop('disabled', true);
+                                $status.text('Fetching…');
+                                $result.hide();
+
+                                $.post(ajaxurl, {
+                                    action:      'dataflair_api_preview',
+                                    _ajax_nonce: nonce,
+                                    endpoint:    ep,
+                                    resource_id: resourceId
+                                }, function(res){
+                                    $fetch.prop('disabled', false);
+                                    if (res.success) {
+                                        $status.css('color','green').text('✔ ' + res.data.status);
+                                        $urlLabel.text(res.data.url);
+                                        $json.text(res.data.body);
+                                        $result.show();
+                                    } else {
+                                        $status.css('color','red').text('✖ ' + (res.data || 'Unknown error'));
+                                    }
+                                }).fail(function(){
+                                    $fetch.prop('disabled', false);
+                                    $status.css('color','red').text('✖ AJAX request failed');
+                                });
+                            });
+
+                            $copy.on('click', function(){
+                                var text = $json.text();
+                                navigator.clipboard.writeText(text).then(function(){
+                                    $copy.text('Copied!');
+                                    setTimeout(function(){ $copy.text('Copy JSON'); }, 2000);
+                                });
+                            });
+                        })(jQuery);
+                        </script>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
             </form>
-            
+
             <style>
                 /* Toplist Accordion Styles */
                 .dataflair-toplists-table th.sortable-toplist { padding: 0; }
@@ -2851,6 +3058,18 @@ class DataFlair_Toplists {
                 $top_geos_arr = array_merge($top_geos_arr, $brand_data['topGeos']['markets']);
             }
             $top_geos = implode(', ', $top_geos_arr);
+
+            // ⚠️ Warn if brand has offers but no topGeos — likely an API data issue
+            $brand_offers_count = isset($brand_data['offersCount']) ? intval($brand_data['offersCount'])
+                : (isset($brand_data['offers']) && is_array($brand_data['offers']) ? count($brand_data['offers']) : 0);
+            if (empty($top_geos_arr) && $brand_offers_count > 0) {
+                error_log(sprintf(
+                    '[DataFlair Sync] Brand #%d (%s): has %d offer(s) but no topGeos — check DataFlair admin',
+                    $api_brand_id,
+                    $brand_name,
+                    $brand_offers_count
+                ));
+            }
             
             // Count offers
             $offers_count = isset($brand_data['offers']) && is_array($brand_data['offers']) 
@@ -3295,7 +3514,71 @@ class DataFlair_Toplists {
         
         wp_send_json_success(array('geos' => $all_geos));
     }
-    
+
+    /**
+     * AJAX: Fetch a live API response for the admin preview tab.
+     * Uses the stored token and base URL — no credentials are returned to the browser.
+     */
+    public function ajax_api_preview() {
+        check_ajax_referer('dataflair_api_preview', '_ajax_nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $token = trim(get_option('dataflair_api_token', ''));
+        if (empty($token)) {
+            wp_send_json_error('No API token configured.');
+        }
+
+        $endpoint_key = isset($_POST['endpoint']) ? sanitize_text_field($_POST['endpoint']) : '';
+        $resource_id  = isset($_POST['resource_id']) ? absint($_POST['resource_id']) : 0;
+
+        $base_url = rtrim($this->get_api_base_url(), '/');
+
+        switch ($endpoint_key) {
+            case 'toplists':
+                $url = $base_url . '/toplists';
+                break;
+            case 'toplists/custom':
+                if (!$resource_id) {
+                    wp_send_json_error('Resource ID required for single toplist.');
+                }
+                $url = $base_url . '/toplists/' . $resource_id;
+                break;
+            case 'brands':
+                $url = $base_url . '/brands';
+                break;
+            case 'brands/custom':
+                if (!$resource_id) {
+                    wp_send_json_error('Resource ID required for single brand.');
+                }
+                $url = $base_url . '/brands/' . $resource_id;
+                break;
+            default:
+                wp_send_json_error('Unknown endpoint.');
+        }
+
+        $response = $this->api_get($url, $token);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error($response->get_error_message());
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $raw_body    = wp_remote_retrieve_body($response);
+
+        // Pretty-print JSON if possible
+        $decoded = json_decode($raw_body, true);
+        $pretty  = ($decoded !== null) ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $raw_body;
+
+        wp_send_json_success(array(
+            'url'    => $url,
+            'status' => $status_code . ' ' . get_status_header_desc($status_code),
+            'body'   => $pretty,
+        ));
+    }
+
     /**
      * Fetch and store single toplist
      */
@@ -3312,8 +3595,8 @@ class DataFlair_Toplists {
             return false;
         }
 
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
+        $status_code     = wp_remote_retrieve_response_code($response);
+        $body            = wp_remote_retrieve_body($response);
         $response_headers = wp_remote_retrieve_headers($response);
 
         // Log response for debugging
@@ -3325,60 +3608,81 @@ class DataFlair_Toplists {
             add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
             return false;
         }
-        
-        $data = json_decode($body, true);
-        
+
+        $response_data = json_decode($body, true);
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             $error_message = 'DataFlair JSON Parse Error: ' . json_last_error_msg() . ' for ' . $endpoint;
             error_log($error_message);
             add_settings_error('dataflair_messages', 'dataflair_json_error', $error_message, 'error');
             return false;
         }
-        
-        if (!isset($data['data']['id'])) {
+
+        if (!isset($response_data['data']['id'])) {
             $error_message = 'DataFlair API Error: Invalid response format for ' . $endpoint . '. Response: ' . substr($body, 0, 300);
             error_log($error_message);
             add_settings_error('dataflair_messages', 'dataflair_format_error', $error_message, 'error');
             return false;
         }
-        
-        $api_id = $data['data']['id'];
-        $name = $data['data']['name'];
-        $version = $data['data']['version'];
-        
-        // Insert or update
+
+        $toplist_data = $response_data['data'];
+
+        // ── Run data integrity validation ──
+        require_once DATAFLAIR_PLUGIN_DIR . 'includes/DataIntegrityChecker.php';
+        $integrity = DataFlair_DataIntegrityChecker::validate($toplist_data);
+
+        // Log warnings to PHP error log for monitoring (first 5 only to avoid log spam)
+        if (!empty($integrity['warnings'])) {
+            error_log(sprintf(
+                '[DataFlair Sync] Toplist #%d (%s): %d warning(s) — %s',
+                $toplist_data['id'],
+                $toplist_data['name'] ?? 'unknown',
+                count($integrity['warnings']),
+                implode('; ', array_slice($integrity['warnings'], 0, 5))
+            ));
+        }
+
+        $api_id  = $toplist_data['id'];
+        $name    = $toplist_data['name'] ?? '';
+        $version = $toplist_data['version'] ?? '';
+
+        // Build the full data row (warnings are informational — they NEVER block the sync)
+        $data_row = array(
+            'name'           => $name,
+            'slug'           => $toplist_data['slug'] ?? null,
+            'current_period' => $toplist_data['currentPeriod'] ?? null,
+            'published_at'   => isset($toplist_data['publishedAt']) ? date('Y-m-d H:i:s', strtotime($toplist_data['publishedAt'])) : null,
+            'item_count'     => $integrity['item_count'],
+            'locked_count'   => $integrity['locked_count'],
+            'sync_warnings'  => !empty($integrity['warnings']) ? wp_json_encode($integrity['warnings']) : null,
+            'data'           => $body,
+            'version'        => $version,
+            'last_synced'    => current_time('mysql'),
+        );
+
+        // Insert or update by api_toplist_id (upsert key never changes)
         $existing = $wpdb->get_row($wpdb->prepare(
             "SELECT id FROM $table_name WHERE api_toplist_id = %d",
             $api_id
         ));
-        
+
         if ($existing) {
             $wpdb->update(
                 $table_name,
-                array(
-                    'name' => $name,
-                    'data' => $body,
-                    'version' => $version,
-                    'last_synced' => current_time('mysql')
-                ),
+                $data_row,
                 array('api_toplist_id' => $api_id),
-                array('%s', '%s', '%s', '%s'),
+                array('%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s'),
                 array('%d')
             );
         } else {
+            $data_row['api_toplist_id'] = $api_id;
             $wpdb->insert(
                 $table_name,
-                array(
-                    'api_toplist_id' => $api_id,
-                    'name' => $name,
-                    'data' => $body,
-                    'version' => $version,
-                    'last_synced' => current_time('mysql')
-                ),
-                array('%d', '%s', '%s', '%s', '%s')
+                $data_row,
+                array('%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s')
             );
         }
-        
+
         return true;
     }
     
@@ -3388,29 +3692,40 @@ class DataFlair_Toplists {
     public function toplist_shortcode($atts) {
         // Extract shortcode-specific attributes
         $shortcode_defaults = array(
-            'id' => '',
+            'id'    => '',  // Primary — looks up by api_toplist_id
+            'slug'  => '',  // Optional — looks up by slug column
             'title' => '',
-            'limit' => 0
+            'limit' => 0,
         );
-        
+
         // Merge with defaults but preserve all other attributes (for customization)
         $atts = wp_parse_args($atts, $shortcode_defaults);
-        
-        if (empty($atts['id'])) {
-            return '<p style="color: red;">DataFlair Error: Toplist ID is required</p>';
+
+        if (empty($atts['id']) && empty($atts['slug'])) {
+            return '<p style="color: red;">DataFlair Error: Toplist ID or slug is required</p>';
         }
-        
+
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        
-        // Get toplist by API ID
-        $toplist = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table_name WHERE api_toplist_id = %d",
-            $atts['id']
-        ));
+
+        // Look up toplist by slug first, then by API ID
+        if (!empty($atts['slug'])) {
+            $toplist = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM $table_name WHERE slug = %s LIMIT 1",
+                $atts['slug']
+            ));
+        } else {
+            $toplist = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM $table_name WHERE api_toplist_id = %d",
+                intval($atts['id'])
+            ));
+        }
         
         if (!$toplist) {
-            return '<p style="color: red;">DataFlair Error: Toplist ID ' . esc_html($atts['id']) . ' not found. Please sync first.</p>';
+            $identifier = !empty($atts['slug'])
+                ? 'slug "' . esc_html($atts['slug']) . '"'
+                : 'ID ' . esc_html($atts['id']);
+            return '<p style="color: red;">DataFlair Error: Toplist ' . $identifier . ' not found. Please sync first.</p>';
         }
         
         $data = json_decode($toplist->data, true);
@@ -4516,13 +4831,17 @@ class DataFlair_Toplists {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
         
-        $toplists = $wpdb->get_results("SELECT api_toplist_id, name FROM $table_name ORDER BY api_toplist_id ASC");
-        
+        $toplists = $wpdb->get_results("SELECT api_toplist_id, name, slug FROM $table_name ORDER BY api_toplist_id ASC");
+
         $options = array();
         foreach ($toplists as $toplist) {
+            // Show slug in brackets if available, otherwise fall back to ID
+            $suffix = !empty($toplist->slug)
+                ? ' [' . $toplist->slug . ']'
+                : ' (ID: ' . $toplist->api_toplist_id . ')';
             $options[] = array(
                 'value' => (string)$toplist->api_toplist_id,
-                'label' => $toplist->name . ' (ID: ' . $toplist->api_toplist_id . ')'
+                'label' => $toplist->name . $suffix,
             );
         }
         
