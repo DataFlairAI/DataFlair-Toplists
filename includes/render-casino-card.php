@@ -197,7 +197,7 @@ if (empty($review_url)) {
 }
 ?>
 
-<div class="casino-card-wrapper" x-data="{ showDetails: false }" data-position="<?php echo esc_attr($position); ?>">
+<div class="casino-card-wrapper" x-data="{ showDetails: false }" data-position="<?php echo esc_attr($position); ?>" data-product-type="<?php echo esc_attr(ProductTypeLabels::normalizeType($product_type)); ?>">
     
     <?php if ($position === 1): ?>
     <div class="casino-card-ribbon">
@@ -261,7 +261,7 @@ if (empty($review_url)) {
             
             <!-- Bonus Column -->
             <div class="casino-bonus-col">
-                <div class="bonus-label">Welcome Bonus</div>
+                <div class="bonus-label"><?php echo esc_html($labels['offer_text_label']); ?></div>
                 <div class="bonus-text">
                     <?php echo esc_html($offer_text ?: 'Bonus Available'); ?>
                 </div>
@@ -348,42 +348,42 @@ if (empty($review_url)) {
             <div class="casino-metrics-grid">
                 <?php if (!empty($bonus_wagering)): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Bonus Wagering</div>
+                    <div class="metric-label"><?php echo esc_html($labels['bonus_wagering_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($bonus_wagering); ?>x</div>
                 </div>
                 <?php endif; ?>
-                
+
                 <?php if (!empty($min_deposit)): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Min Deposit</div>
+                    <div class="metric-label"><?php echo esc_html($labels['min_deposit_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($min_deposit); ?></div>
                 </div>
                 <?php endif; ?>
-                
-                <?php if (!empty($games_count)): ?>
+
+                <?php if (!empty($games_count) && ProductTypeLabels::isFieldVisible($product_type, 'games_count')): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Casino Games</div>
+                    <div class="metric-label"><?php echo esc_html($labels['games_count_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($games_count); ?>+</div>
                 </div>
                 <?php endif; ?>
-                
+
                 <?php if (!empty($payout_time)): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Payout Time</div>
+                    <div class="metric-label"><?php echo esc_html($labels['payout_time_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($payout_time); ?></div>
                 </div>
                 <?php endif; ?>
-                
+
                 <?php if (!empty($max_payout)): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Max Payout</div>
+                    <div class="metric-label"><?php echo esc_html($labels['max_payout_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($max_payout); ?></div>
                 </div>
                 <?php endif; ?>
-                
+
                 <?php if (!empty($licenses)): ?>
                 <div class="metric-item">
-                    <div class="metric-label">Licences</div>
+                    <div class="metric-label"><?php echo esc_html($labels['licences_label']); ?></div>
                     <div class="metric-value"><?php echo esc_html($licenses); ?></div>
                 </div>
                 <?php endif; ?>
