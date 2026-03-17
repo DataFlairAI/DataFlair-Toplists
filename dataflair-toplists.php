@@ -5070,33 +5070,30 @@ class DataFlair_Toplists {
      * Migrate data fields from longtext to JSON type
      */
     public function migrate_to_json_type() {
-        global $wpdb;
-        
-        if (!$this->supports_json_type()) {
-            error_log('DataFlair: JSON type not supported by MySQL version. Skipping migration.');
+        // Guard: skip entirely if migration already completed.
+        // MariaDB reports JSON columns as "longtext" in INFORMATION_SCHEMA, so
+        // checking DATA_TYPE would always return false — causing an infinite loop.
+        if (get_option('dataflair_json_migration_done')) {
             return;
         }
-        
+
+        global $wpdb;
+
+        if (!$this->supports_json_type()) {
+            // Mark done so we stop trying on every cron tick.
+            update_option('dataflair_json_migration_done', '1');
+            error_log('DataFlair: JSON type not supported by MySQL/MariaDB version. Staying on longtext.');
+            return;
+        }
+
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
         $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        
-        // Check current column type
-        $toplist_column = $wpdb->get_row($wpdb->prepare(
-            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'data'",
-            DB_NAME,
-            $table_name
-        ));
-        
-        $brand_column = $wpdb->get_row($wpdb->prepare(
-            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'data'",
-            DB_NAME,
-            $brands_table_name
-        ));
-        
+
+        $toplists_migrated = false;
+        $brands_migrated   = false;
+
         // Migrate toplists table
-        if ($toplist_column && strtolower($toplist_column->DATA_TYPE) !== 'json') {
+        {
             // First, validate all JSON data
             $invalid_rows = $wpdb->get_results(
                 "SELECT id FROM $table_name WHERE data IS NOT NULL AND data != ''",
@@ -5123,32 +5120,30 @@ class DataFlair_Toplists {
             }
             
             if ($invalid_count === 0) {
-                // All data is valid JSON, proceed with migration
                 $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN data JSON NOT NULL");
+                $toplists_migrated = true;
                 error_log('DataFlair: Successfully migrated toplists data column to JSON type');
             } else {
                 error_log("DataFlair: Cannot migrate toplists table - found $invalid_count invalid JSON rows");
             }
         }
-        
+
         // Migrate brands table
-        if ($brand_column && strtolower($brand_column->DATA_TYPE) !== 'json') {
-            // First, validate all JSON data
+        {
             $invalid_rows = $wpdb->get_results(
                 "SELECT id FROM $brands_table_name WHERE data IS NOT NULL AND data != ''",
                 ARRAY_A
             );
-            
-            $valid_count = 0;
+
+            $valid_count   = 0;
             $invalid_count = 0;
-            
+
             foreach ($invalid_rows as $row) {
                 $data = $wpdb->get_var($wpdb->prepare(
                     "SELECT data FROM $brands_table_name WHERE id = %d",
                     $row['id']
                 ));
-                
-                // Validate JSON
+
                 json_decode($data);
                 if (json_last_error() === JSON_ERROR_NONE) {
                     $valid_count++;
@@ -5157,15 +5152,20 @@ class DataFlair_Toplists {
                     error_log('DataFlair: Invalid JSON in brand ID ' . $row['id'] . ': ' . json_last_error_msg());
                 }
             }
-            
+
             if ($invalid_count === 0) {
-                // All data is valid JSON, proceed with migration
                 $wpdb->query("ALTER TABLE $brands_table_name MODIFY COLUMN data JSON NOT NULL");
+                $brands_migrated = true;
                 error_log('DataFlair: Successfully migrated brands data column to JSON type');
             } else {
                 error_log("DataFlair: Cannot migrate brands table - found $invalid_count invalid JSON rows");
             }
         }
+
+        // Mark migration done so it never runs again.
+        // Run regardless of success — on MariaDB the column stays "longtext" even
+        // after ALTER TABLE, so we must not rely on DATA_TYPE to detect completion.
+        update_option('dataflair_json_migration_done', '1');
     }
 }
 
