@@ -227,13 +227,14 @@ docker exec <wordpress-container> wp eval-file wp-content/plugins/dataflair-topl
 
 ```
 dataflair-toplists/
-├── dataflair-toplists.php      Main plugin file (v1.4.0)
+├── dataflair-toplists.php      Main plugin file (v1.6.0)
 ├── assets/
 │   ├── admin.js                Admin panel JavaScript
 │   └── style.css               Frontend casino card styles
 ├── build/                      Compiled Gutenberg block assets
 ├── includes/
-│   └── render-casino-card.php  Casino card HTML template
+│   ├── render-casino-card.php  Casino card HTML template
+│   └── DataIntegrityChecker.php  Validates API response structure before storage
 ├── src/                        Gutenberg block source (JS/JSX)
 ├── tests/
 │   ├── run-all-tests.php
@@ -290,6 +291,8 @@ Follows [Semantic Versioning](https://semver.org/).
 
 | Version | Highlights |
 |---------|-----------|
+| **v1.6.0** | **Editions support & critical sync fix.** Fixed silent INSERT failures caused by 6 missing DB columns (slug, current\_period, published\_at, item\_count, locked\_count, sync\_warnings); fixed INSERT/UPDATE format string mismatch (`%d`/`%s` order); added error checking on all DB operations; widened current\_period from VARCHAR(7) to VARCHAR(100) for edition labels; added paginated API fetch (handles `meta.last_page`); cron auto-discovers new toplists on every sync; DB upgrade auto-runs on plugin load (v1.6) |
+| v1.5.0 | Snapshot support, data integrity checker, API preview tab, toplist slug column |
 | **v1.4.0** | `/api/v1/brands` endpoint support; 8 new brand fields (paymentMethods, currencies, gameTypes, gameProviders, languages, restrictedCountries); self-healing cron fix; 3 new test modules (toplist-render, api-edge-cases, cron); HTTP auth fields removed from settings |
 | v1.3.3 | Toplist template filter, column sorting, admin polish |
 | v1.3.x | Admin UI improvements, filter performance, cron timestamps |
@@ -330,4 +333,4 @@ GPL v2 or later
 
 ---
 
-**Version:** 1.4.0 | **Requires WordPress:** 6.0+ | **Requires PHP:** 8.0+ | **Tested up to:** 6.7
+**Version:** 1.6.0 | **Requires WordPress:** 6.0+ | **Requires PHP:** 8.0+ | **Tested up to:** 6.7
