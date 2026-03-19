@@ -208,7 +208,7 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.6'; // v1.6: fix current_period width, ensure edition columns exist
+        $current_version = '1.7'; // v1.7: add classification_types column to brands table
 
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
