@@ -4231,7 +4231,8 @@ class DataFlair_Toplists {
     private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array()) {
         // Check if new template exists
         $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
-        
+        require_once DATAFLAIR_PLUGIN_DIR . 'includes/ProductTypeLabels.php';
+
         if (file_exists($template_path)) {
             // Get or create review post and generate review URL
             $brand = $item['brand'];
