@@ -215,8 +215,81 @@ class DataFlair_Toplists {
             update_option('dataflair_db_version', $current_version);
         }
 
+        // Self-heal: ensure all tables exist even if activation hook never fired
+        // (happens when plugin is deployed by copying files rather than via WP Admin)
+        $this->ensure_tables_exist();
+
         // Migrate to JSON type if supported
         $this->migrate_to_json_type();
+    }
+
+    /**
+     * Ensure all plugin tables exist. Safe to call on every request — only
+     * runs DDL if a table is actually missing. Covers manual file deploys
+     * where register_activation_hook never fires.
+     */
+    private function ensure_tables_exist() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $supports_json   = $this->supports_json_type();
+        $data_type       = $supports_json ? 'JSON' : 'longtext';
+
+        $table_name      = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+        $brands_table    = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+
+        $missing = false;
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) !== $table_name ) {
+            $missing = true;
+        }
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '$brands_table'" ) !== $brands_table ) {
+            $missing = true;
+        }
+
+        if ( ! $missing ) {
+            return; // Nothing to do — both tables exist
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            api_toplist_id bigint(20) NOT NULL,
+            name varchar(255) NOT NULL,
+            slug varchar(255) DEFAULT NULL,
+            current_period varchar(100) DEFAULT NULL,
+            published_at datetime DEFAULT NULL,
+            item_count int(11) NOT NULL DEFAULT 0,
+            locked_count int(11) NOT NULL DEFAULT 0,
+            sync_warnings text DEFAULT NULL,
+            data $data_type NOT NULL,
+            version varchar(50) DEFAULT NULL,
+            last_synced datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY api_toplist_id (api_toplist_id)
+        ) $charset_collate;";
+
+        $brands_sql = "CREATE TABLE IF NOT EXISTS $brands_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            api_brand_id bigint(20) NOT NULL,
+            name varchar(255) NOT NULL,
+            slug varchar(255) NOT NULL,
+            status varchar(50) NOT NULL,
+            product_types text,
+            licenses text,
+            top_geos text,
+            offers_count int(11) DEFAULT 0,
+            trackers_count int(11) DEFAULT 0,
+            classification_types VARCHAR(500) NOT NULL DEFAULT '',
+            data $data_type NOT NULL,
+            last_synced datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY api_brand_id (api_brand_id)
+        ) $charset_collate;";
+
+        dbDelta( $sql );
+        dbDelta( $brands_sql );
+
+        error_log( 'DataFlair: ensure_tables_exist() ran dbDelta — tables were missing.' );
     }
     
     /**
