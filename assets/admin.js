@@ -20,7 +20,8 @@ jQuery(document).ready(function($) {
             dataflair_ribbon_bg_color: $('#dataflair_ribbon_bg_color').val() || '',
             dataflair_ribbon_text_color: $('#dataflair_ribbon_text_color').val() || '',
             dataflair_cta_bg_color: $('#dataflair_cta_bg_color').val() || '',
-            dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || ''
+            dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || '',
+            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1'
         };
         
         // Send AJAX request

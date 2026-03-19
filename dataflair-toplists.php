@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.6.1
+ * Version: 1.7.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.6.1');
+define('DATAFLAIR_VERSION', '1.7.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -104,8 +104,24 @@ class DataFlair_Toplists {
         
         // Also check in widgets and other areas
         add_filter('widget_text', array($this, 'check_widget_for_shortcode'), 10, 2);
+
+        // Admin notice: plain permalinks break the REST API (and the Gutenberg block)
+        add_action('admin_notices', array($this, 'maybe_notice_plain_permalinks'));
     }
     
+    /**
+     * Show an admin notice if plain permalinks are active (REST API won't work).
+     */
+    public function maybe_notice_plain_permalinks() {
+        if (empty(get_option('permalink_structure'))) {
+            echo '<div class="notice notice-error"><p>'
+               . '<strong>DataFlair:</strong> The Gutenberg block requires '
+               . 'pretty permalinks. Go to <a href="' . admin_url('options-permalink.php') . '">'
+               . 'Settings &rarr; Permalinks</a> and choose any option other than Plain.'
+               . '</p></div>';
+        }
+    }
+
     /**
      * Plugin activation
      */
@@ -148,6 +164,7 @@ class DataFlair_Toplists {
             top_geos text,
             offers_count int(11) DEFAULT 0,
             trackers_count int(11) DEFAULT 0,
+            classification_types VARCHAR(500) NOT NULL DEFAULT '',
             data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
@@ -269,6 +286,10 @@ class DataFlair_Toplists {
                 $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN trackers_count int(11) DEFAULT 0 AFTER offers_count");
             }
 
+            if (!in_array('classification_types', $columns)) {
+                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN classification_types VARCHAR(500) NOT NULL DEFAULT '' AFTER trackers_count");
+            }
+
             error_log('DataFlair: Database schema upgraded to version 1.5');
         } else {
             // Table doesn't exist, create it with full schema
@@ -283,6 +304,7 @@ class DataFlair_Toplists {
                 top_geos text,
                 offers_count int(11) DEFAULT 0,
                 trackers_count int(11) DEFAULT 0,
+                classification_types VARCHAR(500) NOT NULL DEFAULT '',
                 data longtext NOT NULL,
                 last_synced datetime NOT NULL,
                 PRIMARY KEY (id),
@@ -549,6 +571,11 @@ class DataFlair_Toplists {
             update_option('dataflair_http_auth_pass', trim($_POST['dataflair_http_auth_pass']));
         }
 
+        // Save Brands API version (v1 or v2 only — default v1 for safety)
+        $version = isset($_POST['dataflair_brands_api_version'])
+            && $_POST['dataflair_brands_api_version'] === 'v2' ? 'v2' : 'v1';
+        update_option('dataflair_brands_api_version', $version);
+
         // Save customization settings
         if (isset($_POST['dataflair_ribbon_bg_color'])) {
             update_option('dataflair_ribbon_bg_color', sanitize_text_field($_POST['dataflair_ribbon_bg_color']));
@@ -690,21 +717,42 @@ class DataFlair_Toplists {
                             <label for="dataflair_api_base_url">API Base URL</label>
                         </th>
                         <td>
-                            <input type="text" 
-                                   id="dataflair_api_base_url" 
-                                   name="dataflair_api_base_url" 
-                                   value="<?php echo esc_attr(get_option('dataflair_api_base_url', '')); ?>" 
+                            <input type="text"
+                                   id="dataflair_api_base_url"
+                                   name="dataflair_api_base_url"
+                                   value="<?php echo esc_attr(get_option('dataflair_api_base_url', '')); ?>"
                                    class="regular-text"
                                    placeholder="https://tenant.dataflair.ai/api/v1">
                             <p class="description">
-                                Your DataFlair API base URL (e.g., https://tenant.dataflair.ai/api/v1). 
+                                Your DataFlair API base URL (e.g., https://tenant.dataflair.ai/api/v1).
                                 Leave empty to auto-detect from token or stored endpoints.
-                                <?php 
+                                <?php
                                 $current_base = get_option('dataflair_api_base_url');
                                 if (!empty($current_base)) {
                                     echo '<br><strong>Current: ' . esc_html($current_base) . '</strong>';
                                 }
                                 ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Brands API Version</th>
+                        <td>
+                            <label>
+                                <input type="radio" name="dataflair_brands_api_version"
+                                       value="v1" <?php checked(get_option('dataflair_brands_api_version','v1'), 'v1'); ?>>
+                                V1 <span style="color:#646970;">(default)</span>
+                            </label>
+                            &nbsp;&nbsp;
+                            <label>
+                                <input type="radio" name="dataflair_brands_api_version"
+                                       value="v2" <?php checked(get_option('dataflair_brands_api_version','v1'), 'v2'); ?>>
+                                V2
+                            </label>
+                            <p class="description">
+                                V2 includes classificationTypes, 15 multi-vertical brand fields
+                                (sports, poker, sweeps-coins) and unified offer types.
+                                Requires DataFlair API &ge; v2.
                             </p>
                         </td>
                     </tr>
@@ -998,6 +1046,18 @@ class DataFlair_Toplists {
                         if (empty($token)): ?>
                             <div class="notice notice-warning inline"><p>No API token configured. Set your token on the <a href="?page=dataflair-toplists&tab=api">API Settings</a> tab first.</p></div>
                         <?php else: ?>
+                        <!-- Mode toggle -->
+                        <div style="margin-bottom:16px;">
+                            <label>
+                                <input type="radio" name="df-preview-mode" value="single" checked> Single endpoint
+                            </label>
+                            &nbsp;&nbsp;
+                            <label>
+                                <input type="radio" name="df-preview-mode" value="compare"> Compare V1 vs V2
+                            </label>
+                        </div>
+                        <!-- Single mode panel -->
+                        <div id="df-single-panel">
                         <table class="form-table">
                             <tr>
                                 <th scope="row"><label for="df-preview-endpoint">Endpoint</label></th>
@@ -1022,6 +1082,37 @@ class DataFlair_Toplists {
                                 </td>
                             </tr>
                         </table>
+                        </div><!-- /#df-single-panel -->
+                        <!-- Compare mode panel -->
+                        <div id="df-compare-panel" style="display:none;">
+                            <table class="form-table">
+                                <tr>
+                                    <th scope="row">Endpoint</th>
+                                    <td>
+                                        <select id="df-compare-endpoint">
+                                            <option value="brands">brands</option>
+                                        </select>
+                                        <button type="button" id="df-compare-run" class="button button-primary">Run Comparison</button>
+                                        <span id="df-compare-status" style="margin-left:10px;"></span>
+                                    </td>
+                                </tr>
+                            </table>
+                            <div id="df-compare-result" style="display:none; margin-top:16px;">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                                    <div>
+                                        <strong id="df-v1-label" style="font-family:monospace;font-size:12px;color:#666;"></strong>
+                                        <pre id="df-v1-json" style="background:#1e1e1e;color:#d4d4d4;padding:16px;border-radius:4px;max-height:400px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:6px 0;"></pre>
+                                        <button type="button" class="button button-secondary button-small df-copy-btn" data-target="df-v1-json">Copy V1</button>
+                                    </div>
+                                    <div>
+                                        <strong id="df-v2-label" style="font-family:monospace;font-size:12px;color:#666;"></strong>
+                                        <pre id="df-v2-json" style="background:#1e1e1e;color:#d4d4d4;padding:16px;border-radius:4px;max-height:400px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:6px 0;"></pre>
+                                        <button type="button" class="button button-secondary button-small df-copy-btn" data-target="df-v2-json">Copy V2</button>
+                                    </div>
+                                </div>
+                                <div id="df-compare-diff" style="margin-top:12px; padding:12px; background:#f0f7ff; border-left:4px solid #0073aa; font-size:12px;"></div>
+                            </div>
+                        </div><!-- /#df-compare-panel -->
 
                         <div id="df-preview-result" style="display:none;margin-top:16px;">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -1081,7 +1172,8 @@ class DataFlair_Toplists {
                                 }, function(res){
                                     $fetch.prop('disabled', false);
                                     if (res.success) {
-                                        $status.css('color','green').text('✔ ' + res.data.status);
+                                        var elapsed = res.data.elapsed ? '  ' + res.data.elapsed : '';
+                                        $status.css('color','green').text('✔ ' + res.data.status + elapsed);
                                         $urlLabel.text(res.data.url);
                                         $json.text(res.data.body);
                                         $result.show();
@@ -1099,6 +1191,108 @@ class DataFlair_Toplists {
                                 navigator.clipboard.writeText(text).then(function(){
                                     $copy.text('Copied!');
                                     setTimeout(function(){ $copy.text('Copy JSON'); }, 2000);
+                                });
+                            });
+
+                            // Mode toggle: single vs compare
+                            $('input[name="df-preview-mode"]').on('change', function(){
+                                var mode = $(this).val();
+                                if (mode === 'compare') {
+                                    $('#df-single-panel').hide();
+                                    $('#df-compare-panel').show();
+                                } else {
+                                    $('#df-single-panel').show();
+                                    $('#df-compare-panel').hide();
+                                }
+                            });
+
+                            // Copy buttons in compare panel
+                            $(document).on('click', '.df-copy-btn', function(){
+                                var targetId = $(this).data('target');
+                                var text = $('#' + targetId).text();
+                                var $btn = $(this);
+                                navigator.clipboard.writeText(text).then(function(){
+                                    $btn.text('Copied!');
+                                    setTimeout(function(){ $btn.text($btn.data('target') === 'df-v1-json' ? 'Copy V1' : 'Copy V2'); }, 2000);
+                                });
+                            });
+
+                            // Run comparison
+                            $('#df-compare-run').on('click', function(){
+                                var $btn = $(this);
+                                var $status = $('#df-compare-status');
+                                $btn.prop('disabled', true);
+                                $status.text('Fetching V1…');
+                                $('#df-compare-result').hide();
+
+                                // Call V1 (brands)
+                                $.post(ajaxurl, {
+                                    action: 'dataflair_api_preview',
+                                    _ajax_nonce: nonce,
+                                    endpoint: 'brands'
+                                }, function(v1res){
+                                    if (!v1res.success) {
+                                        $status.css('color','red').text('✖ V1 failed: ' + (v1res.data || 'error'));
+                                        $btn.prop('disabled', false);
+                                        return;
+                                    }
+                                    $status.text('Fetching V2…');
+
+                                    // Call V2 (brands_v2)
+                                    $.post(ajaxurl, {
+                                        action: 'dataflair_api_preview',
+                                        _ajax_nonce: nonce,
+                                        endpoint: 'brands_v2'
+                                    }, function(v2res){
+                                        $btn.prop('disabled', false);
+                                        if (!v2res.success) {
+                                            $status.css('color','red').text('✖ V2 failed: ' + (v2res.data || 'error'));
+                                            return;
+                                        }
+
+                                        // Display results
+                                        var v1elapsed = v1res.data.elapsed ? '  ' + v1res.data.elapsed : '';
+                                        var v2elapsed = v2res.data.elapsed ? '  ' + v2res.data.elapsed : '';
+                                        $('#df-v1-label').text('GET ' + v1res.data.url + '  ✔ ' + v1res.data.status + v1elapsed);
+                                        $('#df-v2-label').text('GET ' + v2res.data.url + '  ✔ ' + v2res.data.status + v2elapsed);
+                                        $('#df-v1-json').text(v1res.data.body);
+                                        $('#df-v2-json').text(v2res.data.body);
+
+                                        // Compute field diff
+                                        var diffHtml = '';
+                                        try {
+                                            var v1data = JSON.parse(v1res.data.body);
+                                            var v2data = JSON.parse(v2res.data.body);
+                                            var v1brand = (v1data.data && v1data.data[0]) ? v1data.data[0] : null;
+                                            var v2brand = (v2data.data && v2data.data[0]) ? v2data.data[0] : null;
+                                            if (v1brand && v2brand) {
+                                                var v1keys = Object.keys(v1brand);
+                                                var v2keys = Object.keys(v2brand);
+                                                var brandOnlyV2 = v2keys.filter(function(k){ return v1keys.indexOf(k) === -1; });
+                                                diffHtml += '<strong>Fields only in V2 (brand):</strong> ' + (brandOnlyV2.length ? brandOnlyV2.join(', ') : 'none') + '<br>';
+
+                                                var v1offer = (v1brand.offers && v1brand.offers[0]) ? v1brand.offers[0] : null;
+                                                var v2offer = (v2brand.offers && v2brand.offers[0]) ? v2brand.offers[0] : null;
+                                                if (v1offer && v2offer) {
+                                                    var v1offerKeys = Object.keys(v1offer);
+                                                    var v2offerKeys = Object.keys(v2offer);
+                                                    var offerOnlyV2 = v2offerKeys.filter(function(k){ return v1offerKeys.indexOf(k) === -1; });
+                                                    diffHtml += '<strong>Fields only in V2 (offer):</strong> ' + (offerOnlyV2.length ? offerOnlyV2.join(', ') : 'none');
+                                                }
+                                            }
+                                        } catch(e) {
+                                            diffHtml = 'Could not compute diff: ' + e.message;
+                                        }
+                                        $('#df-compare-diff').html(diffHtml || 'No differences found.');
+                                        $('#df-compare-result').show();
+                                        $status.css('color','green').text('✔ Comparison complete');
+                                    }).fail(function(){
+                                        $btn.prop('disabled', false);
+                                        $status.css('color','red').text('✖ V2 AJAX request failed');
+                                    });
+                                }).fail(function(){
+                                    $btn.prop('disabled', false);
+                                    $status.css('color','red').text('✖ V1 AJAX request failed');
                                 });
                             });
                         })(jQuery);
@@ -1187,6 +1381,22 @@ class DataFlair_Toplists {
             $url = preg_replace('#^http://#i', 'https://', $url);
         }
         return $url;
+    }
+
+    /**
+     * Get the brands API URL for the given page, respecting the selected API version.
+     * Toplists always use v1 — only brands sync uses this helper.
+     *
+     * @param int $page Page number
+     * @return string Full brands URL with page parameter
+     */
+    private function get_brands_api_url($page) {
+        $version = get_option('dataflair_brands_api_version', 'v1');
+        $base    = $this->get_api_base_url();  // e.g. .../api/v1
+        if ($version === 'v2') {
+            $base = preg_replace('#/api/v\d+$#', '/api/v2', $base);
+        }
+        return rtrim($base, '/') . '/brands?page=' . intval($page);
     }
 
     /**
@@ -3016,8 +3226,7 @@ class DataFlair_Toplists {
      * Sync a single page of brands from API (15 brands per page)
      */
     private function sync_brands_page($page, $token) {
-        $base_url = $this->get_api_base_url();
-        $brands_url = $base_url . '/brands?page=' . $page;
+        $brands_url = $this->get_brands_api_url($page);
 
         $response = $this->api_get($brands_url, $token);
 
@@ -3101,10 +3310,15 @@ class DataFlair_Toplists {
                 ? implode(', ', $brand_data['productTypes']) 
                 : '';
             
-            $licenses = isset($brand_data['licenses']) && is_array($brand_data['licenses']) 
-                ? implode(', ', $brand_data['licenses']) 
+            $licenses = isset($brand_data['licenses']) && is_array($brand_data['licenses'])
+                ? implode(', ', $brand_data['licenses'])
                 : '';
-            
+
+            // Extract V2 classification types (e.g. Casino, Sportsbook, Poker)
+            $classification_types = isset($brand_data['classificationTypes'])
+                && is_array($brand_data['classificationTypes'])
+                ? implode(', ', $brand_data['classificationTypes']) : '';
+
             // Combine top geo countries and markets
             $top_geos_arr = array();
             if (isset($brand_data['topGeos']['countries']) && is_array($brand_data['topGeos']['countries'])) {
@@ -3157,6 +3371,7 @@ class DataFlair_Toplists {
                         'status' => $brand_status,
                         'product_types' => $product_types,
                         'licenses' => $licenses,
+                        'classification_types' => $classification_types,
                         'top_geos' => $top_geos,
                         'offers_count' => $offers_count,
                         'trackers_count' => $trackers_count,
@@ -3164,7 +3379,7 @@ class DataFlair_Toplists {
                         'last_synced' => current_time('mysql')
                     ),
                     array('api_brand_id' => $api_brand_id),
-                    array('%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s'),
+                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s'),
                     array('%d')
                 );
             } else {
@@ -3177,13 +3392,14 @@ class DataFlair_Toplists {
                         'status' => $brand_status,
                         'product_types' => $product_types,
                         'licenses' => $licenses,
+                        'classification_types' => $classification_types,
                         'top_geos' => $top_geos,
                         'offers_count' => $offers_count,
                         'trackers_count' => $trackers_count,
                         'data' => json_encode($brand_data),
                         'last_synced' => current_time('mysql')
                     ),
-                    array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s')
+                    array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s')
                 );
             }
             
@@ -3591,6 +3807,7 @@ class DataFlair_Toplists {
         $resource_id  = isset($_POST['resource_id']) ? absint($_POST['resource_id']) : 0;
 
         $base_url = rtrim($this->get_api_base_url(), '/');
+        $start = microtime(true);
 
         switch ($endpoint_key) {
             case 'toplists':
@@ -3611,6 +3828,10 @@ class DataFlair_Toplists {
                 }
                 $url = $base_url . '/brands/' . $resource_id;
                 break;
+            case 'brands_v2':
+                $v2_base = preg_replace('#/api/v\d+$#', '/api/v2', $base_url);
+                $url = rtrim($v2_base, '/') . '/brands';
+                break;
             default:
                 wp_send_json_error('Unknown endpoint.');
         }
@@ -3628,10 +3849,13 @@ class DataFlair_Toplists {
         $decoded = json_decode($raw_body, true);
         $pretty  = ($decoded !== null) ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $raw_body;
 
+        $elapsed = round((microtime(true) - $start) * 1000) . 'ms';
+
         wp_send_json_success(array(
-            'url'    => $url,
-            'status' => $status_code . ' ' . get_status_header_desc($status_code),
-            'body'   => $pretty,
+            'url'     => $url,
+            'status'  => $status_code . ' ' . get_status_header_desc($status_code),
+            'body'    => $pretty,
+            'elapsed' => $elapsed,
         ));
     }
 
@@ -4963,30 +5187,53 @@ class DataFlair_Toplists {
                 ),
             ),
         ));
+
+        register_rest_route('dataflair/v1', '/health', array(
+            'methods'             => 'GET',
+            'callback'            => function() {
+                global $wpdb;
+                $table = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+                $count = $wpdb->get_var("SELECT COUNT(*) FROM $table");
+                return rest_ensure_response(array(
+                    'status'     => 'ok',
+                    'toplists'   => (int) $count,
+                    'plugin_ver' => DATAFLAIR_VERSION,
+                    'db_error'   => $wpdb->last_error ?: null,
+                ));
+            },
+            'permission_callback' => function() { return current_user_can('manage_options'); },
+        ));
     }
     
     /**
      * REST API callback to get available toplists
      */
     public function get_toplists_rest() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        
-        $toplists = $wpdb->get_results("SELECT api_toplist_id, name, slug FROM $table_name ORDER BY api_toplist_id ASC");
+        try {
+            global $wpdb;
+            $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
 
-        $options = array();
-        foreach ($toplists as $toplist) {
-            // Show slug in brackets if available, otherwise fall back to ID
-            $suffix = !empty($toplist->slug)
-                ? ' [' . $toplist->slug . ']'
-                : ' (ID: ' . $toplist->api_toplist_id . ')';
-            $options[] = array(
-                'value' => (string)$toplist->api_toplist_id,
-                'label' => $toplist->name . $suffix,
-            );
+            $toplists = $wpdb->get_results("SELECT api_toplist_id, name, slug FROM $table_name ORDER BY api_toplist_id ASC");
+
+            if ($wpdb->last_error) {
+                return new WP_Error('db_error', $wpdb->last_error, array('status' => 500));
+            }
+
+            $options = array();
+            foreach ($toplists as $toplist) {
+                $suffix = !empty($toplist->slug)
+                    ? ' [' . $toplist->slug . ']'
+                    : ' (ID: ' . $toplist->api_toplist_id . ')';
+                $options[] = array(
+                    'value' => (string) $toplist->api_toplist_id,
+                    'label' => $toplist->name . $suffix,
+                );
+            }
+
+            return rest_ensure_response($options);
+        } catch (\Exception $e) {
+            return new WP_Error('exception', $e->getMessage(), array('status' => 500));
         }
-        
-        return rest_ensure_response($options);
     }
     
     /**
@@ -4996,34 +5243,52 @@ class DataFlair_Toplists {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
         $toplist_id = intval($request['id']);
-        
+
         $toplist = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM $table_name WHERE api_toplist_id = %d",
             $toplist_id
         ));
-        
+
         if (!$toplist) {
             return new WP_Error('not_found', 'Toplist not found', array('status' => 404));
         }
-        
+
         $data = json_decode($toplist->data, true);
-        
-        if (!isset($data['data']['items'])) {
+
+        // Support multiple known data shapes (editions model added listItems)
+        $items = null;
+        if (isset($data['data']['items'])) {
+            $items = $data['data']['items'];
+        } elseif (isset($data['data']['listItems'])) {
+            $items = $data['data']['listItems'];
+        } elseif (isset($data['listItems'])) {
+            $items = $data['listItems'];
+        }
+
+        if (empty($items)) {
             return rest_ensure_response(array());
         }
-        
+
         $casinos = array();
-        foreach ($data['data']['items'] as $item) {
-            $brand = $item['brand'];
+        foreach ($items as $item) {
+            $brand_name = '';
+            if (isset($item['brand']['name'])) {
+                $brand_name = $item['brand']['name'];
+            } elseif (isset($item['brandName'])) {
+                $brand_name = $item['brandName'];
+            }
+            if (empty($brand_name)) {
+                continue;
+            }
             $casinos[] = array(
-                'position' => $item['position'],
-                'brandName' => $brand['name'],
-                'brandSlug' => sanitize_title($brand['name']),
-                'pros' => !empty($item['pros']) ? $item['pros'] : array(),
-                'cons' => !empty($item['cons']) ? $item['cons'] : array()
+                'position'  => isset($item['position']) ? $item['position'] : 0,
+                'brandName' => $brand_name,
+                'brandSlug' => sanitize_title($brand_name),
+                'pros'      => !empty($item['pros']) ? $item['pros'] : array(),
+                'cons'      => !empty($item['cons']) ? $item['cons'] : array(),
             );
         }
-        
+
         return rest_ensure_response($casinos);
     }
     

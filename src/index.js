@@ -36,9 +36,10 @@ registerBlockType(metadata.name, {
 					]);
 					setLoading(false);
 				})
-				.catch(() => {
+				.catch((err) => {
+					console.error('[DataFlair] /dataflair/v1/toplists failed:', err);
 					setToplists([
-						{ value: '', label: __('-- Select a toplist --', 'dataflair-toplists') }
+						{ value: '', label: __('⚠ Could not load toplists — check plugin settings', 'dataflair-toplists') }
 					]);
 					setLoading(false);
 				});
@@ -52,7 +53,8 @@ registerBlockType(metadata.name, {
 						setCasinos(data || []);
 						setLoadingCasinos(false);
 					})
-					.catch(() => {
+					.catch((err) => {
+						console.error('[DataFlair] /dataflair/v1/toplists/' + toplistId + '/casinos failed:', err);
 						setCasinos([]);
 						setLoadingCasinos(false);
 					});
