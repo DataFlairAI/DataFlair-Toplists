@@ -2227,14 +2227,20 @@ class DataFlair_Toplists {
                                 <?php endif; ?>
                             </td>
                             <td><?php echo esc_html(date('Y-m-d H:i', strtotime($brand->last_synced))); ?></td>
+                            <?php
+                                $has_override = !empty($brand->review_url_override);
+                            ?>
                             <td>
                                 <input type="text"
                                        class="dataflair-review-url-input"
                                        data-brand-id="<?php echo esc_attr($brand->api_brand_id); ?>"
                                        value="<?php echo esc_attr($brand->review_url_override ?? ''); ?>"
                                        placeholder="/reviews/brand-slug/"
-                                       style="width:220px;" />
-                                <button class="button dataflair-save-review-url" data-brand-id="<?php echo esc_attr($brand->api_brand_id); ?>">Save</button>
+                                       style="width:220px;<?php echo $has_override ? ' background:#f0f0f0; color:#777;' : ''; ?>"
+                                       <?php echo $has_override ? 'disabled' : ''; ?> />
+                                <button class="button dataflair-save-review-url" data-brand-id="<?php echo esc_attr($brand->api_brand_id); ?>" data-mode="<?php echo $has_override ? 'edit' : 'save'; ?>">
+                                    <?php echo $has_override ? 'Edit' : 'Save'; ?>
+                                </button>
                             </td>
                         </tr>
 
@@ -2501,9 +2507,20 @@ class DataFlair_Toplists {
 
                 <script>
                 jQuery(document).on('click', '.dataflair-save-review-url', function() {
-                    var btn = jQuery(this);
+                    var btn   = jQuery(this);
                     var brandId = btn.data('brand-id');
-                    var url = jQuery('.dataflair-review-url-input[data-brand-id="' + brandId + '"]').val();
+                    var input = jQuery('.dataflair-review-url-input[data-brand-id="' + brandId + '"]');
+                    var mode  = btn.data('mode') || 'save';
+
+                    // Edit mode: unlock the field for editing
+                    if (mode === 'edit') {
+                        input.prop('disabled', false).css({ background: '', color: '' }).focus();
+                        btn.text('Save').data('mode', 'save');
+                        return;
+                    }
+
+                    // Save mode: persist and lock
+                    var url = input.val();
                     btn.text('Saving...').prop('disabled', true);
                     jQuery.post(ajaxurl, {
                         action: 'dataflair_save_review_url',
@@ -2512,10 +2529,14 @@ class DataFlair_Toplists {
                         nonce: '<?php echo wp_create_nonce("dataflair_save_review_url"); ?>'
                     }, function(response) {
                         if (response.success) {
-                            btn.text('Saved ✓');
-                            setTimeout(function() { btn.text('Save').prop('disabled', false); }, 2000);
+                            btn.text('Saved ✓').prop('disabled', false);
+                            setTimeout(function() {
+                                input.prop('disabled', true).css({ background: '#f0f0f0', color: '#777' });
+                                btn.text('Edit').data('mode', 'edit');
+                            }, 1000);
                         } else {
                             btn.text('Error').prop('disabled', false);
+                            setTimeout(function() { btn.text('Save'); }, 2000);
                         }
                     });
                 });
