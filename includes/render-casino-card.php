@@ -10,7 +10,11 @@ $offer = $item['offer'];
 $position = $item['position'];
 
 $brand_name = esc_html($brand['name']);
-$brand_slug = sanitize_title($brand_name);
+$brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_name);
+
+// Product type and labels — resolve once, used throughout the template
+$product_type = $brand['type'] ?? $brand['productType'] ?? $brand['product_type'] ?? 'casino';
+$labels = ProductTypeLabels::getLabels($product_type);
 
 // Handle logo - prioritize local_logo, then fallback to external URLs
 $logo_url = '';
