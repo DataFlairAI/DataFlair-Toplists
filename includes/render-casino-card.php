@@ -120,6 +120,7 @@ if (!empty($item['payment_methods'])) {
     $payment_methods = $brand['paymentMethods'];
 }
 
+$bonus_code    = (!empty($offer['bonus_code']) && trim($offer['bonus_code']) !== 'N/A') ? $offer['bonus_code'] : '';
 $bonus_wagering = !empty($offer['bonus_wagering_requirement']) ? esc_html($offer['bonus_wagering_requirement']) : '';
 $min_deposit = !empty($offer['minimum_deposit']) ? esc_html($offer['minimum_deposit']) : '';
 $payout_time = !empty($offer['payout_time']) ? esc_html($offer['payout_time']) : '';
@@ -274,6 +275,17 @@ if (empty($review_url)) {
                 <div class="bonus-text">
                     <?php echo esc_html($offer_text ?: 'Bonus Available'); ?>
                 </div>
+                <?php if (!empty($bonus_code)): ?>
+                <div class="promo-code-row">
+                    <span class="promo-code-label">Promo Code:</span>
+                    <button class="promo-code-copy" data-code="<?php echo esc_attr($bonus_code); ?>">
+                        <span class="promo-code-value"><?php echo esc_html($bonus_code); ?></span>
+                        <svg class="promo-code-copy-icon" width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
+                        </svg>
+                    </button>
+                </div>
+                <?php endif; ?>
             </div>
             
             <!-- Features Column -->

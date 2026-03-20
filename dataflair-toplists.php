@@ -28,14 +28,14 @@ if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
-// Auto-updates from GitHub releases
+// Auto-updates from GitHub releases (public repo — no token needed)
 if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
     $dataflair_update_checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/dataflair/toplists/',
+        'https://github.com/DataFlairAI/DataFlair-Toplists/',
         __FILE__,
         'dataflair-toplists'
     );
-    $dataflair_update_checker->setBranch('main');
+    $dataflair_update_checker->getVcsApi()->enableReleaseAssets();
 }
 
 /**
@@ -112,7 +112,8 @@ class DataFlair_Toplists {
         
         // Check if shortcode/block is used and enqueue Alpine.js if needed
         add_action('wp_footer', array($this, 'maybe_enqueue_alpine'), 5);
-        
+        add_action('wp_footer', array($this, 'enqueue_promo_copy_script'), 20);
+
         // Also check in widgets and other areas
         add_filter('widget_text', array($this, 'check_widget_for_shortcode'), 10, 2);
 
@@ -5188,6 +5189,41 @@ class DataFlair_Toplists {
         }
     }
     
+    /**
+     * Output promo code copy-to-clipboard JS once per page footer.
+     * Handles all .promo-code-copy buttons rendered by the toplist card template.
+     */
+    public function enqueue_promo_copy_script() {
+        ?>
+        <script>
+        (function() {
+            function initPromoCopy() {
+                document.querySelectorAll('.promo-code-copy').forEach(function(btn) {
+                    if (btn.dataset.promoBound) return;
+                    btn.dataset.promoBound = '1';
+                    btn.addEventListener('click', function() {
+                        var code = btn.getAttribute('data-code');
+                        navigator.clipboard.writeText(code).then(function() {
+                            btn.classList.add('copied');
+                            btn.querySelector('.promo-code-value').textContent = 'Copied!';
+                            setTimeout(function() {
+                                btn.classList.remove('copied');
+                                btn.querySelector('.promo-code-value').textContent = code;
+                            }, 2000);
+                        });
+                    });
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initPromoCopy);
+            } else {
+                initPromoCopy();
+            }
+        })();
+        </script>
+        <?php
+    }
+
     /**
      * Add defer attribute to Alpine.js script tag
      */
