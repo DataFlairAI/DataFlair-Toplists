@@ -55,7 +55,7 @@ function dataflair_plugins_api_info($res, $action, $args) {
     $res->author  = '<a href="https://dataflair.ai">DataFlair</a>';
     $res->homepage = 'https://dataflair.ai';
     $res->requires = '5.8';
-    $res->tested   = '6.7';
+    $res->tested   = '6.9';
     $res->requires_php = '7.4';
 
     $res->sections = [

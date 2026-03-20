@@ -213,4 +213,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.7
+**Version:** 1.9.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

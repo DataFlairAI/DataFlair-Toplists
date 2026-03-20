@@ -26,9 +26,15 @@ Before tagging a new version and pushing, ALWAYS:
    - `* Version: X.Y.Z` in the plugin header comment
    - `define('DATAFLAIR_VERSION', 'X.Y.Z');` constant
 
-2. **Update the plugin description** in the `plugins_api` filter block inside `dataflair-toplists.php` (search for `dataflair_plugins_api_info`). Keep the full description accurate and up to date with all current features.
+2. **Check the WordPress version** on the target site and update `$res->tested` in the `plugins_api` filter and the `Tested up to` line in README.md. Run:
+   ```bash
+   wp --allow-root core version
+   ```
+   Then update `$res->tested = 'X.Y';` in `dataflair-toplists.php` if a newer version is running.
 
-3. **Update the changelog** in the same `plugins_api` filter block. Add a new version block at the TOP of the changelog with all changes from this release. Format:
+3. **Update the plugin description** in the `plugins_api` filter block inside `dataflair-toplists.php` (search for `dataflair_plugins_api_info`). Keep the full description accurate and up to date with all current features.
+
+4. **Update the changelog** in the same `plugins_api` filter block. Add a new version block at the TOP of the changelog with all changes from this release. Format:
    ```
    <h4>X.Y.Z</h4>
    <ul>
@@ -37,11 +43,11 @@ Before tagging a new version and pushing, ALWAYS:
    </ul>
    ```
 
-4. **Update README.md** — keep the Features section and Changelog section in sync with the plugin description and `plugins_api` block.
+5. **Update README.md** — keep the Features section and Changelog section in sync with the plugin description and `plugins_api` block.
 
-5. **Run tests** — `./vendor/bin/phpunit` must be green before tagging.
+6. **Run tests** — `./vendor/bin/phpunit` must be green before tagging.
 
-6. **Commit, tag, push, release**:
+7. **Commit, tag, push, release**:
    ```bash
    git add -A
    git commit -m "chore: bump version to X.Y.Z"
@@ -51,7 +57,7 @@ Before tagging a new version and pushing, ALWAYS:
    gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes "..."
    ```
 
-7. **Rsync to strike-odds.test**:
+8. **Rsync to strike-odds.test**:
    ```bash
    rsync -av --exclude='.git' --exclude='.claude' --exclude='node_modules' \
      /Users/mexpower/Sites/DataFlair-Toplists/ \
