@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.7.0
+ * Version: 1.8.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.7.0');
+define('DATAFLAIR_VERSION', '1.8.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -27,6 +27,15 @@ define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_topli
 if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
 }
+
+// Auto-updates from GitHub releases
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+$dataflair_update_checker = PucFactory::buildUpdateChecker(
+    'https://github.com/dataflair/toplists/',
+    __FILE__,
+    'dataflair-toplists'
+);
+$dataflair_update_checker->setBranch('main');
 
 /**
  * Main DataFlair Plugin Class
@@ -66,6 +75,7 @@ class DataFlair_Toplists {
         add_action('wp_ajax_dataflair_delete_alternative_toplist', array($this, 'ajax_delete_alternative_toplist'));
         add_action('wp_ajax_dataflair_get_available_geos', array($this, 'ajax_get_available_geos'));
         add_action('wp_ajax_dataflair_api_preview', array($this, 'ajax_api_preview'));
+        add_action('wp_ajax_dataflair_save_review_url', array($this, 'ajax_save_review_url'));
         
         // Shortcode
         add_shortcode('dataflair_toplist', array($this, 'toplist_shortcode'));
@@ -165,6 +175,7 @@ class DataFlair_Toplists {
             offers_count int(11) DEFAULT 0,
             trackers_count int(11) DEFAULT 0,
             classification_types VARCHAR(500) NOT NULL DEFAULT '',
+            review_url_override VARCHAR(500) DEFAULT NULL,
             data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
@@ -208,7 +219,7 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.7'; // v1.7: add classification_types column to brands table
+        $current_version = '1.8'; // v1.8: add review_url_override column to brands
 
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
@@ -378,6 +389,7 @@ class DataFlair_Toplists {
                 offers_count int(11) DEFAULT 0,
                 trackers_count int(11) DEFAULT 0,
                 classification_types VARCHAR(500) NOT NULL DEFAULT '',
+                review_url_override VARCHAR(500) DEFAULT NULL,
                 data longtext NOT NULL,
                 last_synced datetime NOT NULL,
                 PRIMARY KEY (id),
@@ -388,6 +400,16 @@ class DataFlair_Toplists {
             dbDelta($brands_sql);
 
             error_log('DataFlair: Brands table created with full schema');
+        }
+
+        // ── Brands table: v1.8 — add review_url_override column ──
+        $brands_table_exists_v18 = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
+        if ($brands_table_exists_v18) {
+            $col_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'review_url_override'");
+            if (!$col_exists) {
+                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN review_url_override VARCHAR(500) DEFAULT NULL");
+                error_log('DataFlair: Brands table upgraded to v1.8 (review_url_override column added)');
+            }
         }
 
         // Check if alternative toplists table exists, create if not
@@ -2086,6 +2108,7 @@ class DataFlair_Toplists {
                                 </a>
                             </th>
                             <th style="width: 13%;">Last Synced</th>
+                            <th style="width: 15%;">Review URL</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2203,8 +2226,17 @@ class DataFlair_Toplists {
                                 <?php endif; ?>
                             </td>
                             <td><?php echo esc_html(date('Y-m-d H:i', strtotime($brand->last_synced))); ?></td>
+                            <td>
+                                <input type="text"
+                                       class="dataflair-review-url-input"
+                                       data-brand-id="<?php echo esc_attr($brand->api_brand_id); ?>"
+                                       value="<?php echo esc_attr($brand->review_url_override ?? ''); ?>"
+                                       placeholder="/reviews/brand-slug/"
+                                       style="width:220px;" />
+                                <button class="button dataflair-save-review-url" data-brand-id="<?php echo esc_attr($brand->api_brand_id); ?>">Save</button>
+                            </td>
                         </tr>
-                        
+
                         <!-- Expandable Details Row -->
                         <tr class="brand-details" id="<?php echo esc_attr($brand_id); ?>" style="display: none;">
                             <td colspan="10">
@@ -2465,7 +2497,29 @@ class DataFlair_Toplists {
                         </span>
                     </div>
                 </div>
-                
+
+                <script>
+                jQuery(document).on('click', '.dataflair-save-review-url', function() {
+                    var btn = jQuery(this);
+                    var brandId = btn.data('brand-id');
+                    var url = jQuery('.dataflair-review-url-input[data-brand-id="' + brandId + '"]').val();
+                    btn.text('Saving...').prop('disabled', true);
+                    jQuery.post(ajaxurl, {
+                        action: 'dataflair_save_review_url',
+                        brand_id: brandId,
+                        review_url: url,
+                        nonce: '<?php echo wp_create_nonce("dataflair_save_review_url"); ?>'
+                    }, function(response) {
+                        if (response.success) {
+                            btn.text('Saved ✓');
+                            setTimeout(function() { btn.text('Save').prop('disabled', false); }, 2000);
+                        } else {
+                            btn.text('Error').prop('disabled', false);
+                        }
+                    });
+                });
+                </script>
+
                 <style>
                     /* Select2 styling for WordPress admin */
                     .select2-container {
@@ -3930,6 +3984,33 @@ class DataFlair_Toplists {
             'body'    => $pretty,
             'elapsed' => $elapsed,
         ));
+    }
+
+    /**
+     * Save a per-brand review URL override via AJAX.
+     *
+     * @return void
+     */
+    public function ajax_save_review_url(): void {
+        check_ajax_referer('dataflair_save_review_url', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+        global $wpdb;
+        $brand_id   = intval($_POST['brand_id'] ?? 0);
+        $review_url = sanitize_text_field($_POST['review_url'] ?? '');
+        if (!$brand_id) {
+            wp_send_json_error('Invalid brand ID');
+        }
+        $table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+        $wpdb->update(
+            $table,
+            ['review_url_override' => $review_url ?: null],
+            ['api_brand_id' => $brand_id],
+            ['%s'],
+            ['%d']
+        );
+        wp_send_json_success();
     }
 
     /**
