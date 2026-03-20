@@ -1,6 +1,4 @@
 node_modules/
-vendor/
 *.log
-composer.lock
 .wp-env.json
 
