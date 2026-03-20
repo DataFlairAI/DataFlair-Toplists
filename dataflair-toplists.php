@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.8.2
+ * Version: 1.9.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.8.2');
+define('DATAFLAIR_VERSION', '1.9.0');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
