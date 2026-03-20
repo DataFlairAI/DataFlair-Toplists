@@ -4456,27 +4456,64 @@ class DataFlair_Toplists {
                 }
             }
             
-            $review_id = $this->get_or_create_review_post($brand, $item);
-            
-            if ($review_id) {
-                // Get permalink - works for both published and draft posts
-                $review_url = get_permalink($review_id);
-                // If permalink is false (draft), generate preview link
-                if (!$review_url) {
-                    $review_url = get_preview_post_link($review_id);
-                }
-                // Final fallback to slug-based URL
-                if (!$review_url) {
+            // review_url_override set in plugin admin wins everything — look it up from brands table
+            // Match by api_brand_id first, then slug, then name (toplist JSON brand IDs may differ from brands table)
+            $review_url = null;
+            $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+            $override = null;
+
+            if (!empty($brand['api_brand_id'])) {
+                $override = $wpdb->get_var($wpdb->prepare(
+                    "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
+                    intval($brand['api_brand_id'])
+                ));
+            }
+            if (empty($override) && !empty($brand['id'])) {
+                $override = $wpdb->get_var($wpdb->prepare(
+                    "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
+                    intval($brand['id'])
+                ));
+            }
+            if (empty($override) && !empty($brand['slug'])) {
+                $override = $wpdb->get_var($wpdb->prepare(
+                    "SELECT review_url_override FROM $brands_table WHERE slug = %s",
+                    $brand['slug']
+                ));
+            }
+            if (empty($override) && !empty($brand['name'])) {
+                $override = $wpdb->get_var($wpdb->prepare(
+                    "SELECT review_url_override FROM $brands_table WHERE name = %s",
+                    $brand['name']
+                ));
+            }
+
+            if (!empty($override)) {
+                $review_url = esc_url($override);
+            }
+
+            if (empty($review_url)) {
+                $review_id = $this->get_or_create_review_post($brand, $item);
+
+                if ($review_id) {
+                    // Get permalink - works for both published and draft posts
+                    $review_url = get_permalink($review_id);
+                    // If permalink is false (draft), generate preview link
+                    if (!$review_url) {
+                        $review_url = get_preview_post_link($review_id);
+                    }
+                    // Final fallback to slug-based URL
+                    if (!$review_url) {
+                        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+                        $review_url = home_url('/reviews/' . $brand_slug . '/');
+                    }
+                } else {
+                    // Fallback to /reviews/{slug} format
                     $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
                     $review_url = home_url('/reviews/' . $brand_slug . '/');
                 }
-            } else {
-                // Fallback to /reviews/{slug} format
-                $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
-                $review_url = home_url('/reviews/' . $brand_slug . '/');
             }
-            
-            // Pass review URL to template
+
+            // Pass review URL to template (filter allows theme-level overrides)
             $review_url = apply_filters('dataflair_review_url', $review_url, $brand, $item);
             
             // Update item with processed brand data (including local_logo)
