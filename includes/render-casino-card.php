@@ -179,6 +179,11 @@ if ($has_valid_tracker && !empty($campaign_name)) {
     $casino_url = !empty($tracker_url) ? esc_url($tracker_url) : '#';
 }
 
+// Override wins above everything — set in plugin admin per brand
+if (!empty($brand['review_url_override'])) {
+    $review_url = esc_url($brand['review_url_override']);
+}
+
 // Get review URL - use pre-set URL from parent function, or generate it
 if (!isset($review_url) || empty($review_url)) {
     // Check if review URL was passed from parent function
