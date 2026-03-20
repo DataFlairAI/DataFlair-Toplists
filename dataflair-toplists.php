@@ -38,6 +38,133 @@ if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
     $dataflair_update_checker->getVcsApi()->enableReleaseAssets();
 }
 
+// Plugin info for the "View details" popup on wp-admin/plugins.php
+add_filter('plugins_api', 'dataflair_plugins_api_info', 20, 3);
+function dataflair_plugins_api_info($res, $action, $args) {
+    if ($action !== 'plugin_information') {
+        return $res;
+    }
+    if (!isset($args->slug) || $args->slug !== 'dataflair-toplists') {
+        return $res;
+    }
+
+    $res = new stdClass();
+    $res->name    = 'DataFlair Toplists';
+    $res->slug    = 'dataflair-toplists';
+    $res->version = DATAFLAIR_VERSION;
+    $res->author  = '<a href="https://dataflair.ai">DataFlair</a>';
+    $res->homepage = 'https://dataflair.ai';
+    $res->requires = '5.8';
+    $res->tested   = '6.7';
+    $res->requires_php = '7.4';
+
+    $res->sections = [
+        'description' => '
+<p>DataFlair Toplists is a WordPress plugin that connects your site to the <strong>DataFlair</strong> affiliate management platform. DataFlair is a white-label iGaming data service built for casino and sportsbook affiliate publishers, it lets you manage your entire brand catalogue, bonus offers, promo codes, affiliate tracking links, geo rules, and rating data in one central dashboard, then distribute that data to all your WordPress affiliate sites simultaneously.</p>
+<p>This plugin is the WordPress-side receiver. It syncs your toplists and brands from the DataFlair API, stores them locally in custom database tables, and renders fully styled casino and sportsbook comparison cards on any page or post, with no live API calls on the front end.</p>
+
+<h4>How It Works</h4>
+<p>Your DataFlair account holds your brand catalogue and toplist configurations (e.g. "Top 10 Casinos in India", "Best Sportsbooks in Italy"). The plugin syncs this data on a configurable schedule and caches it locally. You place the DataFlair Gutenberg block or <code>[dataflair_toplist id="123"]</code> shortcode on any page, and the plugin renders the full toplist from cached data, fast and reliable.</p>
+
+<h4>Toplist Sync</h4>
+<ul>
+  <li>Syncs from DataFlair API v1 and v2</li>
+  <li>Full sync and incremental sync modes with conflict detection and preview before overwriting</li>
+  <li>Supports multiple geo-editions, rotation schedules, and locked item positions</li>
+  <li>Stores complete offer, tracker, and geo data as JSON for flexible querying</li>
+  <li>Paginated API fetch handles large brand catalogues automatically</li>
+</ul>
+
+<h4>Brand Management</h4>
+<ul>
+  <li>Syncs your full brand catalogue into a local database table</li>
+  <li>Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries</li>
+  <li>Admin screen at DataFlair, Brands shows all synced brands with their affiliate data</li>
+  <li><strong>Review URL Override:</strong> per-brand custom review URL that wins over all automatic URL generation across the entire site. Field locks after saving and unlocks on Edit.</li>
+</ul>
+
+<h4>Casino Card Rendering</h4>
+<ul>
+  <li>Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link</li>
+  <li>Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages</li>
+  <li>Review URL resolution priority: manual override, published review post permalink, auto-generated /reviews/{slug}/, affiliate CTA link</li>
+  <li>Supports multiple product types (casino, sportsbook, poker) with type-aware labels</li>
+</ul>
+
+<h4>Gutenberg Block and Shortcode</h4>
+<ul>
+  <li>Native WordPress block with inspector controls for toplist selection, item limit, and display options</li>
+  <li>Server-side rendered, always reflects live synced data</li>
+  <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
+</ul>
+
+<h4>Automatic Updates</h4>
+<ul>
+  <li>Self-updating via GitHub releases, no WordPress.org required</li>
+  <li>WordPress shows native update notifications when a new release is published on GitHub</li>
+  <li>Powered by plugin-update-checker v5.6, release-based (not branch-based)</li>
+</ul>
+
+<h4>Admin Interface</h4>
+<ul>
+  <li>DataFlair, Toplists: view all synced toplists, trigger manual sync, preview before committing</li>
+  <li>DataFlair, Brands: full brand table with review URL override editing</li>
+  <li>DataFlair, Settings: configure API endpoint, API key, sync frequency, and feature flags</li>
+  <li>REST API endpoints for the block editor</li>
+</ul>
+        ',
+
+        'changelog' => '
+<h4>1.9.0</h4>
+<ul>
+  <li>Added: automatic plugin updates via GitHub releases (plugin-update-checker v5.6)</li>
+  <li>Added: promo code display with copy-to-clipboard button on toplist casino cards</li>
+  <li>Added: per-brand review URL override in DataFlair, Brands admin</li>
+  <li>Fixed: global $wpdb missing in card renderer, review URL override was silently failing</li>
+  <li>Fixed: draft/preview post URLs replaced with clean /reviews/{slug}/ fallback</li>
+  <li>Fixed: undefined $product_type and $labels PHP warnings in card template</li>
+</ul>
+
+<h4>1.8.1</h4>
+<ul>
+  <li>Added: review URL input field in Brands table, locks after save, unlocks on Edit</li>
+</ul>
+
+<h4>1.8.0</h4>
+<ul>
+  <li>Added: review URL override column in brands table</li>
+  <li>Added: Composer autoload infrastructure</li>
+</ul>
+
+<h4>1.7.0</h4>
+<ul>
+  <li>Added: DataFlair API v2 brands sync</li>
+  <li>Added: compare preview before overwriting synced data</li>
+  <li>Fixed: block REST API endpoint</li>
+</ul>
+
+<h4>1.6.0</h4>
+<ul>
+  <li>Added: editions support for geo-market toplists</li>
+  <li>Fixed: critical sync failure on missing table</li>
+</ul>
+
+<h4>1.5.0</h4>
+<ul>
+  <li>Added: snapshot support, data integrity checker, API preview tab</li>
+</ul>
+
+<h4>1.4.0</h4>
+<ul>
+  <li>Added: /api/v1/brands endpoint support with 8 new brand fields</li>
+  <li>Fixed: self-healing cron</li>
+</ul>
+        ',
+    ];
+
+    return $res;
+}
+
 /**
  * Main DataFlair Plugin Class
  */

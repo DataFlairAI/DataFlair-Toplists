@@ -1,336 +1,211 @@
-# DataFlair Toplists WordPress Plugin
+# DataFlair Toplists
 
-WordPress plugin to fetch and display casino toplists and brands from the DataFlair API, with full sync management, geo-aware rendering, Gutenberg block support, and a comprehensive test suite.
-
----
-
-## 📋 Features
-
-- **Toplists Management** — Fetch, store, and display casino toplists from the DataFlair API
-- **Brands Management** — Sync active brands with full relationship data (payments, currencies, games, languages, geos)
-- **Alternative Toplists** — Geo-specific fallback toplists for better regional conversion
-- **Logo Caching** — Logos downloaded and stored locally to reduce API calls
-- **Gutenberg Block** — `dataflair-toplists/toplist` block with full visual customisation panel
-- **Shortcode Support** — `[dataflair_toplist id="X"]` works everywhere
-- **Self-Healing Cron** — Brands sync every 15 min, toplists every 2 days; cron schedule auto-repairs if broken
-- **Comprehensive Test Suite** — 6 test modules runnable directly from the admin panel
-- **Advanced Filtering & Sorting** — Filter brands by license, geo, payment method; sort by name/offers/trackers
-- **Accordion UI** — Expandable brand rows showing full relationship details
+A WordPress plugin that connects your site to the [DataFlair](https://dataflair.ai) affiliate management platform and renders fully styled casino and sportsbook toplist blocks.
 
 ---
 
-## 🔌 API Endpoints Used
+## What is DataFlair?
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/toplists` | List of toplists for the site |
-| `GET` | `/api/v1/toplists/{id}` | Single toplist with items |
-| `GET` | `/api/v1/brands` | Paginated active brands with all relationships |
+DataFlair is a white-label iGaming data service built for casino and sportsbook affiliate publishers. It lets you manage your entire brand catalogue, bonus offers, promo codes, affiliate tracking links, geo rules, and rating data in one central dashboard, then distribute that data to all your WordPress affiliate sites simultaneously.
 
-All endpoints require a `dfp_` Plugin Token as a Bearer header. See **Configuration** below.
-
-### Brand API Response Shape
-
-The `/api/v1/brands` endpoint returns all active brands with the following fields:
-
-```json
-{
-  "id": 1,
-  "name": "Casino Name",
-  "slug": "casino-name",
-  "rating": 4.5,
-  "brandStatus": "Active",
-  "brandType": "Casino",
-  "logo": { "rectangular": "https://...", "square": "https://...", "backgroundColor": "#fff" },
-  "productTypes": ["Casino", "Live Casino"],
-  "licenses": ["MGA", "UKGC"],
-  "paymentMethods": ["VISA", "Mastercard", "Skrill"],
-  "currencies": ["EUR", "GBP", "USD"],
-  "gameTypes": ["Slots", "Live Casino", "Table Games"],
-  "gameProviders": ["NetEnt", "Evolution"],
-  "languages": {
-    "website": ["English", "German"],
-    "support": ["English"],
-    "livechat": ["English", "German"]
-  },
-  "topGeos": { "countries": ["United Kingdom"], "markets": ["Western Europe"] },
-  "restrictedCountries": ["United States", "France"],
-  "offers": [
-    {
-      "id": 10,
-      "offerText": "100% up to €200",
-      "trackers": [{ "id": 5, "trackerLink": "https://go.example.com/..." }]
-    }
-  ]
-}
-```
+This plugin is the WordPress-side receiver. It syncs your toplists and brands from the DataFlair API, stores them locally in custom database tables, and renders fully styled casino and sportsbook comparison cards on any page or post, with no live API calls on the front end.
 
 ---
 
-## 🚀 Installation
+## How It Works
 
-### Via Git
-
-```bash
-cd wp-content/plugins/
-git clone git@github.com:DataFlairAI/DataFlair-Toplists.git
-```
-
-Activate the plugin in **WordPress Admin → Plugins**.
-
-### Manual Upload
-
-Upload the plugin folder to `wp-content/plugins/dataflair-toplists/` and activate.
-
-### Build Assets (Gutenberg Block)
-
-```bash
-npm install
-npm run build
-```
+1. Your DataFlair account holds your brand catalogue and toplist configurations (e.g. "Top 10 Casinos in India", "Best Sportsbooks in Italy").
+2. The plugin syncs this data from the DataFlair API on a configurable schedule and caches it locally.
+3. You place the DataFlair Gutenberg block or `[dataflair_toplist id="123"]` shortcode on any page.
+4. The plugin renders the full toplist from cached data, fast and with no live API dependency on page load.
 
 ---
 
-## ⚙️ Configuration
+## Features
 
-### 1. Generate a Plugin Token
+### Toplist Sync
+- Syncs from DataFlair API v1 and v2
+- Full sync and incremental sync modes with conflict detection and preview before overwriting
+- Supports multiple geo-editions, rotation schedules, and locked item positions
+- Stores complete offer, tracker, and geo data as JSON for flexible querying
+- Paginated API fetch handles large brand catalogues automatically
 
-In your DataFlair tenant, generate a **Plugin Token** (`dfp_…`). This is different from an API key — it is scoped to a single WordPress site.
+### Brand Management
+- Syncs your full brand catalogue into a local database table
+- Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries
+- Admin screen at **DataFlair → Brands** shows all synced brands with their affiliate data
+- **Review URL Override:** per-brand custom review URL that wins over all automatic URL generation across the entire site. Field locks after saving and unlocks on Edit.
 
-> **Via Tinker (dev/staging):**
-> ```bash
-> # Find the tenant (domain stored as short slug, e.g. "sigma")
-> $tenant = \App\Models\Tenant::whereHas('domains', fn($q) => $q->where('domain', 'sigma'))->first();
-> tenancy()->initialize($tenant);
-> $cred = \App\Models\Tenant\API\SiteApiCredential::first();
-> $plain = \App\Models\Tenant\API\SiteApiCredential::generatePlainToken();
-> $cred->plain_token_hash = \App\Models\Tenant\API\SiteApiCredential::hashPlainToken($plain);
-> $cred->save();
-> echo 'New token: ' . $plain;
-> ```
+### Casino Card Rendering
+- Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link
+- Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages
+- Review URL resolution priority: manual override, published review post permalink, auto-generated `/reviews/{slug}/`, affiliate CTA link
+- Supports multiple product types (casino, sportsbook, poker) with type-aware labels
 
-### 2. Enter Settings in WordPress
+### Gutenberg Block & Shortcode
+- Native WordPress block with inspector controls for toplist selection, item limit, and display options
+- Server-side rendered, always reflects live synced data
+- Shortcode: `[dataflair_toplist id="123" limit="10"]` works anywhere
 
-Go to **DataFlair → Settings**:
+### Automatic Updates
+- Self-updating via GitHub releases, no WordPress.org required
+- WordPress shows native update notifications when a new release is published on GitHub
+- Powered by [plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) v5.6, release-based (not branch-based)
 
-| Field | Example | Notes |
-|-------|---------|-------|
-| API Bearer Token | `dfp_test_abc123…` | Must start with `dfp_` |
-| API Base URL | `https://sigma.dataflair.ai/api/v1` | No trailing slash |
-| API Endpoints | `https://sigma.dataflair.ai/api/v1/toplists/3` | One per line |
+### Alternative Toplists
+- Geo-specific fallback toplists for better regional conversion
+- Set per-country or per-market alternatives in the admin panel
 
-### 3. Fetch Data
+### Admin Interface
+- **DataFlair → Toplists:** view all synced toplists, trigger manual sync, preview before committing
+- **DataFlair → Brands:** full brand table with review URL override editing
+- **DataFlair → Settings:** configure API endpoint, API key, sync frequency, and feature flags
+- REST API endpoints for the block editor (`/wp-json/dataflair/v1/toplists`, `/wp-json/dataflair/v1/casinos`)
 
-- Click **Fetch All Toplists** to pull toplists into the DB
-- Click **Sync All Brands** to pull brands (or wait for the 15-minute cron)
+### Security
+- Nonce verification on all AJAX actions
+- `manage_options` capability check on all admin routes
+- SQL injection prevention via `$wpdb->prepare()`
+- XSS protection via `esc_html()`, `esc_attr()`, `esc_url()`
+- Direct file execution blocked via `ABSPATH` check
 
 ---
 
-## 📝 Shortcode
+## Installation
+
+1. Upload the `dataflair-toplists` folder to `/wp-content/plugins/`
+2. Activate the plugin in **Plugins → Installed Plugins**
+3. Go to **DataFlair → Settings** and enter your DataFlair API key and endpoint
+4. Click **Sync Now** to pull your first batch of toplists and brands
+
+Dependencies (`vendor/`) are committed to the repository, so no `composer install` is needed on the server.
+
+---
+
+## Usage
+
+### Gutenberg Block
+
+Add the **DataFlair Toplist** block to any page or post. In the block inspector, select a toplist and set an item limit.
+
+### Shortcode
 
 ```
-[dataflair_toplist id="3"]
-[dataflair_toplist id="3" title="Best UK Casinos"]
-[dataflair_toplist id="3" title="Top 5" limit="5"]
+[dataflair_toplist id="123" limit="10"]
 ```
 
 | Attribute | Required | Description |
 |-----------|----------|-------------|
-| `id` | ✅ | DataFlair API toplist ID |
-| `title` | ❌ | Overrides toplist name |
-| `limit` | ❌ | Max number of casino cards to render |
+| `id` | Yes | The DataFlair API toplist ID |
+| `limit` | No | Maximum number of brands to display |
+| `title` | No | Override the toplist display title |
 
 ---
 
-## 🧱 Gutenberg Block
+## Requirements
 
-Use the **DataFlair Toplist** block in the block editor. Select a toplist from the dropdown (populated from synced toplists via the REST API) and customise colours, CTA text, ribbons, and ranking badges directly in the block sidebar.
-
-The block renders using the same `toplist_shortcode()` function — output is identical to the shortcode.
-
----
-
-## 🔄 Data Synchronisation
-
-### Cron Schedule
-
-| Job | Hook | Frequency | What it does |
-|-----|------|-----------|-------------|
-| Toplists | `dataflair_sync_cron` | Twice daily | Re-fetches all configured toplist endpoints |
-| Brands | `dataflair_brands_sync_cron` | Every 15 min | Pulls active brands from `/api/v1/brands` |
-
-> **Note:** WordPress pseudo-cron fires on page load. For reliable scheduling in production, add a real server cron:
-> ```bash
-> */5 * * * * curl -s https://yoursite.com/wp-cron.php?doing_wp_cron > /dev/null
-> ```
-
-### Self-Healing Cron
-
-The `dataflair_15min` custom schedule is registered via the `cron_schedules` filter. Plugin activation fires before filters run, which caused the brands cron to be stored with an unknown interval and never fire.
-
-The plugin now runs `ensure_cron_scheduled()` on every `init` — when filters are already active. It inspects the stored cron array and automatically reschedules the brands cron with the correct interval if it detects the broken state.
-
-### Stale Data Warning
-
-If a toplist hasn't been synced in more than 3 days, a banner appears above the toplist:
-```
-⚠️ This data was last updated on Mar 01, 2026. Using cached version.
-```
+- WordPress 5.8+
+- PHP 7.4+
+- MySQL 5.7+ or MariaDB 10.3+ (for JSON column support)
 
 ---
 
-## 🌍 Alternative Toplists
-
-Set geo-specific fallback toplists for better regional conversion.
-
-**Setup:** Go to **DataFlair → Toplists**, expand a toplist row, select a geo and an alternative toplist, and click **Add Alternative**.
-
-**How it works:** When a user visits a page with toplist #1 and the plugin detects they are from Canada, it automatically displays the toplist configured as the Canada alternative instead.
-
----
-
-## 🗄️ Database Tables
+## Database Tables
 
 | Table | Purpose |
 |-------|---------|
-| `wp_dataflair_toplists` | Toplist JSON blobs from API |
-| `wp_dataflair_brands` | Brand relationship data synced from `/api/v1/brands` |
-| `wp_dataflair_alternative_toplists` | Geo → alternative toplist mappings |
+| `wp_dataflair_toplists` | Toplist JSON blobs synced from API |
+| `wp_dataflair_brands` | Brand catalogue synced from API |
+| `wp_dataflair_alternative_toplists` | Geo to alternative toplist mappings |
 
 ---
 
-## 🧪 Test Suite
+## Development
 
-Tests are accessible directly in the admin panel at **DataFlair → Tests**. No WP-CLI or server access required.
+### Requirements
 
-### Available Tests
+- PHP 7.4+
+- Node.js 18+ and npm (for Gutenberg block compilation)
 
-| Button | File | What it covers |
-|--------|------|----------------|
-| Run All Tests | `run-all-tests.php` | Runs all test files in sequence |
-| Logo Download Test | `test-logo-download.php` | Logo URL resolution and local caching |
-| Brand Data Test | `test-brand-data.php` | All 14+ brand API fields, false-positive check (inactive brands excluded), pagination meta, empty arrays not null, alphabetical order |
-| Toplist Fetch Test | `test-toplist-fetch.php` | Toplist API fetch and DB storage |
-| Toplist Render Test | `test-toplist-render.php` | Shortcode (valid/invalid/missing ID), limit, custom title, stale data warning, geo edge cases (country/market/global null), Gutenberg block delegation, REST endpoints for block editor, casino card rendering |
-| API Edge Cases Test | `test-api-edge-cases.php` | Auth failures (no token, wrong token, garbage, dfp_ wrong value), Content-Type header, null fields, per_page cap at 100, invalid per_page values, 404 for non-existent toplist, connection error handling |
-| Cron Jobs Test | `test-cron.php` | Custom schedule registered, both hooks scheduled, next run timing, manually fires both crons and verifies DB `last_synced` updates, graceful skip with no token |
-
-### Running via WP-CLI
+### Build Assets
 
 ```bash
-docker exec <wordpress-container> wp eval-file wp-content/plugins/dataflair-toplists/tests/run-all-tests.php --allow-root
+npm install
+npm run build    # production build
+npm run start    # watch mode for development
 ```
+
+### Tests
+
+```bash
+./vendor/bin/phpunit
+```
+
+82 tests covering sync logic, brand management, REST API, and auto-update wiring.
 
 ---
 
-## 📁 File Structure
+## File Structure
 
 ```
 dataflair-toplists/
-├── dataflair-toplists.php      Main plugin file (v1.6.0)
-├── assets/
-│   ├── admin.js                Admin panel JavaScript
-│   └── style.css               Frontend casino card styles
-├── build/                      Compiled Gutenberg block assets
+├── dataflair-toplists.php          Main plugin file
+├── composer.json
+├── composer.lock
+├── vendor/                         Composer dependencies (committed)
+├── build/                          Compiled Gutenberg block assets
 ├── includes/
-│   ├── render-casino-card.php  Casino card HTML template
-│   └── DataIntegrityChecker.php  Validates API response structure before storage
-├── src/                        Gutenberg block source (JS/JSX)
+│   ├── render-casino-card.php      Casino card HTML template
+│   ├── ProductTypeLabels.php       Label map for product types
+│   └── DataIntegrityChecker.php    Validates API response structure
+├── src/                            Gutenberg block source (JS/JSX)
 ├── tests/
-│   ├── run-all-tests.php
-│   ├── test-logo-download.php
-│   ├── test-brand-data.php
-│   ├── test-toplist-fetch.php
-│   ├── test-toplist-render.php
-│   ├── test-api-edge-cases.php
-│   └── test-cron.php
-├── uninstall.php
+│   └── phpunit/                    PHPUnit test suite
+├── docs/
+│   └── plans/                      Parked feature plans
 └── README.md
 ```
 
 ---
 
-## 🐛 Debugging
+## Changelog
 
-### Common Errors
+### 1.9.0
+- Added: automatic plugin updates via GitHub releases (plugin-update-checker v5.6)
+- Added: promo code display with copy-to-clipboard button on toplist casino cards
+- Added: per-brand review URL override in DataFlair, Brands admin
+- Fixed: `global $wpdb` missing in card renderer, review URL override was silently failing
+- Fixed: draft/preview post URLs replaced with clean `/reviews/{slug}/` fallback
+- Fixed: undefined `$product_type` and `$labels` PHP warnings in card template
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `Toplist ID is required` | Missing `id` in shortcode | Use `[dataflair_toplist id="3"]` |
-| `Toplist ID X not found` | Not synced to DB | Run Fetch All Toplists |
-| `Invalid toplist data` | Corrupted JSON in DB | Re-sync the toplist |
-| `401 Unauthenticated` | Token invalid/expired | Regenerate token via Tinker (see Configuration) |
-| Brands cron stuck | Activation-time schedule bug | Fixed in v1.4.0 — reload any page to self-heal |
+### 1.8.1
+- Added: review URL input field in Brands table, locks after save, unlocks on Edit
 
-### WordPress Debug Log
+### 1.8.0
+- Added: review URL override column in brands table
+- Added: Composer autoload infrastructure
 
-```php
-// wp-config.php
-define('WP_DEBUG', true);
-define('WP_DEBUG_LOG', true);
-define('WP_DEBUG_DISPLAY', false);
-// Logs at: wp-content/debug.log
-```
+### 1.7.0
+- Added: DataFlair API v2 brands sync
+- Added: compare preview before overwriting synced data
+- Fixed: block REST API endpoint
 
----
+### 1.6.0
+- Added: editions support for geo-market toplists
+- Fixed: critical sync failure on missing table
 
-## 🔐 Security
+### 1.5.0
+- Added: snapshot support, data integrity checker, API preview tab, toplist slug column
 
-- Nonce verification on all AJAX actions
-- `manage_options` capability check on all admin routes
-- SQL injection prevention via `$wpdb->prepare()`
-- XSS protection via `esc_html()` / `esc_attr()` / `esc_url()`
-- Plugin Token (`dfp_`) scoped to a single site — tenancy is the isolation boundary
-- Direct file execution blocked via `ABSPATH` check
-
----
-
-## 📦 Releases
-
-Follows [Semantic Versioning](https://semver.org/).
-
-| Version | Highlights |
-|---------|-----------|
-| **v1.6.0** | **Editions support & critical sync fix.** Fixed silent INSERT failures caused by 6 missing DB columns (slug, current\_period, published\_at, item\_count, locked\_count, sync\_warnings); fixed INSERT/UPDATE format string mismatch (`%d`/`%s` order); added error checking on all DB operations; widened current\_period from VARCHAR(7) to VARCHAR(100) for edition labels; added paginated API fetch (handles `meta.last_page`); cron auto-discovers new toplists on every sync; DB upgrade auto-runs on plugin load (v1.6) |
-| v1.5.0 | Snapshot support, data integrity checker, API preview tab, toplist slug column |
-| **v1.4.0** | `/api/v1/brands` endpoint support; 8 new brand fields (paymentMethods, currencies, gameTypes, gameProviders, languages, restrictedCountries); self-healing cron fix; 3 new test modules (toplist-render, api-edge-cases, cron); HTTP auth fields removed from settings |
-| v1.3.3 | Toplist template filter, column sorting, admin polish |
-| v1.3.x | Admin UI improvements, filter performance, cron timestamps |
-| v1.0.6 | Logo download and caching, initial test suite |
-
-To release a new version:
-```bash
-# 1. Bump version in dataflair-toplists.php (header + DATAFLAIR_VERSION constant)
-# 2. Update README version table
-git add -A
-git commit -m "release: v1.x.x — short description"
-git tag v1.x.x
-git push origin main --tags
-```
+### 1.4.0
+- Added: `/api/v1/brands` endpoint support
+- Added: 8 new brand fields (paymentMethods, currencies, gameTypes, gameProviders, languages, restrictedCountries)
+- Fixed: self-healing cron
 
 ---
 
-## 🛠️ Development
-
-### Requirements
-- PHP 8.0+
-- WordPress 6.0+
-- Node.js 18+ & npm (for Gutenberg block)
-
-### Setup
-
-```bash
-npm install
-npm run build        # production build
-npm run start        # watch mode
-```
-
----
-
-## 📄 License
+## License
 
 GPL v2 or later
 
----
-
-**Version:** 1.6.0 | **Requires WordPress:** 6.0+ | **Requires PHP:** 8.0+ | **Tested up to:** 6.7
+**Version:** 1.9.0 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.7
