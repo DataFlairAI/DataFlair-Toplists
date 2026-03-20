@@ -29,13 +29,14 @@ if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
 }
 
 // Auto-updates from GitHub releases
-use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
-$dataflair_update_checker = PucFactory::buildUpdateChecker(
-    'https://github.com/dataflair/toplists/',
-    __FILE__,
-    'dataflair-toplists'
-);
-$dataflair_update_checker->setBranch('main');
+if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
+    $dataflair_update_checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+        'https://github.com/dataflair/toplists/',
+        __FILE__,
+        'dataflair-toplists'
+    );
+    $dataflair_update_checker->setBranch('main');
+}
 
 /**
  * Main DataFlair Plugin Class
