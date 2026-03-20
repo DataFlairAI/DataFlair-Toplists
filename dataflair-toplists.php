@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.0
+ * Version: 1.9.1
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('DATAFLAIR_VERSION', '1.9.0');
+define('DATAFLAIR_VERSION', '1.9.1');
 define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -115,6 +115,13 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.9.1</h4>
+<ul>
+  <li>Added: View Details popup on plugins.php now shows full description and changelog</li>
+  <li>Added: CLAUDE.md with release checklist and permanent rsync rule</li>
+  <li>Updated: README.md fully rewritten with complete feature documentation</li>
+</ul>
+
 <h4>1.9.0</h4>
 <ul>
   <li>Added: automatic plugin updates via GitHub releases (plugin-update-checker v5.6)</li>

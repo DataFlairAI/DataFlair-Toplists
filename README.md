@@ -170,6 +170,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.1
+- Added: View Details popup on plugins.php shows full description and changelog
+- Added: CLAUDE.md with release checklist and permanent rsync rule
+- Updated: README.md fully rewritten with complete feature documentation
+
 ### 1.9.0
 - Added: automatic plugin updates via GitHub releases (plugin-update-checker v5.6)
 - Added: promo code display with copy-to-clipboard button on toplist casino cards
@@ -208,4 +213,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.0 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.7
+**Version:** 1.9.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.7
