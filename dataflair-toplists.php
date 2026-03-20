@@ -4495,20 +4495,13 @@ class DataFlair_Toplists {
             if (empty($review_url)) {
                 $review_id = $this->get_or_create_review_post($brand, $item);
 
-                if ($review_id) {
-                    // Get permalink - works for both published and draft posts
+                if ($review_id && get_post_status($review_id) === 'publish') {
+                    // Only use post permalink if the review is published
                     $review_url = get_permalink($review_id);
-                    // If permalink is false (draft), generate preview link
-                    if (!$review_url) {
-                        $review_url = get_preview_post_link($review_id);
-                    }
-                    // Final fallback to slug-based URL
-                    if (!$review_url) {
-                        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
-                        $review_url = home_url('/reviews/' . $brand_slug . '/');
-                    }
-                } else {
-                    // Fallback to /reviews/{slug} format
+                }
+
+                if (empty($review_url)) {
+                    // Draft posts and missing posts both fall back to slug-based URL
                     $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
                     $review_url = home_url('/reviews/' . $brand_slug . '/');
                 }
