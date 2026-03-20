@@ -1,5 +1,23 @@
 # DataFlair Toplists — Claude Instructions
 
+## Rsync Rule (MANDATORY — after EVERY code change)
+
+After ANY file edit to this plugin, always rsync to both strike-odds.test plugin folders:
+
+```bash
+rsync -av --exclude='.git' --exclude='.claude' --exclude='node_modules' --exclude='.phpunit.result.cache' \
+  /Users/mexpower/Sites/DataFlair-Toplists/ \
+  /Users/mexpower/Sites/strike-odds/wp-content/plugins/DataFlair-Toplists/
+
+rsync -av --exclude='.git' --exclude='.claude' --exclude='node_modules' --exclude='.phpunit.result.cache' \
+  /Users/mexpower/Sites/DataFlair-Toplists/ \
+  /Users/mexpower/Sites/strike-odds/wp-content/plugins/DataFlair-Toplists-1.8.1/
+```
+
+> Both folders must always be in sync. `DataFlair-Toplists-1.8.1/` is the active plugin folder confirmed via ReflectionMethod. Never rsync to one without the other.
+
+---
+
 ## Release Checklist (MANDATORY before every release)
 
 Before tagging a new version and pushing, ALWAYS:
