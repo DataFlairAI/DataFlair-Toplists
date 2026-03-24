@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.2
+ * Version: 1.9.3
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.2');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.3');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -116,6 +116,18 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.9.3</h4>
+<ul>
+  <li>Added: E2E test suite — brand sync (9 assertions), toplist sync (16 assertions), cron jobs (14 assertions)</li>
+  <li>Added: run.sh test orchestrator with auto-detection for Docker/wp-env, production WP-CLI, and CI environments</li>
+  <li>Added: BrandModelTest.php — 100% coverage for Brand model</li>
+  <li>Added: ProductTypeLabelsTest.php — 100% coverage for ProductTypeLabels</li>
+  <li>Fixed: constant definitions wrapped in if(!defined()) guards to prevent redefinition on test bootstrap</li>
+  <li>Fixed: deprecated ReflectionProperty::setAccessible(true) calls removed from ToplistModelTest (PHP 8.5)</li>
+  <li>Improved: @codeCoverageIgnore added to admin HTML methods and casino card renderer</li>
+  <li>Improved: vendor/ cleaned to production-only dependencies (dev packages removed)</li>
+</ul>
+
 <h4>1.9.1</h4>
 <ul>
   <li>Added: View Details popup on plugins.php now shows full description and changelog</li>

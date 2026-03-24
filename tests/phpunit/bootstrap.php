@@ -34,6 +34,11 @@ if (!$autoload_loaded) {
 if (!defined('ABSPATH')) {
     define('ABSPATH', '/tmp/wordpress/');
 }
+// WordPress DB result-type constants
+if (!defined('ARRAY_A'))  define('ARRAY_A',  'ARRAY_A');
+if (!defined('ARRAY_N'))  define('ARRAY_N',  'ARRAY_N');
+if (!defined('OBJECT'))   define('OBJECT',   'OBJECT');
+if (!defined('OBJECT_K')) define('OBJECT_K', 'OBJECT_K');
 if (!defined('DATAFLAIR_TABLE_NAME')) {
     define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 }

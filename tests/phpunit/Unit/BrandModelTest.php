@@ -49,11 +49,15 @@ class BrandModelTest extends TestCase {
     private function mockWpdb(array $rowOrNull = null, array $results = []): object {
         $wpdb          = M::mock('wpdb');
         $wpdb->prefix  = 'wp_';
-        // prepare() just returns the query string (good enough for unit tests)
+        // prepare() just returns the query string (good enough for unit tests).
+        // WordPress accepts both prepare($sql, ...$values) and prepare($sql, $values_array),
+        // so flatten a single-array argument before passing to vsprintf.
         $wpdb->shouldReceive('prepare')->andReturnUsing(function($query, ...$args) {
-            return vsprintf(str_replace(['%d', '%s'], ["'%s'", "'%s'"], $query), $args);
+            $flat = (count($args) === 1 && is_array($args[0])) ? $args[0] : $args;
+            return vsprintf(str_replace(['%d', '%s', '%f'], ['%s', '%s', '%s'], $query), $flat);
         });
-        $wpdb->shouldReceive('get_row')->andReturn($rowOrNull ? (object) $rowOrNull : null);
+        // get_row with ARRAY_A returns an associative array (not an object)
+        $wpdb->shouldReceive('get_row')->andReturn($rowOrNull ?: null);
         $wpdb->shouldReceive('get_results')->andReturn(
             array_map(fn($r) => $r, $results)
         );

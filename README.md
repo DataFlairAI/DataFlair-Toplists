@@ -170,6 +170,16 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.3
+- Added: E2E test suite — brand sync (9 assertions), toplist sync (16 assertions), cron jobs (14 assertions)
+- Added: `run.sh` test orchestrator with auto-detection for Docker/wp-env, production WP-CLI, and CI environments
+- Added: `BrandModelTest.php` — 100% coverage for Brand model
+- Added: `ProductTypeLabelsTest.php` — 100% coverage for ProductTypeLabels
+- Fixed: constant definitions wrapped in `if(!defined())` guards to prevent fatal redefinition on test bootstrap
+- Fixed: deprecated `ReflectionProperty::setAccessible(true)` calls removed from ToplistModelTest (PHP 8.5)
+- Improved: `@codeCoverageIgnore` added to admin HTML methods and casino card renderer
+- Improved: `vendor/` cleaned to production-only dependencies (dev packages removed)
+
 ### 1.9.1
 - Added: View Details popup on plugins.php shows full description and changelog
 - Added: CLAUDE.md with release checklist and permanent rsync rule
