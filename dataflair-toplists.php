@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.1
+ * Version: 1.9.2
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -15,13 +15,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Define plugin constants
-define('DATAFLAIR_VERSION', '1.9.1');
-define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
-define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
-define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
+// Define plugin constants (guarded so tests can pre-define them in their bootstrap)
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.2');
+if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
+if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
+if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
+if (!defined('DATAFLAIR_BRANDS_TABLE_NAME'))                define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
+if (!defined('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME'))  define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
 
 // Load Composer autoloader
 if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
@@ -40,6 +40,7 @@ if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
 
 // Plugin info for the "View details" popup on wp-admin/plugins.php
 add_filter('plugins_api', 'dataflair_plugins_api_info', 20, 3);
+// @codeCoverageIgnoreStart
 function dataflair_plugins_api_info($res, $action, $args) {
     if ($action !== 'plugin_information') {
         return $res;
@@ -171,6 +172,7 @@ function dataflair_plugins_api_info($res, $action, $args) {
 
     return $res;
 }
+// @codeCoverageIgnoreEnd
 
 /**
  * Main DataFlair Plugin Class
@@ -685,6 +687,8 @@ class DataFlair_Toplists {
     
     /**
      * Tests page
+     *
+     * @codeCoverageIgnore
      */
     public function tests_page() {
         $test_file = isset($_GET['test']) ? sanitize_text_field($_GET['test']) : 'all';
@@ -880,6 +884,8 @@ class DataFlair_Toplists {
     
     /**
      * Settings page HTML
+     *
+     * @codeCoverageIgnore
      */
     public function settings_page() {
         global $wpdb;
@@ -2094,6 +2100,8 @@ class DataFlair_Toplists {
     
     /**
      * Brands page HTML
+     *
+     * @codeCoverageIgnore
      */
     public function brands_page() {
         global $wpdb;
@@ -4538,6 +4546,8 @@ class DataFlair_Toplists {
     /**
      * Render individual casino card
      * Uses the new structured template for better layout
+     *
+     * @codeCoverageIgnore
      */
     private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array()) {
         global $wpdb;

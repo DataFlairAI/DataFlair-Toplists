@@ -55,4 +55,6 @@ if (!defined('DATAFLAIR_PLUGIN_URL')) {
 
 // Load plugin classes under test (no WordPress bootstrap needed for unit tests)
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/DataIntegrityChecker.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/ProductTypeLabels.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/Brand.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Toplist.php';

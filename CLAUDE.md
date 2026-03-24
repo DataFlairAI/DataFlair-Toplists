@@ -45,7 +45,12 @@ Before tagging a new version and pushing, ALWAYS:
 
 5. **Update README.md** — keep the Features section and Changelog section in sync with the plugin description and `plugins_api` block.
 
-6. **Run tests** — `./vendor/bin/phpunit` must be green before tagging.
+6. **Run tests** — dev dependencies are not committed to vendor. Before running tests, install them first:
+ ```bash
+ composer install          # adds phpunit/mockery/brain-monkey locally (gitignored)
+ ./vendor/bin/phpunit      # must be green (82 tests, 235 assertions)
+ composer install --no-dev # strip dev deps back out before committing
+ ```
 
 7. **Commit, tag, push, release**:
    ```bash

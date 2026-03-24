@@ -1,4 +1,21 @@
 node_modules/
 *.log
 .wp-env.json
+.phpunit.result.cache
+.claude/worktrees/
+
+# Dev-only Composer packages — installed locally via `composer install`
+# but never committed. Production vendor only has --no-dev packages.
+vendor/phpunit/
+vendor/sebastian/
+vendor/brain/
+vendor/mockery/
+vendor/antecedent/
+vendor/doctrine/
+vendor/hamcrest/
+vendor/myclabs/
+vendor/nikic/
+vendor/phar-io/
+vendor/theseer/
+vendor/bin/phpunit
 
