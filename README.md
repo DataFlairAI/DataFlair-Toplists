@@ -170,6 +170,10 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.4
+- Fixed: casino override key generation now sanitizes brand names to match Gutenberg editor brandSlug behavior
+- Improved: pros and cons overrides now resolve reliably for brands whose API slugs contain special characters (for example, dots)
+
 ### 1.9.3
 - Added: E2E test suite — brand sync (9 assertions), toplist sync (16 assertions), cron jobs (14 assertions)
 - Added: `run.sh` test orchestrator with auto-detection for Docker/wp-env, production WP-CLI, and CI environments
@@ -223,4 +227,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.9.4 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

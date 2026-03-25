@@ -78,7 +78,12 @@ $offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
 $features = array();
 
 // Build casino key matching the block editor format: casino-{position}-{brandSlug}
-$casino_key = 'casino-' . $position . '-' . $brand_slug;
+//
+// Gutenberg editor uses `brandSlug = sanitize_title(brandName)` from the REST payload.
+// Some API slugs may include extra characters (e.g. "bc.game"), so we must
+// sanitize the brand name consistently to make overrides (pros/cons) match.
+$brand_slug_for_key = sanitize_title( (string) ( $brand['name'] ?? $brand_name ) );
+$casino_key = 'casino-' . $position . '-' . $brand_slug_for_key;
 
 // Debug logging
 error_log('DataFlair: Position: ' . $position . ', Brand slug: ' . $brand_slug);
