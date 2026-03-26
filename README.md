@@ -170,6 +170,10 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.7
+- Fixed: restored Composer PSR-4 autoload mapping for DataFlair model classes in `composer.json`
+- Improved: regenerated Composer autoload metadata to include `DataFlair\\Toplists\\Models` namespace resolution
+
 ### 1.9.6
 - Fixed: Gutenberg Pros and Cons inspector copy now references review CPT defaults instead of API-default replacement wording
 - Added: regression test for review pros fallback that ignores draft slug matches and prefers published `_review_brand_id` matches
@@ -232,4 +236,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.6 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.9.7 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

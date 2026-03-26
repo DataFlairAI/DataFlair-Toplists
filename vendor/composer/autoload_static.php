@@ -11,6 +11,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     );
 
     public static $prefixLengthsPsr4 = array (
+        'D' =>
+        array (
+            'DataFlair\\Toplists\\Models\\' => 26,
+        ),
         'C' =>
         array (
             'Composer\\Installers\\' => 20,
@@ -18,6 +22,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     );
 
     public static $prefixDirsPsr4 = array (
+        'DataFlair\\Toplists\\Models\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/includes',
+        ),
         'Composer\\Installers\\' =>
         array (
             0 => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers',
