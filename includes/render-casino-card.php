@@ -74,43 +74,91 @@ if (!empty($logo_url) && !is_array($logo_url)) {
 $rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);
 $offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
 
-// Handle features - check block editor pros/cons first, then fall back to API features
+// Pros / feature bullets
+// Default: review post meta (_review_pros, pipe-separated, entered by editor)
+// Override: block editor pros/cons (per-toplist, set in Gutenberg inspector)
 $features = array();
 
 // Build casino key matching the block editor format: casino-{position}-{brandSlug}
-//
 // Gutenberg editor uses `brandSlug = sanitize_title(brandName)` from the REST payload.
-// Some API slugs may include extra characters (e.g. "bc.game"), so we must
-// sanitize the brand name consistently to make overrides (pros/cons) match.
 $brand_slug_for_key = sanitize_title( (string) ( $brand['name'] ?? $brand_name ) );
 $casino_key = 'casino-' . $position . '-' . $brand_slug_for_key;
 
-// Debug logging
-error_log('DataFlair: Position: ' . $position . ', Brand slug: ' . $brand_slug);
-error_log('DataFlair: Casino key: ' . $casino_key);
-error_log('DataFlair: Pros/cons data available: ' . (!empty($pros_cons_data) ? 'Yes' : 'No'));
-if (!empty($pros_cons_data)) {
-    error_log('DataFlair: Pros/cons keys: ' . implode(', ', array_keys($pros_cons_data)));
-}
-
+// 1. Check for per-toplist block editor overrides
 if (!empty($pros_cons_data) && isset($pros_cons_data[$casino_key])) {
-    // Use pros from block editor
     $casino_pros_cons = $pros_cons_data[$casino_key];
-    error_log('DataFlair: Found pros/cons for casino ' . $casino_key . ': ' . json_encode($casino_pros_cons));
     if (!empty($casino_pros_cons['pros']) && is_array($casino_pros_cons['pros'])) {
-        // Filter out empty strings
         $features = array_filter($casino_pros_cons['pros'], function($pro) {
             return !empty(trim($pro));
         });
         $features = array_slice($features, 0, 3);
-        error_log('DataFlair: Using ' . count($features) . ' pros as features');
     }
-} 
+}
 
-// Fall back to API features if no block editor pros are set
+// 2. Default: review CPT _review_pros (try slug variants, then _review_brand_id).
+if (empty($features) && function_exists('post_type_exists') && post_type_exists('review')) {
+    $review_post      = null;
+    $slug_candidates  = array();
+    $brand_name_plain = isset($brand['name']) ? (string) $brand['name'] : '';
+
+    if (!empty($brand['slug'])) {
+        $slug_candidates[] = sanitize_title((string) $brand['slug']);
+        $slug_candidates[] = (string) $brand['slug'];
+    }
+    if ($brand_name_plain !== '') {
+        $slug_candidates[] = sanitize_title($brand_name_plain);
+    }
+    $slug_candidates = array_values(array_unique(array_filter($slug_candidates)));
+
+    foreach ($slug_candidates as $try_slug) {
+        $found = get_page_by_path($try_slug, OBJECT, 'review');
+        // Only use a public review: get_page_by_path can return drafts (e.g. duplicate brand slug).
+        if ($found instanceof WP_Post && 'publish' === $found->post_status) {
+            $review_post = $found;
+            break;
+        }
+    }
+
+    $api_brand_id = intval($brand['api_brand_id'] ?? $brand['id'] ?? 0);
+    if (!$review_post && $api_brand_id > 0) {
+        $review_by_brand = new WP_Query(
+            array(
+                'post_type'              => 'review',
+                'posts_per_page'         => 1,
+                'post_status'            => 'publish',
+                'orderby'                => 'modified',
+                'order'                  => 'DESC',
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => false,
+                'update_post_term_cache' => false,
+                'meta_query'             => array(
+                    array(
+                        'key'   => '_review_brand_id',
+                        'value' => (string) $api_brand_id,
+                    ),
+                ),
+            )
+        );
+        if ($review_by_brand->have_posts()) {
+            $review_post = $review_by_brand->posts[0];
+        }
+        wp_reset_postdata();
+    }
+
+    if ($review_post instanceof WP_Post) {
+        $review_pros_raw = get_post_meta($review_post->ID, '_review_pros', true);
+        if (is_string($review_pros_raw) && $review_pros_raw !== '') {
+            $review_pros_arr = array_filter(array_map('trim', explode('|', $review_pros_raw)));
+            if (!empty($review_pros_arr)) {
+                $features = array_slice($review_pros_arr, 0, 3);
+            }
+        }
+    }
+}
+
+// 3. API item features when still empty
 if (empty($features) && !empty($item['features'])) {
     $features = array_slice($item['features'], 0, 3);
-    error_log('DataFlair: Using ' . count($features) . ' API features');
 }
 
 // Payment methods - check multiple possible keys
