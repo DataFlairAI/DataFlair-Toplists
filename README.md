@@ -170,6 +170,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.6
+- Fixed: Gutenberg Pros and Cons inspector copy now references review CPT defaults instead of API-default replacement wording
+- Added: regression test for review pros fallback that ignores draft slug matches and prefers published `_review_brand_id` matches
+- Added: integration coverage to verify `ExternalId` is preserved in stored toplist and brand JSON payloads
+
 ### 1.9.4
 - Fixed: casino override key generation now sanitizes brand names to match Gutenberg editor brandSlug behavior
 - Improved: pros and cons overrides now resolve reliably for brands whose API slugs contain special characters (for example, dots)
@@ -227,4 +232,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.4 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.9.6 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

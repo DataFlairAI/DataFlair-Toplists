@@ -343,4 +343,21 @@ class SyncToplistTest extends TestCase {
         sort($locked_positions);
         $this->assertSame([1, 3, 7], $locked_positions);
     }
+
+    /** Test 11: ExternalId from toplist endpoint is preserved in stored JSON blob */
+    public function test_toplist_external_id_is_preserved_in_data_blob(): void {
+        $raw  = $this->loadFixture('api-toplist-complete.json');
+        $data = json_decode($raw, true);
+
+        $data['data']['ExternalId'] = 'toplist-ext-42';
+        $raw_modified = json_encode($data);
+
+        $this->simulateSync($data['data'], $raw_modified);
+
+        $row = $this->fetchRow(42);
+        $this->assertNotNull($row);
+
+        $stored = json_decode($row['data'], true);
+        $this->assertSame('toplist-ext-42', $stored['data']['ExternalId'] ?? null);
+    }
 }

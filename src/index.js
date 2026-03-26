@@ -9,7 +9,7 @@ import metadata from './block.json';
 
 registerBlockType(metadata.name, {
 	edit: ({ attributes, setAttributes }) => {
-		const { 
+		const {
 			toplistId, title, limit,
 			ribbonBgColor, ribbonTextColor, ribbonText,
 			rankBgColor, rankTextColor, rankBorderRadius,
@@ -146,7 +146,7 @@ registerBlockType(metadata.name, {
 							help={__('Number of casinos to display (0 = all)', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Ribbon / Highlight Bar', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Background Color', 'dataflair-toplists')}
@@ -167,7 +167,7 @@ registerBlockType(metadata.name, {
 							help={__('Text to display on the ribbon (e.g., "Our Top Choice", "Editor\'s Pick")', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Rank Badge', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Background Color', 'dataflair-toplists')}
@@ -192,7 +192,7 @@ registerBlockType(metadata.name, {
 							onChange={(value) => setAttributes({ rankBorderRadius: value })}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Brand Links', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Link Color', 'dataflair-toplists')}
@@ -201,7 +201,7 @@ registerBlockType(metadata.name, {
 							help={__('Color for review links and "More Information" link. Tailwind class: text-[color]', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Welcome Bonus', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Label Style', 'dataflair-toplists')}
@@ -216,7 +216,7 @@ registerBlockType(metadata.name, {
 							help={__('Tailwind classes for the bonus offer text', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Feature Bullets', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Check Icon Background', 'dataflair-toplists')}
@@ -237,7 +237,7 @@ registerBlockType(metadata.name, {
 							help={__('Tailwind class: text-[color]', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('CTA Button', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Background Color', 'dataflair-toplists')}
@@ -274,7 +274,7 @@ registerBlockType(metadata.name, {
 							help={__('Tailwind shadow class (e.g., shadow-md, shadow-lg, shadow-none)', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Metrics', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Label Style', 'dataflair-toplists')}
@@ -289,7 +289,7 @@ registerBlockType(metadata.name, {
 							help={__('Tailwind classes for metric values', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					<PanelBody title={__('Responsible Gambling', 'dataflair-toplists')} initialOpen={false}>
 						<TextControl
 							label={__('Border Top Color', 'dataflair-toplists')}
@@ -304,7 +304,7 @@ registerBlockType(metadata.name, {
 							help={__('Tailwind class: text-[color] (e.g., text-gray-500, text-gray-600)', 'dataflair-toplists')}
 						/>
 					</PanelBody>
-					
+
 					{toplistId && (
 						<PanelBody title={__('Pros & Cons', 'dataflair-toplists')} initialOpen={false}>
 							{loadingCasinos ? (
@@ -314,32 +314,27 @@ registerBlockType(metadata.name, {
 									const casinoKey = `casino-${casino.position}-${casino.brandSlug}`;
 									const hasBlockOverride = prosCons && prosCons[casinoKey];
 									const casinoProsCons = hasBlockOverride ? prosCons[casinoKey] : null;
-									
+
 									// Use block-level overrides if they exist, otherwise show API defaults (but don't save them)
 									const displayPros = hasBlockOverride && casinoProsCons?.pros ? casinoProsCons.pros : (casino.pros || []);
 									const displayCons = hasBlockOverride && casinoProsCons?.cons ? casinoProsCons.cons : (casino.cons || []);
-									
+
 									// Check if we're using API defaults (no block-level override exists)
 									const usingApiDefaults = !hasBlockOverride;
-									
+
 									return (
 										<div key={casinoKey} style={{ marginBottom: '20px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}>
 											<strong>{casino.brandName} (Position {casino.position})</strong>
 											{usingApiDefaults && (casino.pros?.length > 0 || casino.cons?.length > 0) && (
 												<p style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '5px' }}>
-													{__('Currently showing API defaults. Edit below to override.', 'dataflair-toplists')}
-												</p>
-											)}
-											{!usingApiDefaults && (
-												<p style={{ fontSize: '12px', color: '#0073aa', fontStyle: 'italic', marginTop: '5px' }}>
-													{__('Using custom overrides (API defaults are replaced).', 'dataflair-toplists')}
+													{__('Currently showing review CPT defaults. Edit below to customize this block.', 'dataflair-toplists')}
 												</p>
 											)}
 											<div style={{ marginTop: '10px' }}>
 												<strong>{__('Pros:', 'dataflair-toplists')}</strong>
 												{displayPros.length === 0 && (
 													<p style={{ fontSize: '12px', color: '#999', fontStyle: 'italic', marginTop: '5px' }}>
-														{__('No pros from API. Add custom pros below.', 'dataflair-toplists')}
+														{__('No pros from review CPT. Add custom pros below.', 'dataflair-toplists')}
 													</p>
 												)}
 												{displayPros.map((pro, index) => {
@@ -370,7 +365,7 @@ registerBlockType(metadata.name, {
 																	}
 																}}
 																style={{ flex: 1 }}
-																placeholder={isApiDefault ? __('API default (edit to override)', 'dataflair-toplists') : ''}
+																placeholder={isApiDefault ? __('Review CPT default (edit to customize)', 'dataflair-toplists') : ''}
 															/>
 															{!isApiDefault && (
 																<Button isDestructive onClick={() => removeProsConsItem(casinoKey, 'pros', index)}>
@@ -404,7 +399,7 @@ registerBlockType(metadata.name, {
 												<strong>{__('Cons:', 'dataflair-toplists')}</strong>
 												{displayCons.length === 0 && (
 													<p style={{ fontSize: '12px', color: '#999', fontStyle: 'italic', marginTop: '5px' }}>
-														{__('No cons from API. Add custom cons below.', 'dataflair-toplists')}
+														{__('No cons from review CPT. Add custom cons below.', 'dataflair-toplists')}
 													</p>
 												)}
 												{displayCons.map((con, index) => {
@@ -435,7 +430,7 @@ registerBlockType(metadata.name, {
 																	}
 																}}
 																style={{ flex: 1 }}
-																placeholder={isApiDefault ? __('API default (edit to override)', 'dataflair-toplists') : ''}
+																placeholder={isApiDefault ? __('Review CPT default (edit to customize)', 'dataflair-toplists') : ''}
 															/>
 															{!isApiDefault && (
 																<Button isDestructive onClick={() => removeProsConsItem(casinoKey, 'cons', index)}>
@@ -494,4 +489,3 @@ registerBlockType(metadata.name, {
 		return null;
 	},
 });
-

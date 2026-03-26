@@ -239,4 +239,22 @@ class SyncBrandTest extends TestCase {
         $this->assertEmpty($this->error_log,
             'Should not warn when brand has 0 offers (no offers = no geos is expected)');
     }
+
+    public function test_brand_external_id_is_preserved_in_data_blob(): void {
+        $brand = [
+            'id' => 105, 'name' => 'External Brand', 'slug' => 'external-brand',
+            'brandStatus' => 'Active', 'productTypes' => ['Casino'], 'licenses' => [],
+            'topGeos' => ['countries' => ['IN'], 'markets' => []],
+            'offersCount' => 1, 'offers' => [],
+            'ExternalId' => 'brand-ext-105',
+        ];
+
+        $this->simulateBrandSync($brand);
+
+        $row = $this->fetchBrand(105);
+        $this->assertNotNull($row);
+
+        $stored = json_decode($row['data'], true);
+        $this->assertSame('brand-ext-105', $stored['ExternalId'] ?? null);
+    }
 }
