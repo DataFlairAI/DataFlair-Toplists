@@ -1,4 +1,6 @@
 <?php
+namespace DataFlair\Toplists\Models;
+
 /**
  * Data Integrity Checker for DataFlair Toplist API responses.
  *
@@ -7,7 +9,7 @@
  * exactly what data is missing — without blocking the sync.
  *
  * Usage:
- *   $result = DataFlair_DataIntegrityChecker::validate($toplist_data);
+ *   $result = DataIntegrityChecker::validate($toplist_data);
  *   // $result['warnings']     — array of human-readable issue strings
  *   // $result['item_count']   — total items in the toplist
  *   // $result['locked_count'] — items with isLocked=true
@@ -18,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class DataFlair_DataIntegrityChecker {
+class DataIntegrityChecker {
 
     /**
      * Validates a decoded toplist API response and returns a structured report.
@@ -212,3 +214,6 @@ class DataFlair_DataIntegrityChecker {
         return $warnings;
     }
 }
+
+// Backward compatibility for legacy global references.
+\class_alias(__NAMESPACE__ . '\\DataIntegrityChecker', 'DataFlair_DataIntegrityChecker');

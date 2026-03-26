@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.7
+ * Version: 1.9.8
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.7');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.8');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -118,6 +118,12 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.9.8</h4>
+<ul>
+  <li>Fixed: ProductTypeLabels and DataIntegrityChecker now use the DataFlair\\Toplists\\Models namespace to comply with Composer PSR-4 autoloading</li>
+  <li>Improved: backward compatibility aliases keep legacy class references working while enabling PSR-4 class resolution</li>
+</ul>
+
 <h4>1.9.7</h4>
 <ul>
   <li>Fixed: restored Composer PSR-4 autoload mapping for DataFlair model classes in composer.json</li>

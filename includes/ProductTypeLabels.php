@@ -1,4 +1,6 @@
 <?php
+namespace DataFlair\Toplists\Models;
+
 /**
  * Resolves display labels and field visibility based on product type (casino, sportsbook, etc.).
  *
@@ -80,3 +82,6 @@ class ProductTypeLabels
         return strtolower(trim((string) $productType));
     }
 }
+
+// Backward compatibility for legacy global references.
+\class_alias(__NAMESPACE__ . '\\ProductTypeLabels', 'ProductTypeLabels');

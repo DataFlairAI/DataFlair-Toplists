@@ -170,6 +170,10 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.8
+- Fixed: `ProductTypeLabels` and `DataIntegrityChecker` now use the `DataFlair\\Toplists\\Models` namespace for Composer PSR-4 compliance
+- Improved: added backward compatibility aliases so legacy global class references continue to work
+
 ### 1.9.7
 - Fixed: restored Composer PSR-4 autoload mapping for DataFlair model classes in `composer.json`
 - Improved: regenerated Composer autoload metadata to include `DataFlair\\Toplists\\Models` namespace resolution
@@ -236,4 +240,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.7 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.9.8 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
