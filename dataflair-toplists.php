@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.8
+ * Version: 1.9.9
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.8');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.9');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -118,6 +118,13 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.9.9</h4>
+<ul>
+  <li>Added: Brand::whereJson() query helper for JSON field filtering in the Brand model</li>
+  <li>Added: brands table migration for external_id_virtual generated column with idx_external_id_virtual index for fast externalId lookups</li>
+  <li>Improved: whereJson SQL builder now supports JSON_EXTRACT path/value comparisons for data.externalId-style queries</li>
+</ul>
+
 <h4>1.9.8</h4>
 <ul>
   <li>Fixed: ProductTypeLabels and DataIntegrityChecker now use the DataFlair\\Toplists\\Models namespace to comply with Composer PSR-4 autoloading</li>
@@ -376,6 +383,7 @@ class DataFlair_Toplists {
         dbDelta($sql);
         dbDelta($brands_sql);
         dbDelta($alternative_toplists_sql);
+        $this->ensure_brands_external_id_index();
         
         // Cron scheduling is handled by ensure_cron_scheduled() on 'init',
         // where the dataflair_15min custom schedule is already registered.
@@ -396,7 +404,7 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.8'; // v1.8: add review_url_override column to brands
+        $current_version = '1.9'; // v1.9: add external_id_virtual generated column + index
 
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
@@ -434,7 +442,9 @@ class DataFlair_Toplists {
         }
 
         if ( ! $missing ) {
-            return; // Nothing to do — both tables exist
+            // Tables exist, but ensure generated externalId index is present.
+            $this->ensure_brands_external_id_index();
+            return;
         }
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -476,6 +486,7 @@ class DataFlair_Toplists {
 
         dbDelta( $sql );
         dbDelta( $brands_sql );
+        $this->ensure_brands_external_id_index();
 
         error_log( 'DataFlair: ensure_tables_exist() ran dbDelta — tables were missing.' );
     }
@@ -589,8 +600,50 @@ class DataFlair_Toplists {
             }
         }
 
+        // Ensure externalId generated column/index exists on brands table.
+        $this->ensure_brands_external_id_index();
+
         // Check if alternative toplists table exists, create if not
         $this->ensure_alternative_toplists_table();
+    }
+
+    /**
+     * Ensure brands table has a generated externalId column + index for JSON filtering.
+     *
+     * Creates:
+     *  - external_id_virtual VARCHAR(50) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.externalId'))) STORED
+     *  - idx_external_id_virtual index
+     */
+    private function ensure_brands_external_id_index() {
+        global $wpdb;
+        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
+        if (!$table_exists) {
+            return;
+        }
+
+        // 1) Add generated column if missing.
+        $col_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'external_id_virtual'");
+        if (!$col_exists) {
+            $wpdb->query(
+                "ALTER TABLE $brands_table_name
+                 ADD COLUMN external_id_virtual VARCHAR(50)
+                 GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.externalId'))) STORED"
+            );
+            if ($wpdb->last_error) {
+                error_log('DataFlair: Failed adding external_id_virtual column: ' . $wpdb->last_error);
+            }
+        }
+
+        // 2) Add index if missing.
+        $idx_exists = $wpdb->get_var("SHOW INDEX FROM $brands_table_name WHERE Key_name = 'idx_external_id_virtual'");
+        if (!$idx_exists) {
+            $wpdb->query("CREATE INDEX idx_external_id_virtual ON $brands_table_name (external_id_virtual)");
+            if ($wpdb->last_error) {
+                error_log('DataFlair: Failed creating idx_external_id_virtual index: ' . $wpdb->last_error);
+            }
+        }
     }
     
     /**

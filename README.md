@@ -170,6 +170,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.9.9
+- Added: `Brand::whereJson()` query helper for JSON field filtering in the Brand model
+- Added: brands table migration for `external_id_virtual` generated column with `idx_external_id_virtual` index for faster externalId lookups
+- Improved: whereJson SQL builder now supports JSON path/value comparisons for `data.externalId` style queries
+
 ### 1.9.8
 - Fixed: `ProductTypeLabels` and `DataIntegrityChecker` now use the `DataFlair\\Toplists\\Models` namespace for Composer PSR-4 compliance
 - Improved: added backward compatibility aliases so legacy global class references continue to work
@@ -240,4 +245,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.8 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.9.9 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
