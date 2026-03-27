@@ -37,9 +37,9 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - **Review URL Override:** per-brand custom review URL that wins over all automatic URL generation across the entire site. Field locks after saving and unlocks on Edit.
 
 ### Casino Card Rendering
-- Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link
+- Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link (the Read Review control appears only when a published review exists or a manual review URL override is set)
 - Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages
-- Review URL resolution priority: manual override, published review post permalink, auto-generated `/reviews/{slug}/`, affiliate CTA link
+- Review URL resolution priority: manual override, published review post permalink, auto-generated `/reviews/{slug}/`, affiliate CTA link; published reviews are also matched by `_review_brand_id` when the live review slug differs from the API slug (for example `…-india` vs base slug)
 - Supports multiple product types (casino, sportsbook, poker) with type-aware labels
 
 ### Gutenberg Block & Shortcode
@@ -141,7 +141,7 @@ npm run start    # watch mode for development
 ./vendor/bin/phpunit
 ```
 
-82 tests covering sync logic, brand management, REST API, and auto-update wiring.
+PHPUnit suite covering sync logic, brand management, REST API, auto-update wiring, and casino card rendering.
 
 ---
 
@@ -169,6 +169,12 @@ dataflair-toplists/
 ---
 
 ## Changelog
+
+### 1.10.0
+- Fixed: Read Review link on casino cards only appears when a published review exists or a manual review URL override is set (hidden for draft-only reviews)
+- Fixed: review CPT resolution finds published posts by `_review_brand_id` when the WordPress slug differs from the API brand slug; a plugin-created draft at the base slug no longer hides the live published review (for example `…-india`)
+- Improved: new auto-created review drafts store `_review_brand_id` from `api_brand_id` when `id` is absent
+- Added: E2E test `tests/e2e/test-read-review-link.php` (draft vs published, slug mismatch, draft + published shadow case)
 
 ### 1.9.9
 - Added: `Brand::whereJson()` query helper for JSON field filtering in the Brand model
@@ -245,4 +251,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.9.9 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.0 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

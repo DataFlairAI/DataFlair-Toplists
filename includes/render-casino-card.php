@@ -258,6 +258,11 @@ if (!isset($review_url) || empty($review_url)) {
 if (empty($review_url)) {
     $review_url = $casino_url;
 }
+
+// "Read Review" CTA: only when there is an explicit override or a published review CPT (not draft-only / slug placeholder for logo/name links).
+$show_read_review_link = !empty($brand['review_url_override'])
+    || !empty($dataflair_review_url_is_admin_override)
+    || !empty($dataflair_review_cpt_is_published);
 ?>
 
 <div class="casino-card-wrapper" x-data="{ showDetails: false }" data-position="<?php echo esc_attr($position); ?>" data-product-type="<?php echo esc_attr(ProductTypeLabels::normalizeType($product_type)); ?>">
@@ -313,12 +318,14 @@ if (empty($review_url)) {
                     </div>
                     <?php endif; ?>
                     
+                    <?php if (!empty($show_read_review_link)) : ?>
                     <a href="<?php echo esc_url($review_url); ?>" class="casino-review-link">
                         Read Review
                         <svg class="review-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
                     </a>
+                    <?php endif; ?>
                 </div>
             </div>
             

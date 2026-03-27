@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.9.9
+ * Version: 1.10.0
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.9.9');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -86,9 +86,10 @@ function dataflair_plugins_api_info($res, $action, $args) {
 
 <h4>Casino Card Rendering</h4>
 <ul>
-  <li>Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link</li>
+  <li>Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link (shown only when a published review or manual review URL exists)</li>
   <li>Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages</li>
   <li>Review pros defaults are read from published review CPT meta with safe fallback logic for duplicate slugs and brand-id matches</li>
+  <li>Review post resolution matches published reviews by slug or by _review_brand_id when the live review slug differs from the API slug (for example draft at base slug vs published …-india)</li>
   <li>Review URL resolution priority: manual override, published review post permalink, auto-generated /reviews/{slug}/, affiliate CTA link</li>
   <li>Normalizes casino key slug generation to match Gutenberg editor brandSlug behavior for brands with special characters</li>
   <li>Supports multiple product types (casino, sportsbook, poker) with type-aware labels</li>
@@ -118,6 +119,14 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.0</h4>
+<ul>
+  <li>Fixed: Read Review link on casino cards only appears when a published review exists or a manual review URL override is set (hidden for draft-only reviews)</li>
+  <li>Fixed: review CPT resolution finds published posts by _review_brand_id when the WordPress slug differs from the API brand slug, and no longer lets a plugin draft at the base slug hide the live published review (for example …-india)</li>
+  <li>Improved: new auto-created review drafts store _review_brand_id from api_brand_id when id is absent</li>
+  <li>Added: E2E test script tests/e2e/test-read-review-link.php (draft vs published, slug mismatch, draft+published shadow case)</li>
+</ul>
+
 <h4>1.9.9</h4>
 <ul>
   <li>Added: Brand::whereJson() query helper for JSON field filtering in the Brand model</li>
@@ -4551,9 +4560,69 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Find an existing review CPT when the post slug differs from the API brand slug
+     * (e.g. live URL /reviews/1xbet-sportsbook-india/ vs brand slug 1xbet-sportsbook).
+     * Matches _review_brand_id to api_brand_id / id — same idea as render-casino-card pros fallback.
+     *
+     * @return WP_Post|null
+     */
+    private function find_review_post_by_brand_meta(array $brand) {
+        global $wpdb;
+
+        $ids = array();
+        foreach (array('api_brand_id', 'id') as $key) {
+            if (! empty($brand[ $key ])) {
+                $v = intval($brand[ $key ]);
+                if ($v > 0) {
+                    $ids[ $v ] = true;
+                }
+            }
+        }
+        if (empty($ids)) {
+            return null;
+        }
+
+        $bid_list = array_keys( $ids );
+        // Direct SQL avoids third-party pre_get_posts / meta_query quirks; match string or numeric meta_value.
+        $in_placeholders = implode( ',', array_fill( 0, count( $bid_list ), '%s' ) );
+        $sql               = "SELECT p.ID, p.post_status FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_review_brand_id'
+            WHERE p.post_type = 'review'
+            AND p.post_status IN ('publish','draft','pending','future','private')
+            AND pm.meta_value IN ($in_placeholders)
+            ORDER BY p.post_modified DESC";
+
+        $rows = $wpdb->get_results( $wpdb->prepare( $sql, ...array_map( 'strval', $bid_list ) ) );
+
+        if ( empty( $rows ) && count( $bid_list ) === 1 ) {
+            // Some sites store _review_brand_id as integer-ish without strict string match.
+            $one = (int) $bid_list[0];
+            $sql2 = "SELECT p.ID, p.post_status FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_review_brand_id'
+                WHERE p.post_type = 'review'
+                AND p.post_status IN ('publish','draft','pending','future','private')
+                AND CAST(pm.meta_value AS UNSIGNED) = %d
+                ORDER BY p.post_modified DESC";
+            $rows = $wpdb->get_results( $wpdb->prepare( $sql2, $one ) );
+        }
+
+        if (empty($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            if ('publish' === $row->post_status) {
+                return get_post( (int) $row->ID );
+            }
+        }
+
+        return get_post( (int) $rows[0]->ID );
+    }
+
+    /**
      * Get or create review post for a casino brand
      * Auto-creates draft review if it doesn't exist
-     * 
+     *
      * @param array $brand Brand data from API
      * @param array $item Full toplist item data
      * @return int|false Post ID of review, or false on failure
@@ -4568,11 +4637,25 @@ class DataFlair_Toplists {
         $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
         $brand_name = !empty($brand['name']) ? $brand['name'] : 'Unknown Casino';
         
-        // Check if review post already exists
+        // Exact slug match: only trust it if published. Otherwise a plugin-created draft at
+        // {slug} blocks discovery of the live review at {slug}-india (same _review_brand_id).
         $existing_review = get_page_by_path($brand_slug, OBJECT, 'review');
-        
-        if ($existing_review) {
+        if ($existing_review instanceof WP_Post && 'publish' === $existing_review->post_status) {
             return $existing_review->ID;
+        }
+
+        // Published review may use a different slug (e.g. 1xbet-sportsbook-india vs API 1xbet-sportsbook)
+        $by_meta = $this->find_review_post_by_brand_meta($brand);
+        if ($by_meta instanceof WP_Post && 'publish' === $by_meta->post_status) {
+            return $by_meta->ID;
+        }
+
+        if ($existing_review instanceof WP_Post) {
+            return $existing_review->ID;
+        }
+
+        if ($by_meta instanceof WP_Post) {
+            return $by_meta->ID;
         }
         
         // Auto-create draft review post
@@ -4592,9 +4675,10 @@ class DataFlair_Toplists {
             return false;
         }
         
-        // Populate meta fields with brand data
-        if (!empty($brand['id'])) {
-            update_post_meta($review_id, '_review_brand_id', $brand['id']);
+        // Populate meta fields with brand data (prefer id; else api_brand_id so _review_brand_id matches toplist JSON)
+        $brand_id_for_meta = ! empty( $brand['id'] ) ? intval( $brand['id'] ) : ( ! empty( $brand['api_brand_id'] ) ? intval( $brand['api_brand_id'] ) : 0 );
+        if ( $brand_id_for_meta > 0 ) {
+            update_post_meta( $review_id, '_review_brand_id', $brand_id_for_meta );
         }
         
         // Extract and save logo URL
@@ -4699,6 +4783,9 @@ class DataFlair_Toplists {
             $review_url = null;
             $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
             $override = null;
+            // Used by render-casino-card.php: show "Read Review" only for published CPT or explicit URL override (not draft-only).
+            $dataflair_review_url_is_admin_override = false;
+            $dataflair_review_cpt_is_published = false;
 
             if (!empty($brand['api_brand_id'])) {
                 $override = $wpdb->get_var($wpdb->prepare(
@@ -4727,6 +4814,7 @@ class DataFlair_Toplists {
 
             if (!empty($override)) {
                 $review_url = esc_url($override);
+                $dataflair_review_url_is_admin_override = true;
             }
 
             if (empty($review_url)) {
@@ -4735,6 +4823,7 @@ class DataFlair_Toplists {
                 if ($review_id && get_post_status($review_id) === 'publish') {
                     // Only use post permalink if the review is published
                     $review_url = get_permalink($review_id);
+                    $dataflair_review_cpt_is_published = true;
                 }
 
                 if (empty($review_url)) {
