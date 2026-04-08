@@ -171,7 +171,17 @@ class V2ApiBrandsTest extends TestCase {
             if (empty($brand_name)) {
                 continue;
             }
+
+            $brand_id = 0;
+            if (isset($item['brand']['id'])) {
+                $brand_id = (int) $item['brand']['id'];
+            } elseif (isset($item['brandId'])) {
+                $brand_id = (int) $item['brandId'];
+            }
+
             $casinos[] = [
+                'itemId'    => isset($item['id']) ? (int) $item['id'] : 0,
+                'brandId'   => $brand_id,
                 'position'  => $item['position'] ?? 0,
                 'brandName' => $brand_name,
                 'brandSlug' => strtolower(str_replace(' ', '-', $brand_name)),
@@ -291,8 +301,8 @@ class V2ApiBrandsTest extends TestCase {
         $toplist_data = [
             'data' => [
                 'items' => [
-                    ['position' => 1, 'brand' => ['name' => 'Betway'], 'pros' => ['Good odds'], 'cons' => []],
-                    ['position' => 2, 'brand' => ['name' => 'Bet365'], 'pros' => [], 'cons' => ['High wager']],
+                    ['id' => 11, 'position' => 1, 'brand' => ['id' => 201, 'name' => 'Betway'], 'pros' => ['Good odds'], 'cons' => []],
+                    ['id' => 12, 'position' => 2, 'brand' => ['id' => 202, 'name' => 'Bet365'], 'pros' => [], 'cons' => ['High wager']],
                 ]
             ]
         ];
@@ -301,9 +311,12 @@ class V2ApiBrandsTest extends TestCase {
 
         $this->assertCount(2, $casinos);
         $this->assertSame('Betway', $casinos[0]['brandName']);
+        $this->assertSame(11, $casinos[0]['itemId']);
+        $this->assertSame(201, $casinos[0]['brandId']);
         $this->assertSame(1, $casinos[0]['position']);
         $this->assertSame(['Good odds'], $casinos[0]['pros']);
         $this->assertSame('Bet365', $casinos[1]['brandName']);
+        $this->assertSame(202, $casinos[1]['brandId']);
     }
 
     /** Test 9: handles new data.listItems shape (editions model) */
@@ -311,8 +324,8 @@ class V2ApiBrandsTest extends TestCase {
         $toplist_data = [
             'data' => [
                 'listItems' => [
-                    ['position' => 1, 'brandName' => 'Unibet', 'pros' => [], 'cons' => []],
-                    ['position' => 2, 'brand' => ['name' => 'William Hill'], 'pros' => [], 'cons' => []],
+                    ['id' => 21, 'position' => 1, 'brandName' => 'Unibet', 'brandId' => 301, 'pros' => [], 'cons' => []],
+                    ['id' => 22, 'position' => 2, 'brand' => ['id' => 302, 'name' => 'William Hill'], 'pros' => [], 'cons' => []],
                 ]
             ]
         ];
@@ -321,7 +334,10 @@ class V2ApiBrandsTest extends TestCase {
 
         $this->assertCount(2, $casinos);
         $this->assertSame('Unibet', $casinos[0]['brandName']);
+        $this->assertSame(21, $casinos[0]['itemId']);
+        $this->assertSame(301, $casinos[0]['brandId']);
         $this->assertSame('William Hill', $casinos[1]['brandName']);
+        $this->assertSame(302, $casinos[1]['brandId']);
     }
 
     /** Test 10: returns empty array (not error) when items missing */

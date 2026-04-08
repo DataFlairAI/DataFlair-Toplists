@@ -5849,7 +5849,17 @@ class DataFlair_Toplists {
             if (empty($brand_name)) {
                 continue;
             }
+
+            $brand_id = 0;
+            if (isset($item['brand']['id'])) {
+                $brand_id = intval($item['brand']['id']);
+            } elseif (isset($item['brandId'])) {
+                $brand_id = intval($item['brandId']);
+            }
+
             $casinos[] = array(
+                'itemId'    => isset($item['id']) ? intval($item['id']) : 0,
+                'brandId'   => $brand_id,
                 'position'  => isset($item['position']) ? $item['position'] : 0,
                 'brandName' => $brand_name,
                 'brandSlug' => sanitize_title($brand_name),

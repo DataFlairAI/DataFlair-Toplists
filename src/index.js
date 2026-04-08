@@ -63,56 +63,83 @@ registerBlockType(metadata.name, {
 			}
 		}, [toplistId]);
 
-		const updateProsCons = (casinoKey, field, value) => {
-			const currentProsCons = prosCons || {};
-			const casinoData = currentProsCons[casinoKey] || { pros: [], cons: [] };
-			casinoData[field] = value;
-			setAttributes({
-				prosCons: {
-					...currentProsCons,
-					[casinoKey]: casinoData
-				}
-			});
+		const getStableCasinoKey = (casino) => {
+			const brandId = Number.parseInt(casino.brandId, 10);
+			if (brandId > 0) {
+				return `casino-brand-${brandId}`;
+			}
+
+			const itemId = Number.parseInt(casino.itemId, 10);
+			if (itemId > 0) {
+				return `casino-item-${itemId}`;
+			}
+
+			return `casino-slug-${casino.brandSlug}`;
 		};
 
-		const updateProsConsArray = (casinoKey, field, index, value) => {
-			const currentProsCons = prosCons || {};
-			const casinoData = currentProsCons[casinoKey] || { pros: [], cons: [] };
-			const newArray = [...(casinoData[field] || [])];
-			newArray[index] = value;
-			casinoData[field] = newArray;
-			setAttributes({
-				prosCons: {
-					...currentProsCons,
-					[casinoKey]: casinoData
-				}
-			});
+		const getLegacyCasinoKey = (casino) => `casino-${casino.position}-${casino.brandSlug}`;
+
+		const findLegacyCasinoKeyByBrand = (casino, currentProsCons) => {
+			const brandSlug = casino.brandSlug || '';
+
+			if (!brandSlug) {
+				return null;
+			}
+
+			const legacyKey = getLegacyCasinoKey(casino);
+			if (currentProsCons[legacyKey]) {
+				return legacyKey;
+			}
+
+			const slugSuffix = `-${brandSlug}`;
+			return Object.keys(currentProsCons).find((key) => (
+				key.startsWith('casino-')
+				&& key !== legacyKey
+				&& key.endsWith(slugSuffix)
+				&& /^casino-\d+-/.test(key)
+			)) || null;
 		};
 
-		const addProsConsItem = (casinoKey, field) => {
-			const currentProsCons = prosCons || {};
-			const casinoData = currentProsCons[casinoKey] || { pros: [], cons: [] };
-			const newArray = [...(casinoData[field] || []), ''];
-			casinoData[field] = newArray;
-			setAttributes({
-				prosCons: {
-					...currentProsCons,
-					[casinoKey]: casinoData
-				}
-			});
+		const getCasinoOverrideState = (casino, currentProsCons) => {
+			const stableKey = getStableCasinoKey(casino);
+
+			if (currentProsCons[stableKey]) {
+				return {
+					stableKey,
+					resolvedKey: stableKey,
+					overrideData: currentProsCons[stableKey]
+				};
+			}
+
+			const legacyKey = findLegacyCasinoKeyByBrand(casino, currentProsCons);
+			return {
+				stableKey,
+				resolvedKey: legacyKey,
+				overrideData: legacyKey ? currentProsCons[legacyKey] : null
+			};
 		};
 
-		const removeProsConsItem = (casinoKey, field, index) => {
+		const createCasinoOverrideData = (overrideData = {}, fallbackData = {}) => ({
+			pros: Array.isArray(overrideData?.pros) ? [...overrideData.pros] : [...(fallbackData.pros || [])],
+			cons: Array.isArray(overrideData?.cons) ? [...overrideData.cons] : [...(fallbackData.cons || [])]
+		});
+
+		const updateCasinoOverride = (casino, transform, fallbackData = { pros: [], cons: [] }) => {
 			const currentProsCons = prosCons || {};
-			const casinoData = currentProsCons[casinoKey] || { pros: [], cons: [] };
-			const newArray = [...(casinoData[field] || [])];
-			newArray.splice(index, 1);
-			casinoData[field] = newArray;
+			const { stableKey, resolvedKey, overrideData } = getCasinoOverrideState(casino, currentProsCons);
+			const casinoData = createCasinoOverrideData(overrideData, fallbackData);
+			const nextCasinoData = transform(casinoData);
+			const nextProsCons = {
+				...currentProsCons,
+				[stableKey]: nextCasinoData
+			};
+
+			if (resolvedKey && resolvedKey !== stableKey) {
+				delete nextProsCons[resolvedKey];
+			}
+
 			setAttributes({
-				prosCons: {
-					...currentProsCons,
-					[casinoKey]: casinoData
-				}
+				prosCons: nextProsCons
 			});
 		};
 
@@ -311,19 +338,24 @@ registerBlockType(metadata.name, {
 								<Spinner />
 							) : casinos.length > 0 ? (
 								casinos.map((casino) => {
-									const casinoKey = `casino-${casino.position}-${casino.brandSlug}`;
-									const hasBlockOverride = prosCons && prosCons[casinoKey];
-									const casinoProsCons = hasBlockOverride ? prosCons[casinoKey] : null;
+									const currentProsCons = prosCons || {};
+									const { overrideData: casinoProsCons } = getCasinoOverrideState(casino, currentProsCons);
+									const hasBlockOverride = !!casinoProsCons;
+									const fallbackProsCons = {
+										pros: casino.pros || [],
+										cons: casino.cons || []
+									};
 
 									// Use block-level overrides if they exist, otherwise show API defaults (but don't save them)
-									const displayPros = hasBlockOverride && casinoProsCons?.pros ? casinoProsCons.pros : (casino.pros || []);
-									const displayCons = hasBlockOverride && casinoProsCons?.cons ? casinoProsCons.cons : (casino.cons || []);
+									const displayPros = hasBlockOverride && casinoProsCons?.pros ? casinoProsCons.pros : fallbackProsCons.pros;
+									const displayCons = hasBlockOverride && casinoProsCons?.cons ? casinoProsCons.cons : fallbackProsCons.cons;
 
 									// Check if we're using API defaults (no block-level override exists)
 									const usingApiDefaults = !hasBlockOverride;
+									const cardKey = getStableCasinoKey(casino);
 
 									return (
-										<div key={casinoKey} style={{ marginBottom: '20px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}>
+										<div key={cardKey} style={{ marginBottom: '20px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}>
 											<strong>{casino.brandName} (Position {casino.position})</strong>
 											{usingApiDefaults && (casino.pros?.length > 0 || casino.cons?.length > 0) && (
 												<p style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '5px' }}>
@@ -345,53 +377,56 @@ registerBlockType(metadata.name, {
 															<TextControl
 																value={pro}
 																onChange={(value) => {
-																	// When user edits, initialize block-level override if needed
-																	if (usingApiDefaults) {
-																		// Initialize with API defaults, then update
-																		const currentProsCons = prosCons || {};
-																		const newPros = [...(casino.pros || [])];
-																		newPros[index] = value;
-																		setAttributes({
-																			prosCons: {
-																				...currentProsCons,
-																				[casinoKey]: {
-																					pros: newPros,
-																					cons: casinoProsCons?.cons || []
-																				}
-																			}
-																		});
-																	} else {
-																		updateProsConsArray(casinoKey, 'pros', index, value);
-																	}
+																	updateCasinoOverride(
+																		casino,
+																		(casinoData) => {
+																			const nextPros = [...casinoData.pros];
+																			nextPros[index] = value;
+																			return {
+																				...casinoData,
+																				pros: nextPros
+																			};
+																		},
+																		fallbackProsCons
+																	);
 																}}
 																style={{ flex: 1 }}
 																placeholder={isApiDefault ? __('Review CPT default (edit to customize)', 'dataflair-toplists') : ''}
 															/>
 															{!isApiDefault && (
-																<Button isDestructive onClick={() => removeProsConsItem(casinoKey, 'pros', index)}>
+																<Button
+																	isDestructive
+																	onClick={() => updateCasinoOverride(
+																		casino,
+																		(casinoData) => {
+																			const nextPros = [...casinoData.pros];
+																			nextPros.splice(index, 1);
+																			return {
+																				...casinoData,
+																				pros: nextPros
+																			};
+																		},
+																		fallbackProsCons
+																	)}
+																>
 																	{__('Remove', 'dataflair-toplists')}
 																</Button>
 															)}
 														</div>
 													);
 												})}
-												<Button isSecondary onClick={() => {
-													// Initialize with API defaults if needed
-													if (usingApiDefaults) {
-														const currentProsCons = prosCons || {};
-														setAttributes({
-															prosCons: {
-																...currentProsCons,
-																[casinoKey]: {
-																	pros: [...(casino.pros || []), ''],
-																	cons: casinoProsCons?.cons || []
-																}
-															}
-														});
-													} else {
-														addProsConsItem(casinoKey, 'pros');
-													}
-												}} style={{ marginTop: '5px' }}>
+												<Button
+													isSecondary
+													onClick={() => updateCasinoOverride(
+														casino,
+														(casinoData) => ({
+															...casinoData,
+															pros: [...casinoData.pros, '']
+														}),
+														fallbackProsCons
+													)}
+													style={{ marginTop: '5px' }}
+												>
 													{__('+ Add Pro', 'dataflair-toplists')}
 												</Button>
 											</div>
@@ -410,53 +445,56 @@ registerBlockType(metadata.name, {
 															<TextControl
 																value={con}
 																onChange={(value) => {
-																	// When user edits, initialize block-level override if needed
-																	if (usingApiDefaults) {
-																		// Initialize with API defaults, then update
-																		const currentProsCons = prosCons || {};
-																		const newCons = [...(casino.cons || [])];
-																		newCons[index] = value;
-																		setAttributes({
-																			prosCons: {
-																				...currentProsCons,
-																				[casinoKey]: {
-																					pros: casinoProsCons?.pros || [],
-																					cons: newCons
-																				}
-																			}
-																		});
-																	} else {
-																		updateProsConsArray(casinoKey, 'cons', index, value);
-																	}
+																	updateCasinoOverride(
+																		casino,
+																		(casinoData) => {
+																			const nextCons = [...casinoData.cons];
+																			nextCons[index] = value;
+																			return {
+																				...casinoData,
+																				cons: nextCons
+																			};
+																		},
+																		fallbackProsCons
+																	);
 																}}
 																style={{ flex: 1 }}
 																placeholder={isApiDefault ? __('Review CPT default (edit to customize)', 'dataflair-toplists') : ''}
 															/>
 															{!isApiDefault && (
-																<Button isDestructive onClick={() => removeProsConsItem(casinoKey, 'cons', index)}>
+																<Button
+																	isDestructive
+																	onClick={() => updateCasinoOverride(
+																		casino,
+																		(casinoData) => {
+																			const nextCons = [...casinoData.cons];
+																			nextCons.splice(index, 1);
+																			return {
+																				...casinoData,
+																				cons: nextCons
+																			};
+																		},
+																		fallbackProsCons
+																	)}
+																>
 																	{__('Remove', 'dataflair-toplists')}
 																</Button>
 															)}
 														</div>
 													);
 												})}
-												<Button isSecondary onClick={() => {
-													// Initialize with API defaults if needed
-													if (usingApiDefaults) {
-														const currentProsCons = prosCons || {};
-														setAttributes({
-															prosCons: {
-																...currentProsCons,
-																[casinoKey]: {
-																	pros: casinoProsCons?.pros || [],
-																	cons: [...(casino.cons || []), '']
-																}
-															}
-														});
-													} else {
-														addProsConsItem(casinoKey, 'cons');
-													}
-												}} style={{ marginTop: '5px' }}>
+												<Button
+													isSecondary
+													onClick={() => updateCasinoOverride(
+														casino,
+														(casinoData) => ({
+															...casinoData,
+															cons: [...casinoData.cons, '']
+														}),
+														fallbackProsCons
+													)}
+													style={{ marginTop: '5px' }}
+												>
 													{__('+ Add Con', 'dataflair-toplists')}
 												</Button>
 											</div>
