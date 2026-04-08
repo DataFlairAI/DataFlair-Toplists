@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.0
+ * Version: 1.10.1
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.1');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -99,6 +99,7 @@ function dataflair_plugins_api_info($res, $action, $args) {
 <ul>
   <li>Native WordPress block with inspector controls for toplist selection, item limit, and display options</li>
   <li>Server-side rendered, always reflects live synced data</li>
+  <li>Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads</li>
   <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
 </ul>
 
@@ -119,6 +120,13 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.1</h4>
+<ul>
+  <li>Fixed: Gutenberg pros and cons overrides now use stable brand and item identifiers from synced toplist data instead of position-only keys, preventing custom copy from drifting after reorder or refresh</li>
+  <li>Improved: synced casino items now carry itemId and brandId values in API v2 parsing to support reliable editor override matching</li>
+  <li>Added: PHPUnit coverage for both data.items and data.listItems payloads to verify itemId and brandId mapping</li>
+</ul>
+
 <h4>1.10.0</h4>
 <ul>
   <li>Fixed: Read Review link on casino cards only appears when a published review exists or a manual review URL override is set (hidden for draft-only reviews)</li>

@@ -45,6 +45,7 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 ### Gutenberg Block & Shortcode
 - Native WordPress block with inspector controls for toplist selection, item limit, and display options
 - Server-side rendered, always reflects live synced data
+- Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads
 - Shortcode: `[dataflair_toplist id="123" limit="10"]` works anywhere
 
 ### Automatic Updates
@@ -170,6 +171,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.1
+- Fixed: Gutenberg pros and cons overrides now use stable brand and item identifiers from synced toplist data instead of position-only keys, preventing custom copy from drifting after reorder or refresh
+- Improved: synced casino items now carry `itemId` and `brandId` values in API v2 parsing to support reliable editor override matching
+- Added: PHPUnit coverage for both `data.items` and `data.listItems` payloads to verify `itemId` and `brandId` mapping
+
 ### 1.10.0
 - Fixed: Read Review link on casino cards only appears when a published review exists or a manual review URL override is set (hidden for draft-only reviews)
 - Fixed: review CPT resolution finds published posts by `_review_brand_id` when the WordPress slug differs from the API brand slug; a plugin-created draft at the base slug no longer hides the live published review (for example `…-india`)
@@ -251,4 +257,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.0 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
