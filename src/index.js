@@ -10,7 +10,7 @@ import metadata from './block.json';
 registerBlockType(metadata.name, {
 	edit: ({ attributes, setAttributes }) => {
 		const {
-			toplistId, title, limit,
+			toplistId, title, limit, layout,
 			ribbonBgColor, ribbonTextColor, ribbonText,
 			rankBgColor, rankTextColor, rankBorderRadius,
 			brandLinkColor,
@@ -171,6 +171,16 @@ registerBlockType(metadata.name, {
 							min={0}
 							max={50}
 							help={__('Number of casinos to display (0 = all)', 'dataflair-toplists')}
+						/>
+						<SelectControl
+							label={__('Layout', 'dataflair-toplists')}
+							value={layout}
+							options={[
+								{ value: 'cards', label: __('Cards', 'dataflair-toplists') },
+								{ value: 'table', label: __('Accordion Tables (Testing)', 'dataflair-toplists') },
+							]}
+							onChange={(value) => setAttributes({ layout: value || 'cards' })}
+							help={__('Choose how the toplist is rendered on the frontend.', 'dataflair-toplists')}
 						/>
 					</PanelBody>
 

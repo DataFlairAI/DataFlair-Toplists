@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.1
+ * Version: 1.10.2
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.1');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.2');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -98,6 +98,7 @@ function dataflair_plugins_api_info($res, $action, $args) {
 <h4>Gutenberg Block and Shortcode</h4>
 <ul>
   <li>Native WordPress block with inspector controls for toplist selection, item limit, and display options</li>
+  <li>Includes a testing-focused accordion table layout option to inspect synced data without wide horizontal-scroll tables</li>
   <li>Server-side rendered, always reflects live synced data</li>
   <li>Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads</li>
   <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
@@ -120,6 +121,13 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.2</h4>
+<ul>
+  <li>Added: Gutenberg layout option "Accordion Tables (Testing)" that renders each brand as an accordion with two compact data tables to avoid horizontal scrolling during QA</li>
+  <li>Fixed: card layout now resolves page-level block pros/cons overrides with stable and legacy key formats, matching table layout behavior</li>
+  <li>Improved: card details now surface the resolved Pros and Cons list so page-level overrides are visible during testing</li>
+</ul>
+
 <h4>1.10.1</h4>
 <ul>
   <li>Fixed: Gutenberg pros and cons overrides now use stable brand and item identifiers from synced toplist data instead of position-only keys, preventing custom copy from drifting after reorder or refresh</li>
@@ -4489,6 +4497,7 @@ class DataFlair_Toplists {
             'slug'  => '',  // Optional — looks up by slug column
             'title' => '',
             'limit' => 0,
+            'layout' => 'cards',
         );
 
         // Merge with defaults but preserve all other attributes (for customization)
@@ -4544,7 +4553,11 @@ class DataFlair_Toplists {
         // Extract customization attributes (all attributes except shortcode-specific ones)
         $customizations = $atts;
         $pros_cons_data = isset($customizations['prosCons']) ? $customizations['prosCons'] : array();
-        unset($customizations['id'], $customizations['title'], $customizations['limit'], $customizations['prosCons']);
+        unset($customizations['id'], $customizations['title'], $customizations['limit'], $customizations['layout'], $customizations['prosCons']);
+
+        if (isset($atts['layout']) && $atts['layout'] === 'table') {
+            return $this->render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data);
+        }
         
         ob_start();
         ?>
@@ -4565,6 +4578,228 @@ class DataFlair_Toplists {
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Render a simplified table layout for block testing.
+     *
+     * @param array $items
+     * @param string $title
+     * @param bool $is_stale
+     * @param int $last_synced
+     * @param array $pros_cons_data
+     * @return string
+     */
+    private function render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data = array()) {
+        ob_start();
+        ?>
+        <div class="dataflair-toplist dataflair-toplist-table">
+            <?php if ($is_stale): ?>
+                <div class="dataflair-notice">
+                    ⚠️ This data was last updated on <?php echo date('M d, Y', $last_synced); ?>. Using cached version.
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($title)): ?>
+                <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
+            <?php endif; ?>
+
+            <div class="dataflair-toplist-accordion" style="display:flex;flex-direction:column;gap:12px;">
+                <?php foreach ($items as $item): ?>
+                    <?php
+                    $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
+                    $offer = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
+                    $resolved_pros_cons = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
+
+                    $payment_methods = array();
+                    if (!empty($item['payment_methods']) && is_array($item['payment_methods'])) {
+                        $payment_methods = $item['payment_methods'];
+                    } elseif (!empty($item['paymentMethods']) && is_array($item['paymentMethods'])) {
+                        $payment_methods = $item['paymentMethods'];
+                    } elseif (!empty($brand['payment_methods']) && is_array($brand['payment_methods'])) {
+                        $payment_methods = $brand['payment_methods'];
+                    } elseif (!empty($brand['paymentMethods']) && is_array($brand['paymentMethods'])) {
+                        $payment_methods = $brand['paymentMethods'];
+                    }
+
+                    $licenses = '';
+                    if (!empty($brand['licenses'])) {
+                        $licenses = is_array($brand['licenses']) ? implode(', ', $brand['licenses']) : (string) $brand['licenses'];
+                    }
+
+                    $features = '';
+                    if (!empty($item['features']) && is_array($item['features'])) {
+                        $features = implode(' | ', $item['features']);
+                    }
+
+                    $product_type = '';
+                    if (!empty($brand['type'])) {
+                        $product_type = $brand['type'];
+                    } elseif (!empty($brand['productType'])) {
+                        $product_type = $brand['productType'];
+                    } elseif (!empty($brand['product_type'])) {
+                        $product_type = $brand['product_type'];
+                    }
+
+                    $rating = '';
+                    if (!empty($item['rating'])) {
+                        $rating = (string) $item['rating'];
+                    } elseif (!empty($brand['rating'])) {
+                        $rating = (string) $brand['rating'];
+                    }
+                    ?>
+                    <details style="border:1px solid #d1d5db;border-radius:8px;background:#fff;">
+                        <summary style="cursor:pointer;padding:12px 14px;font-weight:600;background:#f9fafb;">
+                            #<?php echo esc_html((string) (isset($item['position']) ? $item['position'] : '')); ?>
+                            <?php echo esc_html((string) (isset($brand['name']) ? $brand['name'] : 'Unknown Brand')); ?>
+                        </summary>
+                        <div style="padding:12px;display:flex;flex-direction:column;gap:12px;">
+                            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                                <tbody>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;width:180px;">Product Type</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) $product_type); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Rating</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($rating); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Offer</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['offerText']) ? $offer['offerText'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Bonus Code</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['bonus_code']) ? $offer['bonus_code'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Bonus Wagering</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['bonus_wagering_requirement']) ? $offer['bonus_wagering_requirement'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Min Deposit</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['minimum_deposit']) ? $offer['minimum_deposit'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Payout Time</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['payout_time']) ? $offer['payout_time'] : '')); ?></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                                <tbody>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;width:180px;">Max Payout</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['max_payout']) ? $offer['max_payout'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Games Count</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($item['games_count']) ? $item['games_count'] : '')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Payment Methods</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($payment_methods) ? implode(', ', $payment_methods) : ''); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Licenses</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($licenses); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Features</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($features); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Pros</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($resolved_pros_cons['pros']) ? implode(' | ', $resolved_pros_cons['pros']) : ''); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Cons</th>
+                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($resolved_pros_cons['cons']) ? implode(' | ', $resolved_pros_cons['cons']) : ''); ?></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Resolve pros/cons for the table row, honoring block-level overrides first.
+     *
+     * @param array $item
+     * @param array $pros_cons_data
+     * @return array{pros:array,cons:array}
+     */
+    private function resolve_pros_cons_for_table_item($item, $pros_cons_data) {
+        $fallback = array(
+            'pros' => array(),
+            'cons' => array(),
+        );
+
+        if (!empty($item['pros']) && is_array($item['pros'])) {
+            $fallback['pros'] = array_values(array_filter(array_map('trim', $item['pros']), function($value) {
+                return $value !== '';
+            }));
+        }
+        if (!empty($item['cons']) && is_array($item['cons'])) {
+            $fallback['cons'] = array_values(array_filter(array_map('trim', $item['cons']), function($value) {
+                return $value !== '';
+            }));
+        }
+
+        if (empty($pros_cons_data) || !is_array($pros_cons_data)) {
+            return $fallback;
+        }
+
+        $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
+        $brand_name = isset($brand['name']) ? (string) $brand['name'] : '';
+        $brand_slug = sanitize_title($brand_name);
+        $position = isset($item['position']) ? (int) $item['position'] : 0;
+        $item_id = isset($item['id']) ? (int) $item['id'] : 0;
+        $brand_id = 0;
+
+        if (!empty($brand['id'])) {
+            $brand_id = (int) $brand['id'];
+        } elseif (!empty($brand['api_brand_id'])) {
+            $brand_id = (int) $brand['api_brand_id'];
+        } elseif (!empty($item['brandId'])) {
+            $brand_id = (int) $item['brandId'];
+        }
+
+        $candidate_keys = array();
+        if ($brand_id > 0) {
+            $candidate_keys[] = 'casino-brand-' . $brand_id;
+        }
+        if ($item_id > 0) {
+            $candidate_keys[] = 'casino-item-' . $item_id;
+        }
+        if (!empty($brand_slug)) {
+            $candidate_keys[] = 'casino-slug-' . $brand_slug;
+            $candidate_keys[] = 'casino-' . $position . '-' . $brand_slug;
+        }
+
+        foreach ($candidate_keys as $candidate_key) {
+            if (empty($pros_cons_data[$candidate_key]) || !is_array($pros_cons_data[$candidate_key])) {
+                continue;
+            }
+
+            $override = $pros_cons_data[$candidate_key];
+            return array(
+                'pros' => !empty($override['pros']) && is_array($override['pros']) ? array_values(array_filter(array_map('trim', $override['pros']), function($value) {
+                    return $value !== '';
+                })) : $fallback['pros'],
+                'cons' => !empty($override['cons']) && is_array($override['cons']) ? array_values(array_filter(array_map('trim', $override['cons']), function($value) {
+                    return $value !== '';
+                })) : $fallback['cons'],
+            );
+        }
+
+        return $fallback;
     }
     
     /**
@@ -5284,20 +5519,10 @@ class DataFlair_Toplists {
 
                     <?php
                     // Get pros/cons for this casino
-                    // Start with API defaults, then override with block-level customizations if provided
-                    $casino_key = 'casino-' . $position . '-' . $brand_slug;
-                    $has_block_override = isset($pros_cons_data[$casino_key]);
-                    
-                    // Use API defaults if no block-level override exists, otherwise use block-level (even if empty)
-                    if ($has_block_override) {
-                        $casino_pros_cons = $pros_cons_data[$casino_key];
-                        $pros = isset($casino_pros_cons['pros']) ? $casino_pros_cons['pros'] : $api_pros;
-                        $cons = isset($casino_pros_cons['cons']) ? $casino_pros_cons['cons'] : $api_cons;
-                    } else {
-                        // No block-level override, use API defaults
-                        $pros = $api_pros;
-                        $cons = $api_cons;
-                    }
+                    // Start with API defaults, then override with block-level customizations (stable + legacy keys)
+                    $resolved_pros_cons = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
+                    $pros = !empty($resolved_pros_cons['pros']) ? $resolved_pros_cons['pros'] : $api_pros;
+                    $cons = !empty($resolved_pros_cons['cons']) ? $resolved_pros_cons['cons'] : $api_cons;
                     ?>
                     
                     <?php if (!empty($pros) || !empty($cons)): ?>
@@ -5675,6 +5900,7 @@ class DataFlair_Toplists {
             'toplistId' => '',
             'title' => '',
             'limit' => 0,
+            'layout' => 'cards',
             'ribbonBgColor' => $ribbon_bg_default,
             'ribbonTextColor' => $ribbon_text_default,
             'ribbonText' => 'Our Top Choice',
@@ -5712,6 +5938,7 @@ class DataFlair_Toplists {
             'id' => $toplist_id,
             'title' => $atts['title'],
             'limit' => intval($atts['limit']),
+            'layout' => $atts['layout'],
             'ribbonBgColor' => $atts['ribbonBgColor'],
             'ribbonTextColor' => $atts['ribbonTextColor'],
             'ribbonText' => $atts['ribbonText'],

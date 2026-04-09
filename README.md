@@ -44,6 +44,7 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 
 ### Gutenberg Block & Shortcode
 - Native WordPress block with inspector controls for toplist selection, item limit, and display options
+- Includes a testing-focused accordion table layout option to inspect synced data without wide horizontal-scroll tables
 - Server-side rendered, always reflects live synced data
 - Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads
 - Shortcode: `[dataflair_toplist id="123" limit="10"]` works anywhere
@@ -171,6 +172,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.2
+- Added: Gutenberg layout option "Accordion Tables (Testing)" that renders each brand as an accordion with two compact data tables to avoid horizontal scrolling during QA
+- Fixed: card layout now resolves page-level block pros/cons overrides with stable and legacy key formats, matching table layout behavior
+- Improved: card details now surface the resolved Pros and Cons list so page-level overrides are visible during testing
+
 ### 1.10.1
 - Fixed: Gutenberg pros and cons overrides now use stable brand and item identifiers from synced toplist data instead of position-only keys, preventing custom copy from drifting after reorder or refresh
 - Improved: synced casino items now carry `itemId` and `brandId` values in API v2 parsing to support reliable editor override matching
@@ -257,4 +263,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.1 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.2 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

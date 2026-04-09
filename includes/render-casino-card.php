@@ -78,20 +78,16 @@ $offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
 // Default: review post meta (_review_pros, pipe-separated, entered by editor)
 // Override: block editor pros/cons (per-toplist, set in Gutenberg inspector)
 $features = array();
+$resolved_pros = array();
+$resolved_cons = array();
 
-// Build casino key matching the block editor format: casino-{position}-{brandSlug}
-// Gutenberg editor uses `brandSlug = sanitize_title(brandName)` from the REST payload.
-$brand_slug_for_key = sanitize_title( (string) ( $brand['name'] ?? $brand_name ) );
-$casino_key = 'casino-' . $position . '-' . $brand_slug_for_key;
-
-// 1. Check for per-toplist block editor overrides
-if (!empty($pros_cons_data) && isset($pros_cons_data[$casino_key])) {
-    $casino_pros_cons = $pros_cons_data[$casino_key];
-    if (!empty($casino_pros_cons['pros']) && is_array($casino_pros_cons['pros'])) {
-        $features = array_filter($casino_pros_cons['pros'], function($pro) {
-            return !empty(trim($pro));
-        });
-        $features = array_slice($features, 0, 3);
+// 1. Check for per-toplist block editor overrides (supports stable and legacy keys)
+if (isset($this) && method_exists($this, 'resolve_pros_cons_for_table_item')) {
+    $resolved = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
+    $resolved_pros = !empty($resolved['pros']) && is_array($resolved['pros']) ? $resolved['pros'] : array();
+    $resolved_cons = !empty($resolved['cons']) && is_array($resolved['cons']) ? $resolved['cons'] : array();
+    if (!empty($resolved_pros)) {
+        $features = array_slice($resolved_pros, 0, 3);
     }
 }
 
@@ -160,6 +156,15 @@ if (empty($features) && function_exists('post_type_exists') && post_type_exists(
 if (empty($features) && !empty($item['features'])) {
     $features = array_slice($item['features'], 0, 3);
 }
+
+$detail_pros = !empty($resolved_pros) ? $resolved_pros : (!empty($item['pros']) && is_array($item['pros']) ? $item['pros'] : array());
+$detail_cons = !empty($resolved_cons) ? $resolved_cons : (!empty($item['cons']) && is_array($item['cons']) ? $item['cons'] : array());
+$detail_pros = array_values(array_filter(array_map('trim', $detail_pros), function($value) {
+    return $value !== '';
+}));
+$detail_cons = array_values(array_filter(array_map('trim', $detail_cons), function($value) {
+    return $value !== '';
+}));
 
 // Payment methods - check multiple possible keys
 $payment_methods = array();
@@ -469,6 +474,34 @@ $show_read_review_link = !empty($brand['review_url_override'])
                 </div>
                 <?php endif; ?>
             </div>
+
+            <?php if (!empty($detail_pros) || !empty($detail_cons)): ?>
+            <div class="details-section">
+                <h4 class="details-heading">Pros &amp; Cons</h4>
+                <div class="grid grid-cols-1 tablet:grid-cols-2 gap-4">
+                    <?php if (!empty($detail_pros)): ?>
+                    <div>
+                        <h5 class="text-base font-semibold mb-2 text-green-700">Pros</h5>
+                        <ul class="list-disc list-inside flex flex-col gap-1">
+                            <?php foreach ($detail_pros as $pro): ?>
+                                <li class="text-sm text-gray-700"><?php echo esc_html($pro); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($detail_cons)): ?>
+                    <div>
+                        <h5 class="text-base font-semibold mb-2 text-red-600">Cons</h5>
+                        <ul class="list-disc list-inside flex flex-col gap-1">
+                            <?php foreach ($detail_cons as $con): ?>
+                                <li class="text-sm text-gray-700"><?php echo esc_html($con); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
             
             <!-- Footer Info -->
             <div class="details-footer">

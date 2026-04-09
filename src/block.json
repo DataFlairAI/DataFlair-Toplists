@@ -22,6 +22,10 @@
       "type": "number",
       "default": 0
     },
+    "layout": {
+      "type": "string",
+      "default": "cards"
+    },
     "ribbonBgColor": {
       "type": "string",
       "default": "brand-600"
@@ -116,4 +120,3 @@
     "align": true
   }
 }
-
