@@ -172,6 +172,10 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.3
+- Fixed: release packaging now uses production-only Composer dependencies (no `--dev`) so PHPUnit and other dev packages are not shipped to production servers
+- Improved: `vendor/composer` metadata regenerated in no-dev mode for PHP 8.3 compatibility on production installs
+
 ### 1.10.2
 - Added: Gutenberg layout option "Accordion Tables (Testing)" that renders each brand as an accordion with two compact data tables to avoid horizontal scrolling during QA
 - Fixed: card layout now resolves page-level block pros/cons overrides with stable and legacy key formats, matching table layout behavior
@@ -263,4 +267,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.2 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.3 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
