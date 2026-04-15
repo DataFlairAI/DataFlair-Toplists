@@ -172,6 +172,11 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.4
+- Added: Composer convenience scripts `install-prod` and `install-dev` in `composer.json` for explicit production vs development dependency installs
+- Improved: `composer.json` now defaults to `dist` installs with optimized autoloading to reduce deployment variance
+- Fixed: production install guidance now enforces `--no-dev` to prevent PHPUnit/dev dependencies from being installed on PHP 8.3 servers
+
 ### 1.10.3
 - Fixed: release packaging now uses production-only Composer dependencies (no `--dev`) so PHPUnit and other dev packages are not shipped to production servers
 - Improved: `vendor/composer` metadata regenerated in no-dev mode for PHP 8.3 compatibility on production installs
@@ -267,4 +272,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.3 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.4 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

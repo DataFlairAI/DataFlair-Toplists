@@ -40,9 +40,19 @@
         "issues": "https://github.com/dataflair/toplists/issues",
         "source": "https://github.com/dataflair/toplists"
     },
+    "scripts": {
+        "install-prod": [
+            "composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress"
+        ],
+        "install-dev": [
+            "composer install --prefer-dist --optimize-autoloader --no-interaction --no-progress"
+        ]
+    },
     "config": {
         "allow-plugins": {
             "composer/installers": true
-        }
+        },
+        "preferred-install": "dist",
+        "optimize-autoloader": true
     }
 }
