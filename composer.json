@@ -53,6 +53,9 @@
             "composer/installers": true
         },
         "preferred-install": "dist",
-        "optimize-autoloader": true
+        "optimize-autoloader": true,
+        "platform": {
+            "php": "8.3.16"
+        }
     }
 }
