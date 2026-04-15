@@ -172,6 +172,9 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.5
+- Fixed: pinned Composer platform requirement to PHP 8.3.16 so that legacy deployment scripts running `composer install` without `--no-dev` do not fail resolving PHP 8.4-only development dependencies like `doctrine/instantiator` 2.1.0
+
 ### 1.10.4
 - Added: Composer convenience scripts `install-prod` and `install-dev` in `composer.json` for explicit production vs development dependency installs
 - Improved: `composer.json` now defaults to `dist` installs with optimized autoloading to reduce deployment variance
@@ -272,4 +275,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.4 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.5 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

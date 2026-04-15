@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.4
+ * Version: 1.10.5
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.4');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.5');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -121,6 +121,11 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.5</h4>
+<ul>
+  <li>Fixed: pinned Composer platform requirement to PHP 8.3.16 so that legacy deployment scripts running composer install without --no-dev do not fail resolving PHP 8.4-only development dependencies like doctrine/instantiator 2.1.0</li>
+</ul>
+
 <h4>1.10.4</h4>
 <ul>
   <li>Added: Composer convenience scripts install-prod and install-dev in composer.json for explicit production vs development dependency installs</li>
