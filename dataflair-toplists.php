@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.5
+ * Version: 1.10.6
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.5');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.6');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -121,6 +121,12 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.6</h4>
+<ul>
+  <li>Improved: Redesigned the "Synced Toplists" admin table for a cleaner look with a wider Name column, removing redundant Slug, Locked, Sync Health, and Shortcode columns.</li>
+  <li>Improved: Optimized the "Fetch All Toplists from API" process by batching requests with full item inclusion, dramatically reducing sync time and preventing API timeouts.</li>
+</ul>
+
 <h4>1.10.5</h4>
 <ul>
   <li>Fixed: pinned Composer platform requirement to PHP 8.3.16 so that legacy deployment scripts running composer install without --no-dev do not fail resolving PHP 8.4-only development dependencies like doctrine/instantiator 2.1.0</li>
@@ -294,6 +300,7 @@ class DataFlair_Toplists {
         add_action('admin_init', array($this, 'register_settings'));
         add_action('wp_ajax_dataflair_save_settings', array($this, 'ajax_save_settings'));
         add_action('wp_ajax_dataflair_fetch_all_toplists', array($this, 'ajax_fetch_all_toplists'));
+        add_action('wp_ajax_dataflair_sync_toplists_batch', array($this, 'ajax_sync_toplists_batch'));
         add_action('wp_ajax_dataflair_fetch_all_brands', array($this, 'ajax_fetch_all_brands'));
         add_action('wp_ajax_dataflair_sync_brands_batch', array($this, 'ajax_sync_brands_batch'));
         add_action('wp_ajax_dataflair_get_alternative_toplists', array($this, 'ajax_get_alternative_toplists'));
@@ -1012,6 +1019,7 @@ class DataFlair_Toplists {
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('dataflair_save_settings'),
             'fetchNonce' => wp_create_nonce('dataflair_fetch_all_toplists'),
+            'syncToplistsBatchNonce' => wp_create_nonce('dataflair_sync_toplists_batch'),
             'fetchBrandsNonce' => wp_create_nonce('dataflair_fetch_all_brands'),
             'syncBrandsBatchNonce' => wp_create_nonce('dataflair_sync_brands_batch')
         ));
@@ -1141,6 +1149,10 @@ class DataFlair_Toplists {
                         Fetch All Toplists from API
                     </button>
                     <span id="dataflair-fetch-message" style="margin-left: 10px;"></span>
+                    <div id="dataflair-toplist-sync-progress" style="display: none; margin-top: 15px; max-width: 400px; background: #f0f0f1; border-radius: 3px; height: 20px; overflow: hidden; position: relative;">
+                        <div id="dataflair-toplist-progress-bar" style="background: #2271b1; width: 0%; height: 100%; transition: width 0.3s ease;"></div>
+                        <div id="dataflair-toplist-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: #fff; font-size: 12px; line-height: 20px; font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,0.5);">0%</div>
+                    </div>
                     <p class="description">Fetches all toplists from the DataFlair API. Existing toplists will be updated.</p>
                     <p class="description">Auto-sync runs twice daily. <?php echo $this->get_last_cron_time(); ?></p>
             
@@ -1186,8 +1198,7 @@ class DataFlair_Toplists {
                             <th style="width: 40px;"></th>
                             <th>WP ID</th>
                             <th>API ID</th>
-                            <th>Name</th>
-                            <th>Slug</th>
+                            <th style="width: 40%;">Name</th>
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="template">Template <span class="toplist-sort-indicator"></span></a>
                             </th>
@@ -1196,12 +1207,9 @@ class DataFlair_Toplists {
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="items">Items <span class="toplist-sort-indicator"></span></a>
                             </th>
-                            <th>Locked</th>
-                            <th>Sync Health</th>
                             <th class="sortable-toplist">
                                 <a href="#" class="toplist-sort-link" data-sort="last_synced">Last Synced <span class="toplist-sort-indicator"></span></a>
                             </th>
-                            <th>Shortcode</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1241,21 +1249,15 @@ class DataFlair_Toplists {
                             <td><?php echo esc_html($toplist->id); ?></td>
                             <td><?php echo esc_html($toplist->api_toplist_id); ?></td>
                             <td><?php echo esc_html($toplist->name); ?></td>
-                            <td><?php echo isset($toplist->slug) && !empty($toplist->slug) ? '<code>' . esc_html($toplist->slug) . '</code>' : '<span style="color:#999;">—</span>'; ?></td>
                             <td><?php echo esc_html($template_name ?: '—'); ?></td>
                             <td><?php echo isset($toplist->current_period) && !empty($toplist->current_period) ? esc_html($toplist->current_period) : '<span style="color:#999;">—</span>'; ?></td>
                             <td><?php echo esc_html($toplist->version); ?></td>
                             <td><?php echo esc_html($items_count); ?></td>
-                            <td><?php echo esc_html($locked_count); ?></td>
-                            <td><?php echo $health_html; ?></td>
                             <td><?php echo esc_html($toplist->last_synced); ?></td>
-                            <td>
-                                <code>[dataflair_toplist id="<?php echo esc_attr($toplist->api_toplist_id); ?>"]</code>
-                            </td>
                         </tr>
                         <?php if ($warning_count > 0): ?>
                         <tr class="toplist-warnings-row" id="warnings-<?php echo esc_attr($toplist->id); ?>" style="display:none;">
-                            <td colspan="13" style="padding: 0;">
+                            <td colspan="9" style="padding: 0;">
                                 <div style="padding: 12px 20px; background: #fff8e5; border-left: 4px solid #dba617;">
                                     <strong style="color:#dba617;">&#9888;&#65039; Sync warnings for <?php echo esc_html($toplist->name); ?>:</strong>
                                     <ul style="margin: 8px 0 0 20px; padding: 0;">
@@ -1268,7 +1270,7 @@ class DataFlair_Toplists {
                         </tr>
                         <?php endif; ?>
                         <tr class="toplist-accordion-content" data-toplist-id="<?php echo esc_attr($toplist->id); ?>" style="display: none;">
-                            <td colspan="13" style="padding: 0;">
+                            <td colspan="9" style="padding: 0;">
                                 <div class="toplist-accordion-inner" style="padding: 20px; background: #f9f9f9; border-left: 4px solid #0073aa;">
                                     <h3 style="margin-top: 0;">Alternative Toplists for Different Geos</h3>
                                     <p class="description">Set alternative toplists to show when a user from a specific geo visits a page where this toplist is displayed.</p>
@@ -2010,125 +2012,132 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
         
-        // Debug: Log token details (prefix only for security)
-        error_log('DataFlair DEBUG: Token length=' . strlen($token) . ', starts with=' . substr($token, 0, 15) . '...');
+        // Return initial response - JavaScript will handle batch processing
+        wp_send_json_success(array(
+            'message' => 'Starting batch sync...',
+            'start_batch' => true
+        ));
+    }
+    
+    /**
+     * AJAX handler to sync toplists in batches
+     */
+    public function ajax_sync_toplists_batch() {
+        check_ajax_referer('dataflair_sync_toplists_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $token = trim(get_option('dataflair_api_token'));
+        if (empty($token)) {
+            wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
+        }
+        
+        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        
+        if ($page === 1) {
+            // On the first batch, clear old transients and purge existing toplists
+            $this->clear_tracker_transients();
+            global $wpdb;
+            $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+            $wpdb->query("TRUNCATE TABLE {$table_name}");
+            
+            // Also clear discovered endpoints on page 1
+            update_option('dataflair_api_endpoints', '');
+        }
 
-        // Get API base URL (auto-detected or manually set)
         $base_url = $this->get_api_base_url();
+        $list_url = $base_url . '/toplists?per_page=20&page=' . $page . '&include=items';
+        
+        $response = $this->api_get($list_url, $token);
+        
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => 'Failed to fetch toplist page ' . $page . ': ' . $response->get_error_message()));
+        }
 
-        error_log('DataFlair DEBUG: Base URL from get_api_base_url()=' . $base_url);
-        error_log('DataFlair DEBUG: Stored option dataflair_api_base_url=' . get_option('dataflair_api_base_url', '(not set)'));
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $response_headers = wp_remote_retrieve_headers($response);
 
-        // ── Fetch ALL pages of toplists (v2 API paginates, default 15/page) ──
-        $toplist_endpoints = array();
-        $current_page = 1;
+        // Auto-detect and store base URL from first successful response
+        if ($page === 1 && $status_code === 200) {
+            $parsed_url = parse_url($list_url);
+            if (isset($parsed_url['scheme']) && isset($parsed_url['host'])) {
+                $detected_base = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/api/v1';
+                $current_base = get_option('dataflair_api_base_url');
+                if (empty($current_base) || $current_base !== $detected_base) {
+                    update_option('dataflair_api_base_url', $detected_base);
+                }
+            }
+        }
+
+        if ($status_code !== 200) {
+            $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
+            wp_send_json_error(array('message' => $error_msg));
+        }
+
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            wp_send_json_error(array('message' => 'JSON decode error: ' . json_last_error_msg()));
+        }
+
+        if (!isset($data['data'])) {
+            wp_send_json_error(array('message' => 'Invalid response format from API. Expected "data" key in response.'));
+        }
+
+        $synced = 0;
+        $errors = 0;
         $last_page = 1;
-        $base_url_detected = false;
+        $endpoints = [];
+        
+        if (isset($data['meta']['last_page'])) {
+            $last_page = (int) $data['meta']['last_page'];
+        }
 
-        do {
-            $list_url = $base_url . '/toplists?per_page=100&page=' . $current_page;
-            error_log('DataFlair DEBUG: Fetching page ' . $current_page . ' — URL=' . $list_url);
-
-            $response = $this->api_get($list_url, $token);
-
-            if (is_wp_error($response)) {
-                $error_msg = 'Failed to fetch toplist list (page ' . $current_page . '): ' . $response->get_error_message();
-                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
-                wp_send_json_error(array('message' => $error_msg));
-            }
-
-            $status_code = wp_remote_retrieve_response_code($response);
-            $body = wp_remote_retrieve_body($response);
-            $response_headers = wp_remote_retrieve_headers($response);
-
-            error_log('DataFlair /toplists API Response Code: ' . $status_code . ' (page ' . $current_page . ')');
-            error_log('DataFlair /toplists API Response Body (first 500 chars): ' . substr($body, 0, 500));
-
-            // Auto-detect and store base URL from first successful response
-            if ($status_code === 200 && !$base_url_detected) {
-                $parsed_url = parse_url($list_url);
-                if (isset($parsed_url['scheme']) && isset($parsed_url['host'])) {
-                    $detected_base = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/api/v1';
-                    $current_base = get_option('dataflair_api_base_url');
-                    if (empty($current_base) || $current_base !== $detected_base) {
-                        update_option('dataflair_api_base_url', $detected_base);
-                        error_log('DataFlair: Auto-detected and stored API base URL: ' . $detected_base);
-                    }
-                }
-                $base_url_detected = true;
-            }
-
-            if ($status_code !== 200) {
-                $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
-                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
-                wp_send_json_error(array('message' => $error_msg));
-            }
-
-            $data = json_decode($body, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $error_msg = 'JSON decode error: ' . json_last_error_msg() . '. Response: ' . substr($body, 0, 200);
-                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
-                wp_send_json_error(array('message' => $error_msg));
-            }
-
-            if (!isset($data['data'])) {
-                $error_msg = 'Invalid response format from API. Expected "data" key. Response structure: ' . print_r(array_keys($data), true);
-                error_log('DataFlair fetch_all_toplists error: ' . $error_msg);
-                wp_send_json_error(array('message' => 'Invalid response format from API. Expected "data" key in response. Check debug.log for details.'));
-            }
-
-            // Extract toplist endpoints from this page
-            if (isset($data['data']) && is_array($data['data'])) {
-                foreach ($data['data'] as $toplist) {
-                    if (isset($toplist['id'])) {
-                        $toplist_endpoints[] = $base_url . '/toplists/' . $toplist['id'];
+        if (is_array($data['data'])) {
+            foreach ($data['data'] as $toplist) {
+                if (isset($toplist['id'])) {
+                    $endpoint = $base_url . '/toplists/' . $toplist['id'];
+                    $endpoints[] = $endpoint;
+                    
+                    // Create the raw JSON string mimicking the single endpoint response
+                    $toplist_json = wp_json_encode(['data' => $toplist]);
+                    $result = $this->store_toplist_data($toplist, $toplist_json);
+                    
+                    if ($result) {
+                        $synced++;
+                    } else {
+                        $errors++;
                     }
                 }
             }
-
-            // Check for more pages (Laravel paginated response includes meta.last_page)
-            if (isset($data['meta']['last_page'])) {
-                $last_page = (int) $data['meta']['last_page'];
-            }
-
-            $current_page++;
-        } while ($current_page <= $last_page);
-
-        error_log('DataFlair DEBUG: Fetched ' . count($toplist_endpoints) . ' toplist(s) across ' . ($current_page - 1) . ' page(s)');
-
-        if (empty($toplist_endpoints)) {
-            wp_send_json_error(array('message' => 'No toplists found in the API response. Make sure at least one toplist has a live edition.'));
         }
         
-        // Update the endpoints setting
-        $endpoints_string = implode("\n", $toplist_endpoints);
-        update_option('dataflair_api_endpoints', $endpoints_string);
-        
-        // Now sync all the toplists
-        $result = $this->sync_all_toplists();
-        
-        if ($result['success']) {
-            $message = sprintf(
-                'Fetched %d toplists from API and synced them! Successfully synced: %d | Errors: %d', 
-                count($toplist_endpoints),
-                $result['synced'], 
-                $result['errors']
-            );
-            
-            if ($result['errors'] > 0) {
-                $message .= ' - Check WordPress debug.log for details.';
+        // Append newly discovered endpoints
+        if (!empty($endpoints)) {
+            $existing_endpoints = get_option('dataflair_api_endpoints', '');
+            $new_endpoints_string = implode("\n", $endpoints);
+            if (!empty($existing_endpoints)) {
+                $new_endpoints_string = $existing_endpoints . "\n" . $new_endpoints_string;
             }
-            
-            wp_send_json_success(array(
-                'message' => $message,
-                'toplists_count' => count($toplist_endpoints),
-                'synced' => $result['synced'],
-                'errors' => $result['errors']
-            ));
-        } else {
-            wp_send_json_error(array('message' => 'Toplists fetched but sync failed: ' . $result['message']));
+            update_option('dataflair_api_endpoints', $new_endpoints_string);
         }
+        
+        $is_complete = $page >= $last_page;
+        
+        if ($is_complete) {
+            update_option('dataflair_last_toplists_cron_run', time());
+        }
+
+        wp_send_json_success(array(
+            'page' => $page,
+            'last_page' => $last_page,
+            'synced' => $synced,
+            'errors' => $errors,
+            'is_complete' => $is_complete
+        ));
     }
     
     /**
@@ -4330,7 +4339,7 @@ class DataFlair_Toplists {
         $last_page = 1;
 
         do {
-            $list_url = $base_url . '/toplists?per_page=100&page=' . $current_page;
+            $list_url = $base_url . '/toplists?per_page=15&page=' . $current_page;
             $response = $this->api_get($list_url, $token);
 
             if (is_wp_error($response)) {
@@ -4414,6 +4423,23 @@ class DataFlair_Toplists {
         }
 
         $toplist_data = $response_data['data'];
+
+        return $this->store_toplist_data($toplist_data, $body);
+    }
+    
+    /**
+     * Store toplist data directly (used when full data is already fetched in bulk)
+     */
+    private function store_toplist_data($toplist_data, $body) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+
+        if (!isset($toplist_data['id'])) {
+            $error_message = 'DataFlair API Error: Invalid response format. Response: ' . substr($body, 0, 300);
+            error_log($error_message);
+            add_settings_error('dataflair_messages', 'dataflair_format_error', $error_message, 'error');
+            return false;
+        }
 
         // ── Run data integrity validation ──
         require_once DATAFLAIR_PLUGIN_DIR . 'includes/DataIntegrityChecker.php';
@@ -4504,7 +4530,7 @@ class DataFlair_Toplists {
 
         return true;
     }
-    
+
     /**
      * Shortcode handler
      */

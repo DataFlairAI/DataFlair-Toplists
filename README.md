@@ -172,6 +172,10 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.6
+- Improved: Redesigned the "Synced Toplists" admin table for a cleaner look with a wider Name column, removing redundant Slug, Locked, Sync Health, and Shortcode columns.
+- Improved: Optimized the "Fetch All Toplists from API" process by batching requests with full item inclusion, dramatically reducing sync time and preventing API timeouts.
+
 ### 1.10.5
 - Fixed: pinned Composer platform requirement to PHP 8.3.16 so that legacy deployment scripts running `composer install` without `--no-dev` do not fail resolving PHP 8.4-only development dependencies like `doctrine/instantiator` 2.1.0
 
@@ -275,4 +279,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.5 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.6 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9

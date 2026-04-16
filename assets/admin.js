@@ -57,19 +57,27 @@ jQuery(document).ready(function($) {
         });
     });
     
-    // Handle fetch all toplists button
+    // Handle fetch all toplists button with batch processing
     $('#dataflair-fetch-all-toplists').on('click', function(e) {
         e.preventDefault();
         
         var $button = $(this);
         var $message = $('#dataflair-fetch-message');
+        var $progressBar = $('#dataflair-toplist-sync-progress');
+        var $progressBarInner = $('#dataflair-toplist-progress-bar');
+        var $progressText = $('#dataflair-toplist-progress-text');
         var originalText = $button.text();
         
         // Disable button and show loading
         $button.prop('disabled', true).text('Fetching...');
-        $message.removeClass('error').html('<span style="color: #0073aa;">⏳ Fetching toplists from API...</span>');
+        $message.removeClass('error').html('<span style="color: #0073aa;">⏳ Starting sync...</span>');
         
-        // Send AJAX request
+        // Show progress bar
+        $progressBar.show();
+        $progressBarInner.css('width', '0%');
+        $progressText.text('0%');
+        
+        // Send initial AJAX request
         $.ajax({
             url: dataflairAdmin.ajaxUrl,
             type: 'POST',
@@ -78,28 +86,84 @@ jQuery(document).ready(function($) {
                 nonce: dataflairAdmin.fetchNonce
             },
             success: function(response) {
-                if (response.success) {
-                    $message.html('<span style="color: #46b450;">✓ ' + response.data.message + '</span>');
-                    $button.text(originalText).prop('disabled', false);
-                    
-                    // Reload page after 2 seconds to show updated toplists
-                    setTimeout(function() {
-                        location.reload();
-                    }, 2000);
+                if (response.success && response.data.start_batch) {
+                    // Start batch processing
+                    syncToplistsBatch(1, 0, 0);
                 } else {
-                    $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error fetching toplists') + '</span>');
+                    $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error starting sync') + '</span>');
                     $button.text(originalText).prop('disabled', false);
+                    $progressBar.hide();
                 }
             },
             error: function(xhr, status, error) {
-                var errorMsg = 'An error occurred while fetching toplists.';
+                var errorMsg = 'An error occurred while starting sync.';
                 if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
                     errorMsg = xhr.responseJSON.data.message;
                 }
                 $message.html('<span style="color: #dc3232;">✗ ' + errorMsg + '</span>');
                 $button.text(originalText).prop('disabled', false);
+                $progressBar.hide();
             }
         });
+
+        // Function to sync one batch of toplists
+        function syncToplistsBatch(page, totalSynced, totalErrors) {
+            $.ajax({
+                url: dataflairAdmin.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'dataflair_sync_toplists_batch',
+                    nonce: dataflairAdmin.syncToplistsBatchNonce,
+                    page: page
+                },
+                success: function(response) {
+                    if (response.success) {
+                        var data = response.data;
+                        totalSynced += data.synced || 0;
+                        totalErrors += data.errors || 0;
+                        
+                        // Update progress
+                        var progress = Math.round((page / data.last_page) * 100);
+                        if (progress > 100) progress = 100;
+                        $progressBarInner.css('width', progress + '%');
+                        $progressText.text(progress + '% - Page ' + page + ' of ' + data.last_page);
+                        
+                        $message.html('<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists...</span>');
+                        
+                        // Check if there are more to process
+                        if (!data.is_complete && page < data.last_page) {
+                            // Sync next batch
+                            setTimeout(function() {
+                                syncToplistsBatch(page + 1, totalSynced, totalErrors);
+                            }, 500); // Small delay between batches
+                        } else {
+                            // All done
+                            $progressBarInner.css('width', '100%');
+                            $progressText.text('100% Complete');
+                            
+                            var finalMsg = '<span style="color: #46b450;">✓ Successfully synced ' + totalSynced + ' toplists!</span>';
+                            if (totalErrors > 0) {
+                                finalMsg += ' <span style="color: #dc3232;">(' + totalErrors + ' errors - check debug.log)</span>';
+                            }
+                            $message.html(finalMsg);
+                            $button.text(originalText).prop('disabled', false);
+                            
+                            // Reload page after 2 seconds
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        }
+                    } else {
+                        $message.html('<span style="color: #dc3232;">✗ Error on page ' + page + ': ' + (response.data.message || 'Unknown error') + '</span>');
+                        $button.text(originalText).prop('disabled', false);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $message.html('<span style="color: #dc3232;">✗ Error syncing page ' + page + '</span>');
+                    $button.text(originalText).prop('disabled', false);
+                }
+            });
+        }
     });
     
     // Handle fetch all brands button with batch processing
