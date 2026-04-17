@@ -107,7 +107,8 @@ jQuery(document).ready(function($) {
         });
 
         // Function to sync one batch of toplists
-        function syncToplistsBatch(page, totalSynced, totalErrors) {
+        function syncToplistsBatch(page, totalSynced, totalErrors, skippedPages) {
+            skippedPages = skippedPages || [];
             $.ajax({
                 url: dataflairAdmin.ajaxUrl,
                 type: 'POST',
@@ -121,33 +122,49 @@ jQuery(document).ready(function($) {
                         var data = response.data;
                         totalSynced += data.synced || 0;
                         totalErrors += data.errors || 0;
-                        
+                        if (data.skipped) {
+                            skippedPages.push(page);
+                        }
+
                         // Update progress
                         var progress = Math.round((page / data.last_page) * 100);
                         if (progress > 100) progress = 100;
                         $progressBarInner.css('width', progress + '%');
                         $progressText.text(progress + '% - Page ' + page + ' of ' + data.last_page);
-                        
-                        $message.html('<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists...</span>');
-                        
-                        // Check if there are more to process
+
+                        var statusMsg = '<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists';
+                        if (data.fallback) {
+                            statusMsg += ' (page ' + page + ' via per-ID fallback' + (data.partial ? ', partial' : '') + ')';
+                        } else if (data.skipped) {
+                            statusMsg = '<span style="color: #d98500;">⚠ Page ' + page + ' skipped (API error). Continuing';
+                        }
+                        statusMsg += '...</span>';
+                        $message.html(statusMsg);
+
+                        // Check if there are more to process. On skipped pages we still
+                        // advance as long as the loop hasn't reached last_page — the
+                        // server hands back its best guess for last_page so we don't
+                        // stop prematurely.
                         if (!data.is_complete && page < data.last_page) {
                             // Sync next batch
                             setTimeout(function() {
-                                syncToplistsBatch(page + 1, totalSynced, totalErrors);
+                                syncToplistsBatch(page + 1, totalSynced, totalErrors, skippedPages);
                             }, 500); // Small delay between batches
                         } else {
                             // All done
                             $progressBarInner.css('width', '100%');
                             $progressText.text('100% Complete');
-                            
+
                             var finalMsg = '<span style="color: #46b450;">✓ Successfully synced ' + totalSynced + ' toplists!</span>';
                             if (totalErrors > 0) {
                                 finalMsg += ' <span style="color: #dc3232;">(' + totalErrors + ' errors - check debug.log)</span>';
                             }
+                            if (skippedPages.length > 0) {
+                                finalMsg += ' <span style="color: #d98500;">(skipped page' + (skippedPages.length > 1 ? 's' : '') + ' ' + skippedPages.join(', ') + ' due to API errors — will retry on next sync)</span>';
+                            }
                             $message.html(finalMsg);
                             $button.text(originalText).prop('disabled', false);
-                            
+
                             // Reload page after 2 seconds
                             setTimeout(function() {
                                 location.reload();
