@@ -1817,7 +1817,7 @@ class DataFlair_Toplists {
      * @param int    $timeout Timeout in seconds
      * @return array|WP_Error The response
      */
-    private function api_get($url, $token, $timeout = 30) {
+    private function api_get($url, $token, $timeout = 30, $max_retries = 2) {
         // Force HTTPS on production/staging (skip for local .test/.local domains)
         $url = $this->maybe_force_https($url);
 
@@ -1856,10 +1856,44 @@ class DataFlair_Toplists {
         error_log('DataFlair api_get() Host header: ' . (isset($headers['Host']) ? $headers['Host'] : '(from URL)'));
         error_log('DataFlair api_get() Token: ' . substr(trim($token), 0, 15) . '... (len=' . strlen(trim($token)) . ')');
 
-        return wp_remote_get($url, array(
+        $args = array(
             'timeout' => $timeout,
             'headers' => $headers,
-        ));
+        );
+
+        // Retry transient failures (connection errors + 5xx) with exponential backoff.
+        // Non-transient errors (401/403/404 etc.) bail out immediately — retrying them
+        // would be pointless and just delay the real error surface.
+        $transient_codes = array(500, 502, 503, 504);
+        $attempt = 0;
+        $response = null;
+
+        while (true) {
+            $response = wp_remote_get($url, $args);
+
+            $should_retry = false;
+            if (is_wp_error($response)) {
+                $should_retry = true;
+            } else {
+                $code = wp_remote_retrieve_response_code($response);
+                if (in_array($code, $transient_codes, true)) {
+                    $should_retry = true;
+                }
+            }
+
+            if (!$should_retry || $attempt >= $max_retries) {
+                return $response;
+            }
+
+            $delay = (int) pow(2, $attempt); // 1s, 2s, 4s...
+            $reason = is_wp_error($response)
+                ? 'WP_Error: ' . $response->get_error_message()
+                : 'HTTP ' . wp_remote_retrieve_response_code($response);
+            error_log('DataFlair api_get() transient failure on attempt ' . ($attempt + 1)
+                . ' (' . $reason . ') — retrying in ' . $delay . 's');
+            sleep($delay);
+            $attempt++;
+        }
     }
 
     /**
@@ -2051,8 +2085,17 @@ class DataFlair_Toplists {
         $list_url = $base_url . '/toplists?per_page=20&page=' . $page . '&include=items';
         
         $response = $this->api_get($list_url, $token);
-        
+
         if (is_wp_error($response)) {
+            // A WP_Error here (after api_get's internal retries) usually means the bulk
+            // call timed out on a heavy page. The per-ID fallback makes smaller requests
+            // that can still succeed on a congested / slow upstream.
+            error_log('DataFlair sync_toplists_batch: bulk call WP_Error on page ' . $page
+                . ' (' . $response->get_error_message() . ') — falling back to per-ID fetches');
+            $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+            if ($fallback !== false) {
+                wp_send_json_success($fallback);
+            }
             wp_send_json_error(array('message' => 'Failed to fetch toplist page ' . $page . ': ' . $response->get_error_message()));
         }
 
@@ -2072,7 +2115,21 @@ class DataFlair_Toplists {
             }
         }
 
+        // The bulk list endpoint with `include=items` can return 500 when a single
+        // page contains a toplist that's too heavy to serialize in one shot. When that
+        // happens, fall back to fetching the page shell (no `include=items`) and then
+        // pulling each toplist by its individual endpoint — same path cron uses,
+        // smaller payloads, proven reliable.
         if ($status_code !== 200) {
+            if (in_array($status_code, array(500, 502, 503, 504), true)) {
+                error_log('DataFlair sync_toplists_batch: bulk call returned HTTP ' . $status_code
+                    . ' on page ' . $page . ' — falling back to per-ID fetches');
+                $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+                if ($fallback !== false) {
+                    wp_send_json_success($fallback);
+                }
+            }
+
             $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
             wp_send_json_error(array('message' => $error_msg));
         }
@@ -2139,7 +2196,86 @@ class DataFlair_Toplists {
             'is_complete' => $is_complete
         ));
     }
-    
+
+    /**
+     * Fallback sync for a single page when the bulk `include=items` call fails.
+     *
+     * Fetches the page shell (no nested items) and then hits each toplist's individual
+     * endpoint. Each per-ID request is much smaller and much less likely to trip the
+     * API's 500 on serialization. Returns a batch-response array on success, or
+     * `false` if even the shell fetch failed.
+     *
+     * @param int    $page
+     * @param string $token
+     * @param string $base_url
+     * @return array|false
+     */
+    private function sync_toplists_page_per_id($page, $token, $base_url) {
+        $list_url = $base_url . '/toplists?per_page=20&page=' . $page;
+        $response = $this->api_get($list_url, $token);
+
+        if (is_wp_error($response)) {
+            error_log('DataFlair sync_toplists_page_per_id: shell fetch WP_Error on page '
+                . $page . ': ' . $response->get_error_message());
+            return false;
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        if ($status_code !== 200) {
+            error_log('DataFlair sync_toplists_page_per_id: shell fetch HTTP ' . $status_code
+                . ' on page ' . $page);
+            return false;
+        }
+
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
+            error_log('DataFlair sync_toplists_page_per_id: invalid JSON on page ' . $page);
+            return false;
+        }
+
+        $last_page = isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : $page;
+        $synced    = 0;
+        $errors    = 0;
+        $endpoints = array();
+
+        foreach ($data['data'] as $toplist) {
+            if (!isset($toplist['id'])) {
+                continue;
+            }
+            $endpoint   = $base_url . '/toplists/' . $toplist['id'];
+            $endpoints[] = $endpoint;
+
+            if ($this->fetch_and_store_toplist($endpoint, $token)) {
+                $synced++;
+            } else {
+                $errors++;
+            }
+        }
+
+        if (!empty($endpoints)) {
+            $existing_endpoints   = get_option('dataflair_api_endpoints', '');
+            $new_endpoints_string = implode("\n", $endpoints);
+            if (!empty($existing_endpoints)) {
+                $new_endpoints_string = $existing_endpoints . "\n" . $new_endpoints_string;
+            }
+            update_option('dataflair_api_endpoints', $new_endpoints_string);
+        }
+
+        $is_complete = $page >= $last_page;
+        if ($is_complete) {
+            update_option('dataflair_last_toplists_cron_run', time());
+        }
+
+        return array(
+            'page'        => $page,
+            'last_page'   => $last_page,
+            'synced'      => $synced,
+            'errors'      => $errors,
+            'is_complete' => $is_complete,
+            'fallback'    => true,
+        );
+    }
+
     /**
      * Cron sync handler
      */
