@@ -2084,7 +2084,13 @@ class DataFlair_Toplists {
         }
 
         $base_url = $this->get_api_base_url();
-        $list_url = $base_url . '/toplists?per_page=20&page=' . $page . '&include=items';
+        // per_page=10 is tuned for the DataFlair API's serializer budget:
+        // per_page=20 times out on heavy pages (confirmed page 3 = 500 at 16s),
+        // but per_page=10 completes inside the API's ~15s window even on the
+        // heaviest pages (largest observed: 4MB / 10.7s). `include=items` is
+        // effectively a no-op on this tenant (items are embedded either way)
+        // but we keep it for compatibility with tenants that honor the flag.
+        $list_url = $base_url . '/toplists?per_page=10&page=' . $page . '&include=items';
         
         $response = $this->api_get($list_url, $token);
 
@@ -2221,94 +2227,111 @@ class DataFlair_Toplists {
      * @return array
      */
     private function sync_toplists_page_per_id($page, $token, $base_url) {
-        // Split configs: [per_page, starting_sub_page, sub_page_count]
-        // Each config covers the same 20-toplist offset range as one natural page.
-        // Example for $page=3 (offset 40-59):
-        //   per_page=20 page=3    → offset 40-59  (1 request)
-        //   per_page=10 pages 5-6 → offset 40-49, 50-59 (2 requests)
-        //   per_page=5  pages 9-12 → offset 40-44, ..., 55-59 (4 requests)
-        //   per_page=1  pages 41-60 → offset 40, 41, ..., 59 (20 requests)
-        $splits = array(
-            array('per_page' => 20, 'start' => $page,             'count' => 1),
-            array('per_page' => 10, 'start' => (2 * $page) - 1,   'count' => 2),
-            array('per_page' => 5,  'start' => (4 * $page) - 3,   'count' => 4),
-            array('per_page' => 1,  'start' => (20 * $page) - 19, 'count' => 20),
-        );
-
+        // Progressive splitting with TARGETED drill-down (fast — bounded at ~25s).
+        // Natural per_page is 10 (matches bulk list URL), split levels:
+        //   1. per_page=5 across 2 sub-pages     (2 calls)
+        //   2. per_page=1 ONLY on the per_page=5 sub-pages that actually failed
+        //      (worst case 2 + 10 = 12 calls, typical 2 + 0-5 = 2-7)
+        //
+        // We skip retrying per_page=10 here — if the bulk call already timed out
+        // at per_page=10, a second per_page=10 attempt will too (same slice size).
+        // Split slices use api_get with max_retries=0 and a 15s timeout:
+        // the splitting *is* the retry strategy. A 30s hard deadline caps the
+        // whole fallback so a misbehaving API can't stall the sync indefinitely.
+        $deadline          = time() + 30;
         $collected_ids     = array();
         $attempt_log       = array();
         $natural_last_page = 0;
 
-        foreach ($splits as $split_level => $split) {
-            $sub_ids      = array();
-            $sub_failures = 0;
-
-            for ($i = 0; $i < $split['count']; $i++) {
-                $sub_page = $split['start'] + $i;
-                $url      = $base_url . '/toplists?per_page=' . $split['per_page'] . '&page=' . $sub_page;
-                $response = $this->api_get($url, $token);
-
-                $entry = array(
-                    'per_page' => $split['per_page'],
+        $try_slice = function ($per_page, $sub_page) use (
+            $token, $base_url, &$attempt_log, &$natural_last_page, $deadline
+        ) {
+            if (time() >= $deadline) {
+                $attempt_log[] = array(
+                    'per_page' => $per_page,
                     'page'     => $sub_page,
+                    'status'   => 'deadline_exceeded',
                 );
+                return null;
+            }
 
-                if (is_wp_error($response)) {
-                    $entry['status'] = 'wp_error';
-                    $entry['error']  = $response->get_error_message();
-                    $sub_failures++;
-                    $attempt_log[] = $entry;
-                    continue;
-                }
+            $url      = $base_url . '/toplists?per_page=' . $per_page . '&page=' . $sub_page;
+            $response = $this->api_get($url, $token, 15, 0); // 15s timeout, no retries
 
-                $status = wp_remote_retrieve_response_code($response);
-                $entry['status'] = $status;
+            $entry = array('per_page' => $per_page, 'page' => $sub_page);
 
-                if ($status !== 200) {
-                    $body_preview  = substr(wp_remote_retrieve_body($response), 0, 200);
-                    $entry['body'] = $body_preview;
-                    $sub_failures++;
-                    $attempt_log[] = $entry;
-                    continue;
-                }
+            if (is_wp_error($response)) {
+                $entry['status'] = 'wp_error';
+                $entry['error']  = $response->get_error_message();
+                $attempt_log[]   = $entry;
+                return null;
+            }
 
-                $data = json_decode(wp_remote_retrieve_body($response), true);
-                if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
-                    $entry['status'] = 'invalid_json';
-                    $sub_failures++;
-                    $attempt_log[] = $entry;
-                    continue;
-                }
+            $status          = wp_remote_retrieve_response_code($response);
+            $entry['status'] = $status;
 
-                // Derive natural (per_page=20) last_page from this sub-level response.
-                if (isset($data['meta']['last_page'])) {
-                    $sub_last = (int) $data['meta']['last_page'];
-                    $natural  = (int) ceil(($sub_last * $split['per_page']) / 20);
-                    if ($natural > $natural_last_page) {
-                        $natural_last_page = $natural;
-                    }
-                }
-
-                foreach ($data['data'] as $toplist) {
-                    if (isset($toplist['id']) && !in_array($toplist['id'], $sub_ids, true)) {
-                        $sub_ids[] = $toplist['id'];
-                    }
-                }
-
-                $entry['ids']  = count($sub_ids);
+            if ($status !== 200) {
+                $entry['body'] = substr(wp_remote_retrieve_body($response), 0, 200);
                 $attempt_log[] = $entry;
+                return null;
             }
 
-            // Deeper splits give us strictly more granular info — accept any IDs they
-            // recover. This way if per_page=20 fails entirely but per_page=10 recovers
-            // one half, we still get 10 toplists instead of 0.
-            if (!empty($sub_ids)) {
-                $collected_ids = array_values(array_unique(array_merge($collected_ids, $sub_ids)));
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+            if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
+                $entry['status'] = 'invalid_json';
+                $attempt_log[]   = $entry;
+                return null;
             }
 
-            // If this split fully succeeded, no need to go deeper.
-            if ($sub_failures === 0) {
-                break;
+            if (isset($data['meta']['last_page'])) {
+                $sub_last = (int) $data['meta']['last_page'];
+                // Convert to natural per_page=10 last_page.
+                $natural  = (int) ceil(($sub_last * $per_page) / 10);
+                if ($natural > $natural_last_page) {
+                    $natural_last_page = $natural;
+                }
+            }
+
+            $ids = array();
+            foreach ($data['data'] as $toplist) {
+                if (isset($toplist['id'])) {
+                    $ids[] = $toplist['id'];
+                }
+            }
+            $entry['ids']  = count($ids);
+            $attempt_log[] = $entry;
+
+            return $ids;
+        };
+
+        // Level 1: per_page=5 across 2 sub-pages covering the same 10-row offset
+        // range as the failed per_page=10 natural page.
+        //   per_page=10 page=N covers offsets (N-1)*10 to N*10-1
+        //   per_page=5  covers those offsets via pages (2N-1) and (2N)
+        $failed_sub5 = array();
+        for ($i = 0; $i < 2; $i++) {
+            $sub5 = (2 * $page) - 1 + $i;
+            $ids5 = $try_slice(5, $sub5);
+            if (is_array($ids5)) {
+                $collected_ids = array_values(array_unique(array_merge($collected_ids, $ids5)));
+            } else {
+                $failed_sub5[] = $sub5;
+            }
+        }
+
+        // Level 2: per_page=1 ONLY on the per_page=5 slices that failed.
+        //   per_page=5 page=M covers offsets (M-1)*5 to M*5-1
+        //   per_page=1 hits each via pages (M-1)*5+1 .. M*5
+        foreach ($failed_sub5 as $sub5) {
+            $start1 = (($sub5 - 1) * 5) + 1;
+            for ($j = 0; $j < 5; $j++) {
+                if (time() >= $deadline) {
+                    break 2;
+                }
+                $ids1 = $try_slice(1, $start1 + $j);
+                if (is_array($ids1)) {
+                    $collected_ids = array_values(array_unique(array_merge($collected_ids, $ids1)));
+                }
             }
         }
 
@@ -2344,7 +2367,7 @@ class DataFlair_Toplists {
                 'is_complete' => $is_complete,
                 'skipped'     => true,
                 'skip_reason' => 'API returned errors for every split of page ' . $page
-                    . ' (tried per_page 20, 10, 5, 1). This page will be retried on the next full sync.',
+                    . ' (tried per_page 5 and per_page 1 slices). This page will be retried on the next full sync.',
             );
         }
 
