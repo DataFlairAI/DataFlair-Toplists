@@ -1817,7 +1817,7 @@ class DataFlair_Toplists {
      * @param int    $timeout Timeout in seconds
      * @return array|WP_Error The response
      */
-    private function api_get($url, $token, $timeout = 30) {
+    private function api_get($url, $token, $timeout = 30, $max_retries = 2) {
         // Force HTTPS on production/staging (skip for local .test/.local domains)
         $url = $this->maybe_force_https($url);
 
@@ -1856,10 +1856,44 @@ class DataFlair_Toplists {
         error_log('DataFlair api_get() Host header: ' . (isset($headers['Host']) ? $headers['Host'] : '(from URL)'));
         error_log('DataFlair api_get() Token: ' . substr(trim($token), 0, 15) . '... (len=' . strlen(trim($token)) . ')');
 
-        return wp_remote_get($url, array(
+        $args = array(
             'timeout' => $timeout,
             'headers' => $headers,
-        ));
+        );
+
+        // Retry transient failures (connection errors + 5xx) with exponential backoff.
+        // Non-transient errors (401/403/404 etc.) bail out immediately — retrying them
+        // would be pointless and just delay the real error surface.
+        $transient_codes = array(500, 502, 503, 504);
+        $attempt = 0;
+        $response = null;
+
+        while (true) {
+            $response = wp_remote_get($url, $args);
+
+            $should_retry = false;
+            if (is_wp_error($response)) {
+                $should_retry = true;
+            } else {
+                $code = wp_remote_retrieve_response_code($response);
+                if (in_array($code, $transient_codes, true)) {
+                    $should_retry = true;
+                }
+            }
+
+            if (!$should_retry || $attempt >= $max_retries) {
+                return $response;
+            }
+
+            $delay = (int) pow(2, $attempt); // 1s, 2s, 4s...
+            $reason = is_wp_error($response)
+                ? 'WP_Error: ' . $response->get_error_message()
+                : 'HTTP ' . wp_remote_retrieve_response_code($response);
+            error_log('DataFlair api_get() transient failure on attempt ' . ($attempt + 1)
+                . ' (' . $reason . ') — retrying in ' . $delay . 's');
+            sleep($delay);
+            $attempt++;
+        }
     }
 
     /**
@@ -2042,17 +2076,28 @@ class DataFlair_Toplists {
             global $wpdb;
             $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
             $wpdb->query("TRUNCATE TABLE {$table_name}");
-            
+
             // Also clear discovered endpoints on page 1
             update_option('dataflair_api_endpoints', '');
+            // And clear the last_page hint cache so a fresh sync doesn't read stale totals.
+            delete_transient('dataflair_toplists_batch_last_page');
         }
 
         $base_url = $this->get_api_base_url();
         $list_url = $base_url . '/toplists?per_page=20&page=' . $page . '&include=items';
         
         $response = $this->api_get($list_url, $token);
-        
+
         if (is_wp_error($response)) {
+            // A WP_Error here (after api_get's internal retries) usually means the bulk
+            // call timed out on a heavy page. The per-ID fallback makes smaller requests
+            // that can still succeed on a congested / slow upstream.
+            error_log('DataFlair sync_toplists_batch: bulk call WP_Error on page ' . $page
+                . ' (' . $response->get_error_message() . ') — falling back to per-ID fetches');
+            $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+            if ($fallback !== false) {
+                wp_send_json_success($fallback);
+            }
             wp_send_json_error(array('message' => 'Failed to fetch toplist page ' . $page . ': ' . $response->get_error_message()));
         }
 
@@ -2072,7 +2117,21 @@ class DataFlair_Toplists {
             }
         }
 
+        // The bulk list endpoint with `include=items` can return 500 when a single
+        // page contains a toplist that's too heavy to serialize in one shot. When that
+        // happens, fall back to fetching the page shell (no `include=items`) and then
+        // pulling each toplist by its individual endpoint — same path cron uses,
+        // smaller payloads, proven reliable.
         if ($status_code !== 200) {
+            if (in_array($status_code, array(500, 502, 503, 504), true)) {
+                error_log('DataFlair sync_toplists_batch: bulk call returned HTTP ' . $status_code
+                    . ' on page ' . $page . ' — falling back to per-ID fetches');
+                $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+                if ($fallback !== false) {
+                    wp_send_json_success($fallback);
+                }
+            }
+
             $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
             wp_send_json_error(array('message' => $error_msg));
         }
@@ -2091,9 +2150,12 @@ class DataFlair_Toplists {
         $errors = 0;
         $last_page = 1;
         $endpoints = [];
-        
+
         if (isset($data['meta']['last_page'])) {
             $last_page = (int) $data['meta']['last_page'];
+            // Cache natural (per_page=20) last_page so the fallback path has a reliable
+            // total-pages signal when it has to skip a broken page mid-sync.
+            set_transient('dataflair_toplists_batch_last_page', $last_page, HOUR_IN_SECONDS);
         }
 
         if (is_array($data['data'])) {
@@ -2139,7 +2201,194 @@ class DataFlair_Toplists {
             'is_complete' => $is_complete
         ));
     }
-    
+
+    /**
+     * Fallback sync for a single page when the bulk `include=items` call fails.
+     *
+     * Uses progressive splitting: if a natural 20-per-page slice fails, retry the
+     * same offset range as smaller slices (10×2, 5×4, 1×20). This isolates the
+     * specific DB row that's crashing the API serializer rather than discarding
+     * the whole page. Any IDs we *can* recover get fetched individually via
+     * /toplists/{id} (the same path cron uses).
+     *
+     * Always returns a batch-response array. When the page is truly unrecoverable
+     * (every split 500s), returns a `skipped: true` response so the batch loop
+     * keeps advancing instead of aborting the whole sync.
+     *
+     * @param int    $page
+     * @param string $token
+     * @param string $base_url
+     * @return array
+     */
+    private function sync_toplists_page_per_id($page, $token, $base_url) {
+        // Split configs: [per_page, starting_sub_page, sub_page_count]
+        // Each config covers the same 20-toplist offset range as one natural page.
+        // Example for $page=3 (offset 40-59):
+        //   per_page=20 page=3    → offset 40-59  (1 request)
+        //   per_page=10 pages 5-6 → offset 40-49, 50-59 (2 requests)
+        //   per_page=5  pages 9-12 → offset 40-44, ..., 55-59 (4 requests)
+        //   per_page=1  pages 41-60 → offset 40, 41, ..., 59 (20 requests)
+        $splits = array(
+            array('per_page' => 20, 'start' => $page,             'count' => 1),
+            array('per_page' => 10, 'start' => (2 * $page) - 1,   'count' => 2),
+            array('per_page' => 5,  'start' => (4 * $page) - 3,   'count' => 4),
+            array('per_page' => 1,  'start' => (20 * $page) - 19, 'count' => 20),
+        );
+
+        $collected_ids     = array();
+        $attempt_log       = array();
+        $natural_last_page = 0;
+
+        foreach ($splits as $split_level => $split) {
+            $sub_ids      = array();
+            $sub_failures = 0;
+
+            for ($i = 0; $i < $split['count']; $i++) {
+                $sub_page = $split['start'] + $i;
+                $url      = $base_url . '/toplists?per_page=' . $split['per_page'] . '&page=' . $sub_page;
+                $response = $this->api_get($url, $token);
+
+                $entry = array(
+                    'per_page' => $split['per_page'],
+                    'page'     => $sub_page,
+                );
+
+                if (is_wp_error($response)) {
+                    $entry['status'] = 'wp_error';
+                    $entry['error']  = $response->get_error_message();
+                    $sub_failures++;
+                    $attempt_log[] = $entry;
+                    continue;
+                }
+
+                $status = wp_remote_retrieve_response_code($response);
+                $entry['status'] = $status;
+
+                if ($status !== 200) {
+                    $body_preview  = substr(wp_remote_retrieve_body($response), 0, 200);
+                    $entry['body'] = $body_preview;
+                    $sub_failures++;
+                    $attempt_log[] = $entry;
+                    continue;
+                }
+
+                $data = json_decode(wp_remote_retrieve_body($response), true);
+                if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
+                    $entry['status'] = 'invalid_json';
+                    $sub_failures++;
+                    $attempt_log[] = $entry;
+                    continue;
+                }
+
+                // Derive natural (per_page=20) last_page from this sub-level response.
+                if (isset($data['meta']['last_page'])) {
+                    $sub_last = (int) $data['meta']['last_page'];
+                    $natural  = (int) ceil(($sub_last * $split['per_page']) / 20);
+                    if ($natural > $natural_last_page) {
+                        $natural_last_page = $natural;
+                    }
+                }
+
+                foreach ($data['data'] as $toplist) {
+                    if (isset($toplist['id']) && !in_array($toplist['id'], $sub_ids, true)) {
+                        $sub_ids[] = $toplist['id'];
+                    }
+                }
+
+                $entry['ids']  = count($sub_ids);
+                $attempt_log[] = $entry;
+            }
+
+            // Deeper splits give us strictly more granular info — accept any IDs they
+            // recover. This way if per_page=20 fails entirely but per_page=10 recovers
+            // one half, we still get 10 toplists instead of 0.
+            if (!empty($sub_ids)) {
+                $collected_ids = array_values(array_unique(array_merge($collected_ids, $sub_ids)));
+            }
+
+            // If this split fully succeeded, no need to go deeper.
+            if ($sub_failures === 0) {
+                break;
+            }
+        }
+
+        // Pull last_page from a transient we stashed on the first successful page, so
+        // even a fully broken page can still hand the JS loop a sane "keep going" signal.
+        if ($natural_last_page <= 0) {
+            $stored = get_transient('dataflair_toplists_batch_last_page');
+            if ($stored) {
+                $natural_last_page = (int) $stored;
+            }
+        }
+        // Final safety: if we still have nothing, guess one page ahead so the loop
+        // advances at least once more. A truly final page will confirm on the next call.
+        if ($natural_last_page <= 0) {
+            $natural_last_page = $page + 1;
+        }
+
+        // Fully unrecoverable — skip this page and let the batch loop move on.
+        if (empty($collected_ids)) {
+            error_log('DataFlair sync_toplists_page_per_id: page ' . $page
+                . ' unrecoverable; every split failed. Attempts: ' . wp_json_encode($attempt_log));
+
+            $is_complete = $page >= $natural_last_page;
+            if ($is_complete) {
+                update_option('dataflair_last_toplists_cron_run', time());
+            }
+
+            return array(
+                'page'        => $page,
+                'last_page'   => $natural_last_page,
+                'synced'      => 0,
+                'errors'      => 0,
+                'is_complete' => $is_complete,
+                'skipped'     => true,
+                'skip_reason' => 'API returned errors for every split of page ' . $page
+                    . ' (tried per_page 20, 10, 5, 1). This page will be retried on the next full sync.',
+            );
+        }
+
+        // Fetch each recovered ID individually and store.
+        $synced    = 0;
+        $errors    = 0;
+        $endpoints = array();
+
+        foreach ($collected_ids as $id) {
+            $endpoint   = $base_url . '/toplists/' . $id;
+            $endpoints[] = $endpoint;
+
+            if ($this->fetch_and_store_toplist($endpoint, $token)) {
+                $synced++;
+            } else {
+                $errors++;
+            }
+        }
+
+        if (!empty($endpoints)) {
+            $existing_endpoints   = get_option('dataflair_api_endpoints', '');
+            $new_endpoints_string = implode("\n", $endpoints);
+            if (!empty($existing_endpoints)) {
+                $new_endpoints_string = $existing_endpoints . "\n" . $new_endpoints_string;
+            }
+            update_option('dataflair_api_endpoints', $new_endpoints_string);
+        }
+
+        $is_complete = $page >= $natural_last_page;
+        if ($is_complete) {
+            update_option('dataflair_last_toplists_cron_run', time());
+        }
+
+        return array(
+            'page'        => $page,
+            'last_page'   => $natural_last_page,
+            'synced'      => $synced,
+            'errors'      => $errors,
+            'is_complete' => $is_complete,
+            'fallback'    => true,
+            'partial'     => count($collected_ids) < 20,
+        );
+    }
+
     /**
      * Cron sync handler
      */
