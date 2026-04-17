@@ -172,6 +172,12 @@ dataflair-toplists/
 
 ## Changelog
 
+### 1.10.7
+- Fixed: "Fetch All Toplists from API" no longer returns 500 on heavy pages. Bulk list fetch dropped from `per_page=20` to `per_page=10` to stay inside the DataFlair API's ~15s serializer budget (verified across all 18 pages / 175 toplists, heaviest page ~13.6s).
+- Improved: per-ID fallback splitter rewritten for speed — skips the redundant `per_page=10` retry level, uses no-retry 15s-timeout slices, and a 30s hard deadline on the whole fallback. Previous version could stall ~3 minutes on a failing page; worst case is now ~25-30s.
+- Added: `skipped` response shape so one unrecoverable page no longer halts the whole sync. The admin UI advances past skipped pages and reports them in the final summary.
+- Added: retry with exponential backoff (1s, 2s) on transient `WP_Error` and 5xx responses in `api_get()`, with configurable `timeout` and `max_retries` arguments.
+
 ### 1.10.6
 - Improved: Redesigned the "Synced Toplists" admin table for a cleaner look with a wider Name column, removing redundant Slug, Locked, Sync Health, and Shortcode columns.
 - Improved: Optimized the "Fetch All Toplists from API" process by batching requests with full item inclusion, dramatically reducing sync time and preventing API timeouts.
