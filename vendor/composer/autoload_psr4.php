@@ -8,6 +8,7 @@ $baseDir = dirname($vendorDir);
 return array(
     'DataFlair\\Toplists\\Sync\\' => array($baseDir . '/src/Sync'),
     'DataFlair\\Toplists\\Support\\' => array($baseDir . '/includes/Support'),
+    'DataFlair\\Toplists\\Rest\\' => array($baseDir . '/src/Rest'),
     'DataFlair\\Toplists\\Models\\' => array($baseDir . '/includes'),
     'DataFlair\\Toplists\\Logging\\' => array($baseDir . '/includes/Logging'),
     'DataFlair\\Toplists\\Http\\' => array($baseDir . '/src/Http'),

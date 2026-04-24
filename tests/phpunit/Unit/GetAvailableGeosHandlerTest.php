@@ -51,6 +51,8 @@ final class GetAvailableGeosHandlerTest extends TestCase
             public function findBySlug(string $slug): ?array { return null; }
             public function upsert(array $row) { return false; }
             public function deleteByApiToplistId(int $api_toplist_id): bool { return false; }
+            public function listAllForOptions(): array { return []; }
+            public function countAll(): int { return 0; }
         };
     }
 }

@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.14.0
+ * Version: 1.15.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.14.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.15.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,15 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.15.0</h4>
+<ul>
+  <li><strong>Phase 6 — REST endpoints extracted.</strong> The three <code>/wp-json/dataflair/v1/*</code> routes are now owned by <code>DataFlair\Toplists\Rest\RestRouter</code>. Per-route logic lives in dedicated controllers: <code>ToplistsController</code>, <code>CasinosController</code>, and <code>HealthController</code>. The <code>dataflair/v1</code> namespace, URL shapes, response shapes, and permission contracts are preserved byte-for-byte.</li>
+  <li><strong>H12 pagination contract now execution-path tested.</strong> The <code>/toplists/{id}/casinos</code> endpoint\'s <code>?page</code>, <code>?per_page</code> (default 20, max 100), <code>?full=1</code> escape hatch, and <code>X-WP-Total</code> / <code>X-WP-TotalPages</code> headers are now pinned by unit tests on the controller itself, not just a structural scan of the plugin file.</li>
+  <li><strong>ToplistsRepository grew two lean methods.</strong> <code>listAllForOptions()</code> and <code>countAll()</code> replace ad-hoc <code>$wpdb->get_results</code> / <code>$wpdb->get_var</code> calls in REST handlers — every REST read path now routes through the repository.</li>
+  <li><strong>New tests:</strong> <code>RestRouterTest</code>, <code>ToplistsControllerTest</code>, <code>CasinosControllerTest</code>, <code>HealthControllerTest</code>, plus two new <code>ToplistsRepository</code> tests for the new methods. Suite now at 381 tests / 887 assertions, all green. No behavioural changes for downstream consumers.</li>
+  <li><strong>Internal:</strong> <code>dataflair-toplists.php</code> <code>register_rest_routes()</code> / <code>get_toplists_rest()</code> / <code>get_toplist_casinos_rest()</code> are now thin delegators. PSR-4 autoload extended with <code>DataFlair\Toplists\Rest\\</code>.</li>
+</ul>
+
 <h4>1.14.0</h4>
 <ul>
   <li><strong>Phase 5 — admin pages + AJAX router extracted.</strong> Every admin-side AJAX action is now registered through a single <code>AjaxRouter</code> that owns nonce + capability checks centrally, dispatches to one handler class per action, and wraps the structured response in <code>wp_send_json_*</code>. No public contract change: every <code>wp_ajax_dataflair_*</code> action name, nonce action, payload shape, and admin-JS integration preserved byte-for-byte.</li>
@@ -442,6 +451,14 @@ class DataFlair_Toplists {
      */
     private $admin_bootstrap = null;
 
+    /**
+     * Phase 6 — REST bootstrap. Wires the RestRouter + controllers from one
+     * seam. Lazy-instantiated on rest_api_init; see src/Rest/RestBootstrap.php.
+     *
+     * @var \DataFlair\Toplists\Rest\RestBootstrap|null
+     */
+    private $rest_bootstrap = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -701,6 +718,23 @@ class DataFlair_Toplists {
             \Closure::fromCallable([$this, 'get_api_base_url'])
         );
         return $this->admin_bootstrap;
+    }
+
+    /**
+     * Phase 6 — lazy RestBootstrap getter. The bootstrap itself is lazy, so
+     * controllers are not instantiated until a REST request actually hits.
+     */
+    private function rest_bootstrap() {
+        if ($this->rest_bootstrap instanceof \DataFlair\Toplists\Rest\RestBootstrap) {
+            return $this->rest_bootstrap;
+        }
+        $this->rest_bootstrap = new \DataFlair\Toplists\Rest\RestBootstrap(
+            \DataFlair\Toplists\Logging\LoggerFactory::get(),
+            $this->toplists_repo(),
+            \Closure::fromCallable([$this, 'prefetch_brand_metas_for_items']),
+            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map'])
+        );
+        return $this->rest_bootstrap;
     }
 
     private function init_hooks() {
@@ -5335,220 +5369,44 @@ class DataFlair_Toplists {
     /**
      * Register REST API routes for block editor
      */
+    /**
+     * Phase 6 — delegated to RestRouter. The three route registrations live
+     * in src/Rest/RestRouter.php; callbacks delegate to dedicated controllers.
+     */
     public function register_rest_routes() {
-        register_rest_route('dataflair/v1', '/toplists', array(
-            'methods' => 'GET',
-            'callback' => array($this, 'get_toplists_rest'),
-            'permission_callback' => function() {
-                return current_user_can('edit_posts');
-            }
-        ));
-        
-        register_rest_route('dataflair/v1', '/toplists/(?P<id>\d+)/casinos', array(
-            'methods' => 'GET',
-            'callback' => array($this, 'get_toplist_casinos_rest'),
-            'permission_callback' => function() {
-                return current_user_can('edit_posts');
-            },
-            'args' => array(
-                'id' => array(
-                    'required' => true,
-                    'type' => 'integer',
-                ),
-                'page' => array(
-                    'required' => false,
-                    'type'     => 'integer',
-                    'default'  => 1,
-                    'minimum'  => 1,
-                ),
-                'per_page' => array(
-                    'required' => false,
-                    'type'     => 'integer',
-                    'default'  => 20,
-                    'minimum'  => 1,
-                    'maximum'  => 100,
-                ),
-                'full' => array(
-                    'required' => false,
-                    'type'     => 'integer',
-                    'default'  => 0,
-                    'enum'     => array(0, 1),
-                ),
-            ),
-        ));
-
-        register_rest_route('dataflair/v1', '/health', array(
-            'methods'             => 'GET',
-            'callback'            => function() {
-                global $wpdb;
-                $table = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-                $count = $wpdb->get_var("SELECT COUNT(*) FROM $table");
-                return rest_ensure_response(array(
-                    'status'     => 'ok',
-                    'toplists'   => (int) $count,
-                    'plugin_ver' => DATAFLAIR_VERSION,
-                    'db_error'   => $wpdb->last_error ?: null,
-                ));
-            },
-            'permission_callback' => function() { return current_user_can('manage_options'); },
-        ));
+        $this->rest_bootstrap()->boot()->register();
     }
     
     /**
-     * REST API callback to get available toplists
+     * REST API callback to get available toplists.
+     *
+     * Phase 6 — delegates to ToplistsController::list(). Kept on the god-class
+     * as a public seam because downstream code may still hold a reference to
+     * the callable `[$this, 'get_toplists_rest']`.
      */
     public function get_toplists_rest() {
-        try {
-            global $wpdb;
-            $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-
-            $toplists = $wpdb->get_results("SELECT api_toplist_id, name, slug FROM $table_name ORDER BY api_toplist_id ASC");
-
-            if ($wpdb->last_error) {
-                return new WP_Error('db_error', $wpdb->last_error, array('status' => 500));
-            }
-
-            $options = array();
-            foreach ($toplists as $toplist) {
-                $suffix = !empty($toplist->slug)
-                    ? ' [' . $toplist->slug . ']'
-                    : ' (ID: ' . $toplist->api_toplist_id . ')';
-                $options[] = array(
-                    'value' => (string) $toplist->api_toplist_id,
-                    'label' => $toplist->name . $suffix,
-                );
-            }
-
-            return rest_ensure_response($options);
-        } catch (\Exception $e) {
-            return new WP_Error('exception', $e->getMessage(), array('status' => 500));
-        }
+        return (new \DataFlair\Toplists\Rest\Controllers\ToplistsController(
+            $this->toplists_repo(),
+            \DataFlair\Toplists\Logging\LoggerFactory::get()
+        ))->list();
     }
     
     /**
      * REST API callback to get casinos for a toplist.
      *
-     * H12 (Phase 0B): paginate + lean per-item payload.
-     *   - ?per_page default 20, max 100.
-     *   - ?page default 1.
-     *   - Default lean shape: {id, name, rating, offer_text, logo_url}.
-     *   - ?full=1 preserves the legacy verbose shape (block editor uses it).
-     *   - Emits X-WP-Total / X-WP-TotalPages headers.
-     *
-     * The legacy version decoded the full toplist JSON blob and returned
-     * every item for every call. On a toplist with 200 items on a 1 GB
-     * memory cap, that round-trip alone was ~40 MB of transient PHP memory
-     * per concurrent REST call. Pagination + lean projection lands the
-     * common case under 200 KB.
+     * Phase 6 — delegates to CasinosController::listForToplist(). H12
+     * (Phase 0B) pagination contract preserved verbatim: `?per_page` default
+     * 20 max 100, `?page` default 1, lean default shape, `?full=1` for the
+     * legacy verbose shape the block editor consumes, X-WP-Total +
+     * X-WP-TotalPages headers on every response.
      */
     public function get_toplist_casinos_rest($request) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $toplist_id = intval($request['id']);
-        $page       = max(1, intval($request->get_param('page')));
-        $per_page   = min(100, max(1, intval($request->get_param('per_page'))));
-        $full       = (int) $request->get_param('full') === 1;
-
-        $toplist = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table_name WHERE api_toplist_id = %d",
-            $toplist_id
-        ));
-
-        if (!$toplist) {
-            return new WP_Error('not_found', 'Toplist not found', array('status' => 404));
-        }
-
-        $data = json_decode($toplist->data, true);
-
-        // Support multiple known data shapes (editions model added listItems).
-        $items = null;
-        if (isset($data['data']['items'])) {
-            $items = $data['data']['items'];
-        } elseif (isset($data['data']['listItems'])) {
-            $items = $data['data']['listItems'];
-        } elseif (isset($data['listItems'])) {
-            $items = $data['listItems'];
-        }
-
-        if (empty($items) || !is_array($items)) {
-            $response = rest_ensure_response(array());
-            $response->header('X-WP-Total', '0');
-            $response->header('X-WP-TotalPages', '0');
-            return $response;
-        }
-
-        $total       = count($items);
-        $total_pages = (int) ceil($total / $per_page);
-        $offset      = ($page - 1) * $per_page;
-        $page_items  = array_slice($items, $offset, $per_page);
-
-        // Prefetch brand metas once for the paged slice so logo_url is filled
-        // without N extra queries.
-        $brand_meta_map = $full ? null : $this->prefetch_brand_metas_for_items($page_items);
-
-        $casinos = array();
-        foreach ($page_items as $item) {
-            $brand_name = '';
-            if (isset($item['brand']['name'])) {
-                $brand_name = $item['brand']['name'];
-            } elseif (isset($item['brandName'])) {
-                $brand_name = $item['brandName'];
-            }
-            if (empty($brand_name)) {
-                continue;
-            }
-
-            $brand_id = 0;
-            if (isset($item['brand']['id'])) {
-                $brand_id = intval($item['brand']['id']);
-            } elseif (isset($item['brandId'])) {
-                $brand_id = intval($item['brandId']);
-            }
-
-            if ($full) {
-                // Legacy verbose shape — block editor + any downstream
-                // consumer that still needs the full payload.
-                $casinos[] = array(
-                    'itemId'    => isset($item['id']) ? intval($item['id']) : 0,
-                    'brandId'   => $brand_id,
-                    'position'  => isset($item['position']) ? $item['position'] : 0,
-                    'brandName' => $brand_name,
-                    'brandSlug' => sanitize_title($brand_name),
-                    'pros'      => !empty($item['pros']) ? $item['pros'] : array(),
-                    'cons'      => !empty($item['cons']) ? $item['cons'] : array(),
-                );
-                continue;
-            }
-
-            // Lean H12 shape — the only fields most callers need.
-            $rating     = isset($item['rating']) ? (float) $item['rating'] : 0.0;
-            $offer      = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
-            $offer_text = isset($offer['offerText']) ? (string) $offer['offerText'] : '';
-
-            $logo_url  = '';
-            $brand_row = array(
-                'api_brand_id' => $brand_id,
-                'name'         => $brand_name,
-                'slug'         => sanitize_title($brand_name),
-            );
-            $meta = $this->lookup_brand_meta_from_map($brand_row, $brand_meta_map ?: array());
-            if (!empty($meta->local_logo_url)) {
-                $logo_url = (string) $meta->local_logo_url;
-            }
-
-            $casinos[] = array(
-                'id'         => isset($item['id']) ? intval($item['id']) : 0,
-                'name'       => $brand_name,
-                'rating'     => $rating,
-                'offer_text' => $offer_text,
-                'logo_url'   => $logo_url,
-            );
-        }
-
-        $response = rest_ensure_response($casinos);
-        $response->header('X-WP-Total', (string) $total);
-        $response->header('X-WP-TotalPages', (string) $total_pages);
-        return $response;
+        return (new \DataFlair\Toplists\Rest\Controllers\CasinosController(
+            $this->toplists_repo(),
+            \Closure::fromCallable([$this, 'prefetch_brand_metas_for_items']),
+            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map']),
+            \DataFlair\Toplists\Logging\LoggerFactory::get()
+        ))->listForToplist($request);
     }
     
     /**

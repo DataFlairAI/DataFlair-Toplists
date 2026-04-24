@@ -100,4 +100,51 @@ final class ToplistsRepositoryTest extends TestCase
         $repo = new ToplistsRepository($wpdb);
         $this->assertFalse($repo->deleteByApiToplistId(55));
     }
+
+    // ── Phase 6 additions ────────────────────────────────────────────────
+
+    public function test_list_all_for_options_returns_lean_projection(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_results')
+            ->once()
+            ->with(
+                \Mockery::on(function (string $sql) {
+                    return str_contains($sql, 'SELECT api_toplist_id, name, slug')
+                        && str_contains($sql, 'ORDER BY api_toplist_id ASC');
+                }),
+                ARRAY_A
+            )
+            ->andReturn([
+                ['api_toplist_id' => '3',  'name' => 'Alpha', 'slug' => 'alpha'],
+                ['api_toplist_id' => '7',  'name' => 'Beta',  'slug' => ''],
+            ]);
+
+        $repo = new ToplistsRepository($wpdb);
+        $this->assertSame(
+            [
+                ['api_toplist_id' => 3, 'name' => 'Alpha', 'slug' => 'alpha'],
+                ['api_toplist_id' => 7, 'name' => 'Beta',  'slug' => ''],
+            ],
+            $repo->listAllForOptions()
+        );
+    }
+
+    public function test_list_all_for_options_returns_empty_array_when_wpdb_errors(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_results')->once()->andReturn(null);
+
+        $repo = new ToplistsRepository($wpdb);
+        $this->assertSame([], $repo->listAllForOptions());
+    }
+
+    public function test_count_all_coerces_wpdb_result_to_int(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn('42');
+
+        $repo = new ToplistsRepository($wpdb);
+        $this->assertSame(42, $repo->countAll());
+    }
 }

@@ -178,6 +178,16 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.15.0
+
+1.15.0 is the Phase 6 **REST endpoint extraction** release. No operator action required, no DB migration, no config change. The public REST surface is preserved byte-for-byte:
+
+- `GET /wp-json/dataflair/v1/toplists` — unchanged response shape (`[{value, label}, …]`).
+- `GET /wp-json/dataflair/v1/toplists/{id}/casinos` — H12 pagination unchanged (`?page`, `?per_page` default 20 max 100, `?full=1` for the legacy verbose shape), `X-WP-Total` + `X-WP-TotalPages` headers emitted on every response.
+- `GET /wp-json/dataflair/v1/health` — unchanged `{status, toplists, plugin_ver, db_error}` envelope, still `manage_options`-gated.
+
+Internal refactor only: the three routes are now registered by `DataFlair\Toplists\Rest\RestRouter` and served by per-endpoint controllers under `DataFlair\Toplists\Rest\Controllers\*`. The god-class's `register_rest_routes()`, `get_toplists_rest()`, and `get_toplist_casinos_rest()` methods are now thin delegators — any downstream code still holding references to those callables continues to work unchanged.
+
 ### To 1.14.0
 
 1.14.0 is the Phase 5 **admin pages + AJAX router** release. No operator action required, no DB migration, no option rename — every `wp_ajax_dataflair_*` action name, nonce action, payload shape, and admin-JS integration is preserved byte-for-byte. The god-class's 11 `ajax_*` methods remain in place (they will stay until Phase 8 — shim birth) so any downstream code that invoked them directly continues to work.
@@ -230,6 +240,19 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.15.0
+- **Phase 6 — REST endpoints extracted.** The three `/wp-json/dataflair/v1/*` routes are now owned by `DataFlair\Toplists\Rest\RestRouter`, registered from a dedicated `RestBootstrap` seam, and dispatched to per-route controllers. Public REST contract — URL shapes, response envelopes, permission callbacks, header emission — preserved byte-for-byte.
+- Added: `DataFlair\Toplists\Rest\RestRouter` — single owner of `register_rest_route()` for the `dataflair/v1` namespace. Central `canEditPosts()` and `canManageOptions()` permission callbacks replace the three inline closures the god-class used.
+- Added: `DataFlair\Toplists\Rest\Controllers\ToplistsController` — serves `GET /toplists`. Lean `{value, label}` envelope with slug-or-ID suffix, repository-backed, `Throwable`s are caught and translated to `WP_Error` with status 500.
+- Added: `DataFlair\Toplists\Rest\Controllers\CasinosController` — serves `GET /toplists/{id}/casinos`. H12 pagination, lean default shape, `?full=1` legacy shape, `X-WP-Total` + `X-WP-TotalPages` headers. Brand metadata prefetch is injected via `\Closure` so the controller is $wpdb-free.
+- Added: `DataFlair\Toplists\Rest\Controllers\HealthController` — serves `GET /health`. Returns `{status, toplists, plugin_ver, db_error}` exactly as before; counts delegated to `ToplistsRepository::countAll()`.
+- Added: `DataFlair\Toplists\Rest\RestBootstrap` — thin wiring class that instantiates the three controllers and hands them to `RestRouter`. Lazy — nothing is constructed until `rest_api_init` fires.
+- Added: repository extensions — `ToplistsRepository::listAllForOptions(): array` (lean projection `api_toplist_id, name, slug` ordered by `api_toplist_id ASC`) and `ToplistsRepository::countAll(): int`. Every REST read path now routes through the repository; the god-class's `register_rest_routes()`, `get_toplists_rest()`, `get_toplist_casinos_rest()` methods are thin delegators.
+- Added: PSR-4 autoload entry for `DataFlair\Toplists\Rest\` → `src/Rest/`.
+- Changed: the three inline closure + array-callable REST registrations in the god-class collapse to a single `$this->rest_bootstrap()->boot()->register()` call.
+- Added: 20 new tests — `RestRouterTest` (three routes on the right namespace, HTTP methods, pagination arg defaults + bounds, permission callbacks), `ToplistsControllerTest` (value-label pairs, slug-vs-ID suffix, empty repo, `Throwable` → `WP_Error`), `CasinosControllerTest` (not-found → 404, empty-items response + 0/0 headers, lean shape verbatim, `?full=1` legacy shape, pagination slice + total-pages maths, per_page clamping 1..100, alternate payload shapes `{data.items}` / `{data.listItems}` / `{listItems}`, items without a brand name are skipped), `HealthControllerTest` (ok-envelope, `$wpdb->last_error` surfaced when set), and `ToplistsRepositoryTest` extensions for the two new repo methods. Full suite: **381 tests, 887 assertions, all green**.
+- Changed: the Phase 0B `RestCasinosPaginationTest` integration test now scans the extracted `RestRouter` + `CasinosController` source files instead of the god-class body. The H12 structural guard rails stay alive through the refactor, while execution-path coverage lives in the new `CasinosControllerTest`.
 
 ### 1.14.0
 - **Phase 5 — admin pages + AJAX router extracted.** Every admin-side AJAX action is now registered through a single `AjaxRouter` that owns nonce + capability checks centrally, dispatches to one handler class per action, and wraps the structured response in `wp_send_json_*`. No public contract change: every `wp_ajax_dataflair_*` action name, nonce action, payload shape, and admin-JS integration preserved byte-for-byte.
@@ -430,4 +453,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.14.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.15.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

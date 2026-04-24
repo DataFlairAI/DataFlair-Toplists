@@ -43,4 +43,18 @@ interface ToplistsRepositoryInterface
      * @return array<int,string> alphabetically sorted, unique.
      */
     public function collectGeoNames(): array;
+
+    /**
+     * Lean projection used by the REST options endpoint and the block editor
+     * toplist picker. Never pulls the heavy `data` blob. Ordered by
+     * `api_toplist_id ASC` to match the legacy endpoint shape.
+     *
+     * @return array<int,array{api_toplist_id:int,name:string,slug:string}>
+     */
+    public function listAllForOptions(): array;
+
+    /**
+     * Total row count on the toplists table. Used by the REST health endpoint.
+     */
+    public function countAll(): int;
 }
