@@ -41,6 +41,10 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages
 - Review URL resolution priority: manual override, published review post permalink, auto-generated `/reviews/{slug}/`, affiliate CTA link; published reviews are also matched by `_review_brand_id` when the live review slug differs from the API slug (for example `…-india` vs base slug)
 - Supports multiple product types (casino, sportsbook, poker) with type-aware labels
+- **Render-time read-only guarantee (1.10.8+):** the render chain never issues HTTP, never sideloads media, and never writes to the `review` CPT. Logo URLs and review-post IDs are pre-computed at sync time on `wp_dataflair_brands` (`local_logo_url`, `cached_review_post_id`) and read verbatim by the template. Enforced by `RenderIsReadOnlyTest`.
+
+### WP-CLI
+- `wp dataflair reconcile-reviews [--batch=500] [--dry-run]` — backfills `cached_review_post_id` for existing brand rows. Run once after upgrading to 1.10.8.
 
 ### Gutenberg Block & Shortcode
 - Native WordPress block with inspector controls for toplist selection, item limit, and display options
@@ -106,8 +110,8 @@ Add the **DataFlair Toplist** block to any page or post. In the block inspector,
 
 ## Requirements
 
-- WordPress 5.8+
-- PHP 7.4+
+- WordPress 6.3+
+- PHP 8.1+
 - MySQL 5.7+ or MariaDB 10.3+ (for JSON column support)
 
 ---
@@ -126,7 +130,7 @@ Add the **DataFlair Toplist** block to any page or post. In the block inspector,
 
 ### Requirements
 
-- PHP 7.4+
+- PHP 8.1+
 - Node.js 18+ and npm (for Gutenberg block compilation)
 
 ### Build Assets
@@ -157,9 +161,11 @@ dataflair-toplists/
 ├── vendor/                         Composer dependencies (committed)
 ├── build/                          Compiled Gutenberg block assets
 ├── includes/
-│   ├── render-casino-card.php      Casino card HTML template
+│   ├── render-casino-card.php      Casino card HTML template (read-only)
 │   ├── ProductTypeLabels.php       Label map for product types
-│   └── DataIntegrityChecker.php    Validates API response structure
+│   ├── DataIntegrityChecker.php    Validates API response structure
+│   └── Cli/
+│       └── ReconcileReviewsCommand.php  wp dataflair reconcile-reviews
 ├── src/                            Gutenberg block source (JS/JSX)
 ├── tests/
 │   └── phpunit/                    PHPUnit test suite
@@ -170,7 +176,30 @@ dataflair-toplists/
 
 ---
 
+## Upgrading
+
+### To 1.10.8
+
+After updating the plugin files, run the reconcile CLI **once** on the target site to backfill the new `cached_review_post_id` column:
+
+```bash
+wp dataflair reconcile-reviews --dry-run   # preview
+wp dataflair reconcile-reviews             # execute
+```
+
+Brands that already match a published review post will be linked. Brands without a published review are left unlinked; they will be linked automatically on the next sync once their review CPT is published.
+
+---
+
 ## Changelog
+
+### 1.10.8
+- Fixed: critical — casino-card rendering is now fully read-only. The render chain no longer sideloads brand logos at page-view time and no longer auto-creates `review` CPT rows. These two render-time writes were the root cause of memory-exhaustion fatals on sites with a 1 GB PHP memory limit.
+- Added: pre-computed `local_logo_url` and `cached_review_post_id` columns on `wp_dataflair_brands`. The render template reads them directly; sync populates `local_logo_url` and the new CLI backfills `cached_review_post_id`.
+- Added: WP-CLI command `wp dataflair reconcile-reviews [--batch=500] [--dry-run]` to link existing brand rows to their published review posts. Run once after upgrade.
+- Added: `do_action('dataflair_brand_logo_stored', $brand_id, $local_url, $remote_url)` hook fires when a logo is stored at sync time, so themes can react without coupling to private render internals.
+- Added: regression tests `RenderIsReadOnlyTest` and `CasinoCardUsesPrecomputedLogoTest` permanently enforce the read-only render invariant.
+- Changed: minimum PHP bumped to 8.1 and minimum WordPress to 6.3 to match the supported runtime on target sites.
 
 ### 1.10.7
 - Fixed: "Fetch All Toplists from API" no longer returns 500 on heavy pages. Bulk list fetch dropped from `per_page=20` to `per_page=10` to stay inside the DataFlair API's ~15s serializer budget (verified across all 18 pages / 175 toplists, heaviest page ~13.6s).
@@ -285,4 +314,4 @@ dataflair-toplists/
 
 GPL v2 or later
 
-**Version:** 1.10.6 | **Requires WordPress:** 5.8+ | **Requires PHP:** 7.4+ | **Tested up to:** 6.9
+**Version:** 1.10.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

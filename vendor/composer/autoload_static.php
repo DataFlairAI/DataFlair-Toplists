@@ -14,6 +14,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'D' =>
         array (
             'DataFlair\\Toplists\\Models\\' => 26,
+            'DataFlair\\Toplists\\Cli\\' => 23,
         ),
         'C' =>
         array (
@@ -25,6 +26,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes',
+        ),
+        'DataFlair\\Toplists\\Cli\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/includes/Cli',
         ),
         'Composer\\Installers\\' =>
         array (
@@ -133,6 +138,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'Composer\\Installers\\YawikInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/YawikInstaller.php',
         'Composer\\Installers\\ZendInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZendInstaller.php',
         'Composer\\Installers\\ZikulaInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZikulaInstaller.php',
+        'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => __DIR__ . '/../..' . '/includes/Cli/ReconcileReviewsCommand.php',
         'DataFlair\\Toplists\\Models\\Brand' => __DIR__ . '/../..' . '/includes/Brand.php',
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',

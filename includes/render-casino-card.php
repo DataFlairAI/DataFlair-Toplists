@@ -16,11 +16,15 @@ $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_na
 $product_type = $brand['type'] ?? $brand['productType'] ?? $brand['product_type'] ?? 'casino';
 $labels = ProductTypeLabels::getLabels($product_type);
 
-// Handle logo - prioritize local_logo, then fallback to external URLs
+// Handle logo - prioritize sync-time pre-computed local_logo_url column,
+// then legacy local_logo from the JSON blob, then external URLs.
+// Rendering must never hit the network — see RenderIsReadOnlyTest (Phase 0A H0).
 $logo_url = '';
 
-// First, check if we have a locally saved logo
-if (!empty($brand['local_logo'])) {
+// First, check if we have the sync-time pre-computed logo URL (v1.10.8+).
+if (!empty($brand['local_logo_url'])) {
+    $logo_url = $brand['local_logo_url'];
+} elseif (!empty($brand['local_logo'])) {
     $logo_url = $brand['local_logo'];
 } else {
     // Fallback to external logo URLs
