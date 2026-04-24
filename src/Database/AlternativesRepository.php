@@ -78,4 +78,10 @@ final class AlternativesRepository implements AlternativesRepositoryInterface
         $result = $this->wpdb->delete($this->table, ['toplist_id' => $toplist_id]);
         return $result !== false;
     }
+
+    public function deleteById(int $id): bool
+    {
+        $result = $this->wpdb->delete($this->table, ['id' => $id], ['%d']);
+        return $result !== false;
+    }
 }

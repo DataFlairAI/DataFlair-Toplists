@@ -57,7 +57,7 @@ class CasinoCardUsesPrecomputedLogoTest extends TestCase
         $customizations = [];
 
         ob_start();
-        include DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        include DATAFLAIR_PLUGIN_DIR . 'views/frontend/casino-card.php';
         $html = ob_get_clean();
 
         $this->assertStringContainsString(
@@ -111,7 +111,7 @@ class CasinoCardUsesPrecomputedLogoTest extends TestCase
         $customizations = [];
 
         ob_start();
-        include DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        include DATAFLAIR_PLUGIN_DIR . 'views/frontend/casino-card.php';
         $html = ob_get_clean();
 
         $this->assertStringContainsString(

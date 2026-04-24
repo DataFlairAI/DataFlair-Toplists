@@ -163,7 +163,7 @@ class RenderCasinoCardReviewFallbackTest extends TestCase {
         ];
 
         ob_start();
-        include DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        include DATAFLAIR_PLUGIN_DIR . 'views/frontend/casino-card.php';
         ob_end_clean();
 
         $this->assertSame(

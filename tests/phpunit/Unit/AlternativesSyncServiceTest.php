@@ -40,6 +40,7 @@ final class AlternativesSyncServiceTest extends TestCase
             public function findByToplistAndGeo(int $t, string $g): ?array { return null; }
             public function upsert(array $r) { return false; }
             public function deleteByToplistId(int $t): bool { return false; }
+            public function deleteById(int $id): bool { return false; }
         };
 
         $svc = new AlternativesSyncService($repo, new NullLogger());
@@ -107,6 +108,7 @@ final class AlternativesSyncServiceTest extends TestCase
             public function findByToplistAndGeo(int $t, string $g): ?array { return null; }
             public function upsert(array $r) { $this->upserted = $r; return 42; }
             public function deleteByToplistId(int $t): bool { return false; }
+            public function deleteById(int $id): bool { return false; }
         };
 
         $svc = new AlternativesSyncService($repo, new NullLogger());
@@ -123,6 +125,7 @@ final class AlternativesSyncServiceTest extends TestCase
             public function findByToplistAndGeo(int $t, string $g): ?array { return null; }
             public function upsert(array $r) { return false; }
             public function deleteByToplistId(int $t): bool { $this->deleteCalls++; return true; }
+            public function deleteById(int $id): bool { return false; }
         };
 
         $svc = new AlternativesSyncService($repo, new NullLogger());
@@ -140,6 +143,7 @@ final class AlternativesSyncServiceTest extends TestCase
             public function findByToplistAndGeo(int $t, string $g): ?array { return null; }
             public function upsert(array $r) { return false; }
             public function deleteByToplistId(int $t): bool { $this->lastDeleted = $t; return true; }
+            public function deleteById(int $id): bool { return false; }
         };
 
         $svc = new AlternativesSyncService($repo, new NullLogger());
@@ -159,6 +163,7 @@ final class AlternativesSyncServiceTest extends TestCase
             public function findByToplistAndGeo(int $t, string $g): ?array { return null; }
             public function upsert(array $r) { return 1; }
             public function deleteByToplistId(int $t): bool { return true; }
+            public function deleteById(int $id): bool { return false; }
         };
     }
 }

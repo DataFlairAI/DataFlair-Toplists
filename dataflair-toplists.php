@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.13.0
+ * Version: 1.14.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.13.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.14.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,21 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.14.0</h4>
+<ul>
+  <li><strong>Phase 5 — admin pages + AJAX router extracted.</strong> Every admin-side AJAX action is now registered through a single <code>AjaxRouter</code> that owns nonce + capability checks centrally, dispatches to one handler class per action, and wraps the structured response in <code>wp_send_json_*</code>. No public contract change: every <code>wp_ajax_dataflair_*</code> action name, nonce action, payload shape, and admin-JS integration preserved byte-for-byte.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Admin\\AjaxRouter</code>. Per-action routing table (<code>handler</code>, <code>nonce</code>, <code>capability</code>), <code>check_ajax_referer()</code> + <code>current_user_can()</code> gate before any handler runs, <code>try/catch</code> around handler invocation so a thrown <code>Throwable</code> becomes a logged <code>ajax.router.handler_threw</code> warning + <code>wp_send_json_error</code> instead of a 500. <code>getRegisteredActions()</code> exposes the registration set for tests + introspection.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Admin\\AjaxHandlerInterface</code> — single-method contract (<code>handle(array $request): array</code>) returning <code>[\'success\' =&gt; bool, \'data\' =&gt; array|null]</code>. Eleven concrete handlers implement it: <code>SaveSettingsHandler</code>, <code>FetchAllToplistsHandler</code>, <code>SyncToplistsBatchHandler</code>, <code>FetchAllBrandsHandler</code>, <code>SyncBrandsBatchHandler</code>, <code>GetAlternativeToplistsHandler</code>, <code>SaveAlternativeToplistHandler</code>, <code>DeleteAlternativeToplistHandler</code>, <code>GetAvailableGeosHandler</code>, <code>ApiPreviewHandler</code>, <code>SaveReviewUrlHandler</code>.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Admin\\Assets\\AdminAssetsRegistrar</code> — the <code>admin_enqueue_scripts</code> filter registration now lives in a dedicated registrar class. Select2 + <code>dataflair-admin</code> bundle enqueue + five <code>wp_localize_script</code> nonces (<code>save_settings</code>, <code>fetch_all_toplists</code>, <code>sync_toplists_batch</code>, <code>fetch_all_brands</code>, <code>sync_brands_batch</code>) preserved byte-for-byte.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Admin\\Pages\\PageInterface</code> + <code>SettingsPage</code> + <code>BrandsPage</code> thin delegator seams. The 700-line <code>settings_page()</code> and 1,200-line <code>brands_page()</code> HTML bodies stay on the god-class for one more release and render through an injected <code>\\Closure</code>; a follow-up (v1.14.1 or Phase 6) moves the HTML to <code>views/admin/</code>.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Admin\\AdminBootstrap</code> — single wiring seam that instantiates the router, registers all 11 handlers with their matching nonce actions, and exposes <code>registerAssets()</code>. The god-class calls <code>$this-&gt;admin_bootstrap()-&gt;boot()</code> + <code>-&gt;registerAssets()</code> from <code>init_hooks()</code>; a lazy getter caches the instance.</li>
+  <li>Added: repository extensions used by the handlers — <code>AlternativesRepository::deleteById(int $id): bool</code>, <code>ToplistsRepository::collectGeoNames(): array</code> (parses <code>data.data.geo.name</code> out of every toplist\'s JSON blob, dedups, sorts alphabetically), and <code>BrandsRepository::updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool</code>.</li>
+  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Admin\\</code> → <code>src/Admin/</code>. Existing entries retained.</li>
+  <li>Changed: the eleven <code>add_action(\'wp_ajax_dataflair_*\', array($this, \'ajax_*\'))</code> registrations in <code>init_hooks()</code> are now a single <code>$this-&gt;admin_bootstrap()-&gt;boot();</code> call. The legacy <code>ajax_*</code> methods on the god-class remain (kept until Phase 8 — shim birth) so any external caller that invoked them directly continues to work. The single <code>add_action(\'admin_enqueue_scripts\', …)</code> line becomes <code>$this-&gt;admin_bootstrap()-&gt;registerAssets();</code>.</li>
+  <li>Removed: <code>includes/render-casino-card.php</code> forwarding shim (deprecated in v1.13.0 with an explicit one-release removal notice). The template lives at <code>views/frontend/casino-card.php</code>; downstream themes must update any direct <code>include</code> path. Every integration test that referenced the old path now references the new one.</li>
+  <li>Added: 17 new tests — <code>AjaxRouterTest</code> (unknown-action guard, nonce failure, cap denial, successful wrap, exception translation, <code>$_GET</code>+<code>$_POST</code> merge, registration listing), <code>GetAvailableGeosHandlerTest</code> (forwards repo output, empty array), <code>SaveSettingsHandlerTest</code> (token trimmed not sanitised, password trimmed only, brands-api-version whitelisted to v1|v2, empty base URL deletes option, base URL pinned to <code>/api/vN</code>, colour fields sanitised, absent fields not written). Full suite: <strong>358 tests, 823 assertions, all green</strong>.</li>
+</ul>
+
 <h4>1.13.0</h4>
 <ul>
   <li><strong>Phase 4 — rendering + ViewModels extracted.</strong> The casino-card and toplist-table renderers are now owned by dedicated classes. The casino-card template has moved from <code>includes/render-casino-card.php</code> to <code>views/frontend/casino-card.php</code>; the old path stays as a forwarding shim for one release (deleted in Phase 5). No public contract change: <code>render_casino_card()</code> and <code>render_toplist_table()</code> on the god-class retain their signatures and continue to return byte-identical HTML.</li>
@@ -418,6 +433,15 @@ class DataFlair_Toplists {
     /** @var \DataFlair\Toplists\Frontend\Render\TableRendererInterface|null */
     private $table_renderer = null;
 
+    /**
+     * Phase 5 — admin bootstrap. Wires the AjaxRouter + handlers and the
+     * asset registrar from one seam. Lazy-instantiated; see
+     * src/Admin/AdminBootstrap.php.
+     *
+     * @var \DataFlair\Toplists\Admin\AdminBootstrap|null
+     */
+    private $admin_bootstrap = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -653,6 +677,32 @@ class DataFlair_Toplists {
         return $this->table_renderer;
     }
 
+    /**
+     * Lazy accessor for the Phase 5 admin bootstrap. Wires the AjaxRouter
+     * with all 11 handlers and the admin asset registrar. The bootstrap is
+     * a thin seam — it owns nothing beyond wiring, so there is no filter
+     * hook for replacing it. Consumers that need to swap a single handler
+     * should filter that handler's dependencies (repos, sync services).
+     *
+     * @return \DataFlair\Toplists\Admin\AdminBootstrap
+     */
+    private function admin_bootstrap() {
+        if ($this->admin_bootstrap instanceof \DataFlair\Toplists\Admin\AdminBootstrap) {
+            return $this->admin_bootstrap;
+        }
+        $this->admin_bootstrap = new \DataFlair\Toplists\Admin\AdminBootstrap(
+            \DataFlair\Toplists\Logging\LoggerFactory::get(),
+            $this->brands_repo(),
+            $this->toplists_repo(),
+            $this->alternatives_repo(),
+            $this->api_client(),
+            $this->toplist_sync_service(),
+            $this->brand_sync_service(),
+            \Closure::fromCallable([$this, 'get_api_base_url'])
+        );
+        return $this->admin_bootstrap;
+    }
+
     private function init_hooks() {
         // Activation/Deactivation
         register_activation_hook(__FILE__, array($this, 'activate'));
@@ -664,17 +714,14 @@ class DataFlair_Toplists {
         // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
-        add_action('wp_ajax_dataflair_save_settings', array($this, 'ajax_save_settings'));
-        add_action('wp_ajax_dataflair_fetch_all_toplists', array($this, 'ajax_fetch_all_toplists'));
-        add_action('wp_ajax_dataflair_sync_toplists_batch', array($this, 'ajax_sync_toplists_batch'));
-        add_action('wp_ajax_dataflair_fetch_all_brands', array($this, 'ajax_fetch_all_brands'));
-        add_action('wp_ajax_dataflair_sync_brands_batch', array($this, 'ajax_sync_brands_batch'));
-        add_action('wp_ajax_dataflair_get_alternative_toplists', array($this, 'ajax_get_alternative_toplists'));
-        add_action('wp_ajax_dataflair_save_alternative_toplist', array($this, 'ajax_save_alternative_toplist'));
-        add_action('wp_ajax_dataflair_delete_alternative_toplist', array($this, 'ajax_delete_alternative_toplist'));
-        add_action('wp_ajax_dataflair_get_available_geos', array($this, 'ajax_get_available_geos'));
-        add_action('wp_ajax_dataflair_api_preview', array($this, 'ajax_api_preview'));
-        add_action('wp_ajax_dataflair_save_review_url', array($this, 'ajax_save_review_url'));
+
+        // Phase 5 — AJAX handlers live in src/Admin/Handlers and route through
+        // DataFlair\Toplists\Admin\AjaxRouter. The router owns the centralised
+        // nonce + capability checks; each handler receives the sanitised
+        // request payload and returns a structured response array. The legacy
+        // `ajax_*` methods on this class still exist (kept until Phase 8) so
+        // external callers that invoked them directly continue to work.
+        $this->admin_bootstrap()->boot();
         
         // Shortcode
         add_shortcode('dataflair_toplist', array($this, 'toplist_shortcode'));
@@ -697,8 +744,9 @@ class DataFlair_Toplists {
         // Enqueue frontend styles and scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_assets'));
         
-        // Enqueue admin scripts
-        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+        // Phase 5 — admin asset enqueue lives in
+        // DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar.
+        $this->admin_bootstrap()->registerAssets();
         
         // Enqueue block editor assets
         add_action('enqueue_block_editor_assets', array($this, 'enqueue_editor_assets'));

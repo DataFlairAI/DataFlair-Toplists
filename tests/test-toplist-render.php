@@ -476,14 +476,14 @@ function test_toplist_render(): void {
     // ── T15: Casino card rendering edge cases ─────────────────────────────────
     dfr_section("T15 · Casino Card — Logo Resolution Chain");
 
-    $include_path = dirname(dirname(__FILE__)) . '/includes/render-casino-card.php';
+    $include_path = dirname(dirname(__FILE__)) . '/views/frontend/casino-card.php';
     if (!file_exists($include_path)) {
-        dfr_warn("includes/render-casino-card.php not found — skipping card tests");
+        dfr_warn("views/frontend/casino-card.php not found — skipping card tests");
         dfr_end();
         _dfr_summary();
         return;
     }
-    dfr_pass("render-casino-card.php template found");
+    dfr_pass("casino-card.php template found");
 
     // render_casino_card() is private — test it indirectly via the shortcode output.
     // The shortcode renders all items in the toplist, so we can inspect the HTML.

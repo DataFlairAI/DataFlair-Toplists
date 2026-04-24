@@ -73,4 +73,10 @@ interface BrandsRepositoryInterface
      * Update the cached `cached_review_post_id` column for a single brand.
      */
     public function updateCachedReviewPostId(int $id, int $review_post_id): bool;
+
+    /**
+     * Persist a custom `review_url_override` for a brand addressed by
+     * upstream DataFlair brand ID. Passing `null` clears the override.
+     */
+    public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool;
 }

@@ -314,6 +314,7 @@ final class FakeBrandsRepo implements BrandsRepositoryInterface
 
     public function updateLocalLogoUrl(int $id, string $u): bool { return true; }
     public function updateCachedReviewPostId(int $id, int $p): bool { return true; }
+    public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool { return true; }
 }
 
 final class FakeLogoDownloader implements LogoDownloaderInterface

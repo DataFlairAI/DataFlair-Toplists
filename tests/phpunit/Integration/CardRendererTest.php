@@ -80,6 +80,7 @@ final class FakeCardRendererBrandsRepo implements BrandsRepositoryInterface
     public function upsert(array $row) { return false; }
     public function updateLocalLogoUrl(int $id, string $local_url): bool { return true; }
     public function updateCachedReviewPostId(int $id, int $review_post_id): bool { return true; }
+    public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool { return true; }
 }
 
 /**

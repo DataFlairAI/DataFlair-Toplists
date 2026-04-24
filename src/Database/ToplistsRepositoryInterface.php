@@ -34,4 +34,13 @@ interface ToplistsRepositoryInterface
      * Delete by upstream DataFlair toplist ID.
      */
     public function deleteByApiToplistId(int $api_toplist_id): bool;
+
+    /**
+     * Extract the distinct set of geo names referenced inside every toplist's
+     * persisted `data` column. Used by the admin alternative-toplist picker
+     * to populate the geo dropdown without reaching out to the upstream API.
+     *
+     * @return array<int,string> alphabetically sorted, unique.
+     */
+    public function collectGeoNames(): array;
 }
