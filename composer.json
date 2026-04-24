@@ -32,7 +32,8 @@
         "psr-4": {
             "DataFlair\\Toplists\\Models\\": "includes/",
             "DataFlair\\Toplists\\Cli\\": "includes/Cli/",
-            "DataFlair\\Toplists\\Support\\": "includes/Support/"
+            "DataFlair\\Toplists\\Support\\": "includes/Support/",
+            "DataFlair\\Toplists\\Logging\\": "includes/Logging/"
         }
     },
     "extra": {

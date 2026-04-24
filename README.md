@@ -178,6 +178,18 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.11.2
+
+1.11.2 is the Phase 1 **observability foundation** release. Additive only — the old code paths continue to work unchanged. No operator action required.
+
+Downstream integrators who want to capture structured DataFlair events in Sentry or another log aggregator can now register a custom logger via the `dataflair_logger` filter. Implement `DataFlair\Toplists\Logging\LoggerInterface` (8 PSR-3-style methods) and return your instance from the filter; subsequent sync, render, and HTTP calls will route through it. The `dataflair_logger_level` filter controls the minimum level (default: `notice`). Out-of-the-box behaviour is unchanged: the default `ErrorLogLogger` writes to the same `error_log()` destination the plugin used before.
+
+Six telemetry hooks are now emitted at named call sites — `dataflair_sync_batch_started`, `dataflair_sync_batch_finished`, `dataflair_sync_item_failed`, `dataflair_render_started`, `dataflair_render_finished`, `dataflair_http_call`. Structured payloads include `elapsed_seconds`, `memory_peak`, pagination, and HTTP size/status. These are the stable telemetry points every later extraction phase will preserve byte-for-byte.
+
+A one-time option rename migration (gated by `dataflair_options_renamed_v1_11_2`) copies `dataflair_last_toplists_cron_run` to `dataflair_last_toplists_sync` (and brands equivalent). The legacy names continue to be written in parallel for one release; `format_last_sync_label()` falls back to the legacy name when the new one is empty.
+
+New WP-CLI tail: `wp dataflair logs [--since=15m] [--level=warning] [--limit=200]`.
+
 ### To 1.11.1
 
 1.11.1 is the Phase 0.5 **perf-rig + CI gate** release. Pure internal tooling — no production-facing behaviour change. Upgrade is a drop-in.
@@ -204,6 +216,16 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.11.2
+- **Phase 1 — observability foundation.** Lands before any extraction phase so every subsequent refactor ships with a contract for structured logging + telemetry in place. Consumers (Sentry on Sigma, stdout on local, file on shared hosts) are swappable without touching plugin code.
+- Added: pluggable `DataFlair\Toplists\Logging\LoggerInterface` (PSR-3-shaped, hand-written — no `psr/log` dependency). 8 methods accepting `(string $message, array $context = [])`.
+- Added: three bundled implementations — `NullLogger` (no-op), `ErrorLogLogger` (writes to `error_log()` with `[DataFlair][LEVEL]` prefix + JSON-encoded context), and a `SentryLogger` stub for downstream subclasses.
+- Added: `LoggerFactory::get()` resolves the active logger via `apply_filters('dataflair_logger', …)`. Caches per-request. Non-`LoggerInterface` filter return values are rejected and the default is kept. Minimum level filterable via `dataflair_logger_level` (default: `notice`).
+- Added: six stable telemetry hooks emitted at named call sites — `dataflair_sync_batch_started`, `dataflair_sync_batch_finished`, `dataflair_sync_item_failed`, `dataflair_render_started`, `dataflair_render_finished`, `dataflair_http_call`. Structured payloads include `elapsed_seconds`, `memory_peak`, `page`, `per_page`, `budget_seconds`.
+- Added: WP-CLI command `wp dataflair logs [--since=15m] [--level=warning] [--limit=200]`. Tails the active logger; for `ErrorLogLogger` stream-reads the last 512 KB of the `error_log` destination, filters by `[DataFlair]` tag + level + time window. Custom loggers register their own tail via the `dataflair_logs_tail` filter.
+- Changed: option rename migration (one-time, gated by `dataflair_options_renamed_v1_11_2`). `dataflair_last_toplists_cron_run` becomes `dataflair_last_toplists_sync`; brands equivalent. Legacy names continue to be written in parallel for one release so downstream readers keep working.
+- Tests: +13 new tests covering logger interface, factory resolution + caching, ErrorLogLogger behaviour, WP-CLI `logs` command. Total suite: 247 tests, 566 assertions, all green.
 
 ### 1.11.1
 - **Phase 0.5 — perf rig + CI gate.** Internal tooling release. No production-facing behaviour change. Gives the plugin a deterministic, repeatable perf harness so every subsequent refactor phase ships with a mechanical proof that it does not re-introduce the Sigma OOM.
@@ -349,4 +371,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.11.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.11.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
