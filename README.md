@@ -178,6 +178,17 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.15.1
+
+1.15.1 is the Phase 7 **block registrars** release. No operator action required, no DB migration, no config change. The public Gutenberg block contract is preserved byte-for-byte:
+
+- Block name `dataflair-toplists/toplist` — unchanged.
+- Block attributes — unchanged (sourced from `build/block.json`, falls back to `src/block.json`).
+- Block render output — byte-identical to v1.15.0 for every attribute combination (the render callback still delegates to `[dataflair_toplist]` shortcode under the hood).
+- Editor CSS handle `dataflair-toplist-editor` — unchanged.
+
+Internal refactor only: `register_block_type` is now owned by `DataFlair\Toplists\Block\BlockRegistrar`, the render callback lives on `DataFlair\Toplists\Block\ToplistBlock`, and the editor-assets enqueue lives on `DataFlair\Toplists\Block\EditorAssets`. The god-class's `register_block()`, `render_block($attributes)`, and `enqueue_editor_assets()` methods are thin delegators — any downstream code still holding references to those callables continues to work unchanged.
+
 ### To 1.15.0
 
 1.15.0 is the Phase 6 **REST endpoint extraction** release. No operator action required, no DB migration, no config change. The public REST surface is preserved byte-for-byte:
@@ -240,6 +251,13 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.15.1
+- **Phase 7 — block registrars extracted.** `register_block_type` for the `dataflair-toplists/toplist` block is now owned by `DataFlair\Toplists\Block\BlockRegistrar`. The render callback moved to `DataFlair\Toplists\Block\ToplistBlock` (closure-based DI for the shortcode renderer + option reader keeps it `$wpdb`-free). Editor CSS enqueue moved to `DataFlair\Toplists\Block\EditorAssets`. Block metadata path resolution (`build/block.json` → `src/block.json` fallback), block attributes, shortcode delegation, and `prosCons` pass-through all preserved byte-for-byte.
+- Added: `DataFlair\Toplists\Block\BlockBootstrap` — single wiring seam. The god-class calls `$this->block_bootstrap()->boot()->register()` from `init_hooks()`; `register()` installs both the `init` and `enqueue_block_editor_assets` hooks.
+- Added: PSR-4 autoload entry for `DataFlair\Toplists\Block\` → `src/Block/`.
+- Added: **11 new block tests** — `BlockRegistrarTest` (init + editor-assets hook wiring, `register_block_type` fires with `build/block.json`, falls back to `src/block.json`, silently no-ops when neither exists), `ToplistBlockTest` (empty-state help text on missing `toplistId`, null-attributes handling, option-reader defaults, user attributes override defaults, `limit` coerced to int, `prosCons` pass-through, return value verbatim from the shortcode closure), `EditorAssetsTest` (editor stylesheet handle + URL + version). Full suite: **392 tests, 915 assertions, all green**.
+- Changed: `register_block()`, `render_block($attributes)`, and `enqueue_editor_assets()` on the god-class are now thin delegators. No behavioural change for block editor users.
 
 ### 1.15.0
 - **Phase 6 — REST endpoints extracted.** The three `/wp-json/dataflair/v1/*` routes are now owned by `DataFlair\Toplists\Rest\RestRouter`, registered from a dedicated `RestBootstrap` seam, and dispatched to per-route controllers. Public REST contract — URL shapes, response envelopes, permission callbacks, header emission — preserved byte-for-byte.
@@ -453,4 +471,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.15.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.15.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
