@@ -35,7 +35,8 @@
             "DataFlair\\Toplists\\Support\\": "includes/Support/",
             "DataFlair\\Toplists\\Logging\\": "includes/Logging/",
             "DataFlair\\Toplists\\Database\\": "src/Database/",
-            "DataFlair\\Toplists\\Http\\": "src/Http/"
+            "DataFlair\\Toplists\\Http\\": "src/Http/",
+            "DataFlair\\Toplists\\Sync\\": "src/Sync/"
         }
     },
     "extra": {
