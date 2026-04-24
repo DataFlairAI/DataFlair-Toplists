@@ -33,7 +33,9 @@
             "DataFlair\\Toplists\\Models\\": "includes/",
             "DataFlair\\Toplists\\Cli\\": "includes/Cli/",
             "DataFlair\\Toplists\\Support\\": "includes/Support/",
-            "DataFlair\\Toplists\\Logging\\": "includes/Logging/"
+            "DataFlair\\Toplists\\Logging\\": "includes/Logging/",
+            "DataFlair\\Toplists\\Database\\": "src/Database/",
+            "DataFlair\\Toplists\\Http\\": "src/Http/"
         }
     },
     "extra": {
