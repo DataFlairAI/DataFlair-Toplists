@@ -16,6 +16,8 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
             'DataFlair\\Toplists\\Support\\' => 27,
             'DataFlair\\Toplists\\Models\\' => 26,
             'DataFlair\\Toplists\\Logging\\' => 27,
+            'DataFlair\\Toplists\\Http\\' => 24,
+            'DataFlair\\Toplists\\Database\\' => 28,
             'DataFlair\\Toplists\\Cli\\' => 23,
         ),
         'C' =>
@@ -36,6 +38,14 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Logging\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes/Logging',
+        ),
+        'DataFlair\\Toplists\\Http\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Http',
+        ),
+        'DataFlair\\Toplists\\Database\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Database',
         ),
         'DataFlair\\Toplists\\Cli\\' =>
         array (
@@ -152,6 +162,16 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',
         'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => __DIR__ . '/../..' . '/includes/Cli/ReconcileReviewsCommand.php',
+        'DataFlair\\Toplists\\Database\\AlternativesRepository' => __DIR__ . '/../..' . '/src/Database/AlternativesRepository.php',
+        'DataFlair\\Toplists\\Database\\AlternativesRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/AlternativesRepositoryInterface.php',
+        'DataFlair\\Toplists\\Database\\BrandsRepository' => __DIR__ . '/../..' . '/src/Database/BrandsRepository.php',
+        'DataFlair\\Toplists\\Database\\BrandsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/BrandsRepositoryInterface.php',
+        'DataFlair\\Toplists\\Database\\ToplistsRepository' => __DIR__ . '/../..' . '/src/Database/ToplistsRepository.php',
+        'DataFlair\\Toplists\\Database\\ToplistsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/ToplistsRepositoryInterface.php',
+        'DataFlair\\Toplists\\Http\\ApiClient' => __DIR__ . '/../..' . '/src/Http/ApiClient.php',
+        'DataFlair\\Toplists\\Http\\HttpClientInterface' => __DIR__ . '/../..' . '/src/Http/HttpClientInterface.php',
+        'DataFlair\\Toplists\\Http\\LogoDownloader' => __DIR__ . '/../..' . '/src/Http/LogoDownloader.php',
+        'DataFlair\\Toplists\\Http\\LogoDownloaderInterface' => __DIR__ . '/../..' . '/src/Http/LogoDownloaderInterface.php',
         'DataFlair\\Toplists\\Logging\\ErrorLogLogger' => __DIR__ . '/../..' . '/includes/Logging/ErrorLogLogger.php',
         'DataFlair\\Toplists\\Logging\\LoggerFactory' => __DIR__ . '/../..' . '/includes/Logging/LoggerFactory.php',
         'DataFlair\\Toplists\\Logging\\LoggerInterface' => __DIR__ . '/../..' . '/includes/Logging/LoggerInterface.php',

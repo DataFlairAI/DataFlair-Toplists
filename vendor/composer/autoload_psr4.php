@@ -9,6 +9,8 @@ return array(
     'DataFlair\\Toplists\\Support\\' => array($baseDir . '/includes/Support'),
     'DataFlair\\Toplists\\Models\\' => array($baseDir . '/includes'),
     'DataFlair\\Toplists\\Logging\\' => array($baseDir . '/includes/Logging'),
+    'DataFlair\\Toplists\\Http\\' => array($baseDir . '/src/Http'),
+    'DataFlair\\Toplists\\Database\\' => array($baseDir . '/src/Database'),
     'DataFlair\\Toplists\\Cli\\' => array($baseDir . '/includes/Cli'),
     'Composer\\Installers\\' => array($vendorDir . '/composer/installers/src/Composer/Installers'),
 );

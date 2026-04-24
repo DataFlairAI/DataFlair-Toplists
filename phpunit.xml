@@ -19,6 +19,7 @@
     <coverage>
         <include>
             <directory suffix=".php">includes</directory>
+            <directory suffix=".php">src</directory>
             <file>dataflair-toplists.php</file>
         </include>
     </coverage>

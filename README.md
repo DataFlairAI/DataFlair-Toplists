@@ -217,6 +217,16 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 1.12.0
+- **Phase 2 — repositories + HTTP client extracted.** First real strangler-fig phase of the refactor arc. The god-class keeps every public method signature intact; the implementations now delegate through typed, testable collaborators.
+- Added: new `src/` tree. `src/Http/{ApiClient, LogoDownloader}` implement `HttpClientInterface` + `LogoDownloaderInterface`. `src/Database/{ToplistsRepository, BrandsRepository, AlternativesRepository}` implement matching interfaces — all Phase 0B / Phase 1 invariants preserved (15 MB response cap, 12 s timeout, 3 MB logo cap, 8 s logo timeout, HEAD-before-GET, 7-day reuse window, `dataflair_http_call` telemetry, `dataflair_brand_logo_stored` hook).
+- Changed: `api_get()` and `download_brand_logo()` are now 1–5 line delegators forwarding to `ApiClient` / `LogoDownloader`. No public contract change. Same arguments, same return shapes.
+- Added: lazy filter-based DI via `dataflair_api_client`, `dataflair_logo_downloader`, `dataflair_brands_repo`, `dataflair_toplists_repo`, `dataflair_alternatives_repo`. Any filter return that does not implement the documented interface is rejected and the default is kept.
+- Changed: H7 (batched `api_brand_id IN (...)` brand lookup) and H8 (batched review-post JOIN) now route through `BrandsRepository::findManyByApiBrandIds()` and `BrandsRepository::findReviewPostsByApiBrandIds()`. Behaviour byte-identical; only the callsite changes.
+- Added: PSR-4 autoload entries for `DataFlair\Toplists\Database\` → `src/Database/` and `DataFlair\Toplists\Http\` → `src/Http/`.
+- Added: 39 new tests — `ApiClientTest`, `LogoDownloaderTest`, `BrandsRepositoryTest`, `ToplistsRepositoryTest`, `AlternativesRepositoryTest`. The pre-existing `SyncApiSizeCapTest` and `LogoSizeCapTest` were retargeted from god-class method scans to `src/Http/*` source scans. Full suite: **286 tests, 645 assertions, all green**.
+- Tooling: `patchwork.json` adds `sleep` to `redefinable-internals` so Brain Monkey can stub retry backoff in unit tests.
+
 ### 1.11.2
 - **Phase 1 — observability foundation.** Lands before any extraction phase so every subsequent refactor ships with a contract for structured logging + telemetry in place. Consumers (Sentry on Sigma, stdout on local, file on shared hosts) are swappable without touching plugin code.
 - Added: pluggable `DataFlair\Toplists\Logging\LoggerInterface` (PSR-3-shaped, hand-written — no `psr/log` dependency). 8 methods accepting `(string $message, array $context = [])`.
@@ -371,4 +381,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.11.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.12.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.11.2
+ * Version: 1.12.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.2');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.12.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,18 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.12.0</h4>
+<ul>
+  <li><strong>Phase 2 — repositories + HTTP client extracted.</strong> First real strangler-fig phase of the refactor arc. The god-class keeps every public method signature intact; the implementations now delegate through typed, testable collaborators.</li>
+  <li>Added: new <code>src/</code> tree. <code>src/Http/{ApiClient, LogoDownloader}</code> implement <code>HttpClientInterface</code> + <code>LogoDownloaderInterface</code>. <code>src/Database/{ToplistsRepository, BrandsRepository, AlternativesRepository}</code> implement their matching interfaces — all Phase 0B/Phase 1 invariants preserved (15 MB response cap, 12 s timeout, 3 MB logo cap, 8 s logo timeout, HEAD-before-GET, 7-day reuse window, <code>dataflair_http_call</code> telemetry, <code>dataflair_brand_logo_stored</code> hook).</li>
+  <li>Changed: <code>api_get()</code> and <code>download_brand_logo()</code> in the god-class are now 1–5 line delegators forwarding to the new <code>ApiClient</code> / <code>LogoDownloader</code>. No public contract change. Both accept their existing arguments and return exactly the same shapes.</li>
+  <li>Added: lazy filter-based DI via <code>dataflair_api_client</code>, <code>dataflair_logo_downloader</code>, <code>dataflair_brands_repo</code>, <code>dataflair_toplists_repo</code>, <code>dataflair_alternatives_repo</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
+  <li>Changed: H7 (batched <code>api_brand_id IN (...)</code> brand lookup) and H8 (batched review-post JOIN) now route through <code>BrandsRepository::findManyByApiBrandIds()</code> and <code>BrandsRepository::findReviewPostsByApiBrandIds()</code>. Behavior byte-identical; only the callsite changes.</li>
+  <li>Added: PSR-4 autoload entries for <code>DataFlair\\Toplists\\Database\\</code> → <code>src/Database/</code> and <code>DataFlair\\Toplists\\Http\\</code> → <code>src/Http/</code>. Existing entries for <code>Models</code>, <code>Cli</code>, <code>Support</code>, <code>Logging</code> retained.</li>
+  <li>Added: 39 new tests — <code>ApiClientTest</code> + <code>LogoDownloaderTest</code> (Brain Monkey behavioural pins: budget short-circuit, 15 MB cap, retry+success, retry exhaustion, HEAD-before-GET, size cap, hook firing, nested logo-URL shapes). <code>BrandsRepositoryTest</code>, <code>ToplistsRepositoryTest</code>, <code>AlternativesRepositoryTest</code> (Mockery-stubbed <code>$wpdb</code> — lookup, upsert/insert/update paths, delete, dedup rules). The pre-existing <code>SyncApiSizeCapTest</code> and <code>LogoSizeCapTest</code> were retargeted from god-class method scans to <code>src/Http/*</code> source scans. Full suite: <strong>286 tests, 645 assertions, all green</strong>.</li>
+  <li>Tooling: <code>patchwork.json</code> adds <code>sleep</code> to <code>redefinable-internals</code> so Brain Monkey can stub retry backoff in unit tests.</li>
+</ul>
+
 <h4>1.11.2</h4>
 <ul>
   <li><strong>Phase 1 — observability foundation.</strong> Lands before any extraction phase so every subsequent refactor (Phase 2 and later) ships with a contract for structured logging + telemetry in place. Consumers (Sentry on Sigma, stdout on local, file on shared hosts) are swappable without touching plugin code.</li>
@@ -332,18 +344,134 @@ function dataflair_plugins_api_info($res, $action, $args) {
  * Main DataFlair Plugin Class
  */
 class DataFlair_Toplists {
-    
+
     private static $instance = null;
-    
+
+    /**
+     * Phase 2 — extracted collaborators. Lazy-instantiated via getter so
+     * construction stays side-effect-free and the plugin boots identically
+     * to v1.11.2 for existing callers. Every new-class in src/ is accessed
+     * exclusively through its getter below; never read the property directly.
+     *
+     * @var \DataFlair\Toplists\Http\HttpClientInterface|null
+     */
+    private $api_client = null;
+
+    /** @var \DataFlair\Toplists\Http\LogoDownloaderInterface|null */
+    private $logo_downloader = null;
+
+    /** @var \DataFlair\Toplists\Database\BrandsRepositoryInterface|null */
+    private $brands_repo = null;
+
+    /** @var \DataFlair\Toplists\Database\ToplistsRepositoryInterface|null */
+    private $toplists_repo = null;
+
+    /** @var \DataFlair\Toplists\Database\AlternativesRepositoryInterface|null */
+    private $alternatives_repo = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
-    
+
     private function __construct() {
         $this->init_hooks();
+    }
+
+    /**
+     * Lazy accessor for the Phase 2 HTTP client.
+     * Filterable via `dataflair_api_client` so test harnesses and downstream
+     * consumers can inject a fake. The filter MUST return an instance of
+     * {@see \DataFlair\Toplists\Http\HttpClientInterface}; other values are
+     * rejected and the default `ApiClient` is used.
+     *
+     * @return \DataFlair\Toplists\Http\HttpClientInterface
+     */
+    private function api_client() {
+        if ($this->api_client instanceof \DataFlair\Toplists\Http\HttpClientInterface) {
+            return $this->api_client;
+        }
+        $default = new \DataFlair\Toplists\Http\ApiClient();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_api_client', $default)
+            : $default;
+        $this->api_client = ($maybe instanceof \DataFlair\Toplists\Http\HttpClientInterface)
+            ? $maybe
+            : $default;
+        return $this->api_client;
+    }
+
+    /**
+     * Lazy accessor for the Phase 2 logo downloader.
+     * Filterable via `dataflair_logo_downloader`.
+     *
+     * @return \DataFlair\Toplists\Http\LogoDownloaderInterface
+     */
+    private function logo_downloader() {
+        if ($this->logo_downloader instanceof \DataFlair\Toplists\Http\LogoDownloaderInterface) {
+            return $this->logo_downloader;
+        }
+        $default = new \DataFlair\Toplists\Http\LogoDownloader();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_logo_downloader', $default)
+            : $default;
+        $this->logo_downloader = ($maybe instanceof \DataFlair\Toplists\Http\LogoDownloaderInterface)
+            ? $maybe
+            : $default;
+        return $this->logo_downloader;
+    }
+
+    /**
+     * @return \DataFlair\Toplists\Database\BrandsRepositoryInterface
+     */
+    private function brands_repo() {
+        if ($this->brands_repo instanceof \DataFlair\Toplists\Database\BrandsRepositoryInterface) {
+            return $this->brands_repo;
+        }
+        $default = new \DataFlair\Toplists\Database\BrandsRepository();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_brands_repository', $default)
+            : $default;
+        $this->brands_repo = ($maybe instanceof \DataFlair\Toplists\Database\BrandsRepositoryInterface)
+            ? $maybe
+            : $default;
+        return $this->brands_repo;
+    }
+
+    /**
+     * @return \DataFlair\Toplists\Database\ToplistsRepositoryInterface
+     */
+    private function toplists_repo() {
+        if ($this->toplists_repo instanceof \DataFlair\Toplists\Database\ToplistsRepositoryInterface) {
+            return $this->toplists_repo;
+        }
+        $default = new \DataFlair\Toplists\Database\ToplistsRepository();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_toplists_repository', $default)
+            : $default;
+        $this->toplists_repo = ($maybe instanceof \DataFlair\Toplists\Database\ToplistsRepositoryInterface)
+            ? $maybe
+            : $default;
+        return $this->toplists_repo;
+    }
+
+    /**
+     * @return \DataFlair\Toplists\Database\AlternativesRepositoryInterface
+     */
+    private function alternatives_repo() {
+        if ($this->alternatives_repo instanceof \DataFlair\Toplists\Database\AlternativesRepositoryInterface) {
+            return $this->alternatives_repo;
+        }
+        $default = new \DataFlair\Toplists\Database\AlternativesRepository();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_alternatives_repository', $default)
+            : $default;
+        $this->alternatives_repo = ($maybe instanceof \DataFlair\Toplists\Database\AlternativesRepositoryInterface)
+            ? $maybe
+            : $default;
+        return $this->alternatives_repo;
     }
     
     private function init_hooks() {
@@ -1921,174 +2049,11 @@ class DataFlair_Toplists {
      * @return array|\WP_Error                                              wp_remote_get-shaped array or WP_Error.
      */
     private function api_get($url, $token, $timeout = 12, $max_retries = 2, $budget = null) {
-        // Phase 1 — observability: single http_call hook emitted at every
-        // return path with the total wall-clock cost, response code (when
-        // known), and byte count.
-        $http_t0 = microtime(true);
-
-        if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget) {
-            if ($budget->exceeded(1.0)) {
-                do_action('dataflair_http_call', array(
-                    'url'        => $url,
-                    'status'     => 0,
-                    'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                    'bytes'      => 0,
-                    'error'      => 'budget_exhausted_before_request',
-                ));
-                return new \WP_Error(
-                    'dataflair_budget_exhausted',
-                    'Wall-clock budget exhausted before api_get() could start.'
-                );
-            }
-            $timeout = (int) max(1, min($timeout, (int) floor($budget->remaining())));
-        }
-
-        // Force HTTPS on production/staging (skip for local .test/.local domains)
-        $url = $this->maybe_force_https($url);
-
-        $headers = array(
-            'Accept'        => 'application/json',
-            'Authorization' => 'Bearer ' . trim($token),
-        );
-
-        // Docker compatibility: when WordPress runs inside Docker (wp-env),
-        // .test/.local domains from the host machine can't be resolved inside the container.
-        // We swap the hostname to host.docker.internal (Docker's alias for the host machine)
-        // and send the original hostname as the Host header so Laravel's tenancy middleware
-        // can still resolve the correct tenant.
-        $parsed = parse_url($url);
-        $host = isset($parsed['host']) ? $parsed['host'] : '';
-
-        if ($this->is_local_url($url) && $this->is_running_in_docker()) {
-            $original_host = $host;
-            // Replace the .test/.local hostname with host.docker.internal
-            $url = str_replace($original_host, 'host.docker.internal', $url);
-            // Tell the server which vhost/tenant we want
-            $headers['Host'] = $original_host;
-            error_log('DataFlair api_get() Docker detected: rewrote ' . $original_host . ' → host.docker.internal');
-        }
-
-        // If HTTP Basic Auth is configured (e.g. staging behind .htpasswd),
-        // inject credentials into the URL so cURL sends them at the transport layer.
-        $http_user = trim(get_option('dataflair_http_auth_user', ''));
-        $http_pass = trim(get_option('dataflair_http_auth_pass', ''));
-
-        if (!empty($http_user) && !empty($http_pass)) {
-            $url = preg_replace('#^(https?://)#i', '$1' . urlencode($http_user) . ':' . urlencode($http_pass) . '@', $url);
-        }
-
-        error_log('DataFlair api_get() FINAL URL: ' . $url);
-        error_log('DataFlair api_get() Host header: ' . (isset($headers['Host']) ? $headers['Host'] : '(from URL)'));
-        error_log('DataFlair api_get() Token: ' . substr(trim($token), 0, 15) . '... (len=' . strlen(trim($token)) . ')');
-
-        // 15 MB hard cap on API response bodies (H2).
-        // DataFlair legitimate payloads are ~200 KB per toplist and ~500 KB
-        // per brand page. Anything > 15 MB is either an upstream bug or an
-        // unexpected full-dump response; caller should surface an error
-        // instead of json_decoding into the roof.
-        $max_bytes = 15 * 1024 * 1024;
-
-        $args = array(
-            'timeout'             => $timeout,
-            'headers'             => $headers,
-            'limit_response_size' => $max_bytes,
-        );
-
-        // Retry transient failures (connection errors + 5xx) with exponential backoff.
-        // Non-transient errors (401/403/404 etc.) bail out immediately — retrying them
-        // would be pointless and just delay the real error surface.
-        $transient_codes = array(500, 502, 503, 504);
-        $attempt = 0;
-        $response = null;
-
-        while (true) {
-            $response = wp_remote_get($url, $args);
-
-            // Structured error if the upstream tried to stream us > 15 MB (H2).
-            if (!is_wp_error($response)) {
-                $body = wp_remote_retrieve_body($response);
-                if ($body !== '' && strlen($body) >= $max_bytes) {
-                    do_action('dataflair_http_call', array(
-                        'url'        => $url,
-                        'status'     => (int) wp_remote_retrieve_response_code($response),
-                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                        'bytes'      => strlen($body),
-                        'error'      => 'response_too_large',
-                    ));
-                    return new \WP_Error(
-                        'dataflair_response_too_large',
-                        sprintf('Upstream response exceeded %d byte cap.', $max_bytes),
-                        array('limit' => $max_bytes, 'url' => $url)
-                    );
-                }
-            }
-
-            $should_retry = false;
-            if (is_wp_error($response)) {
-                $should_retry = true;
-            } else {
-                $code = wp_remote_retrieve_response_code($response);
-                if (in_array($code, $transient_codes, true)) {
-                    $should_retry = true;
-                }
-            }
-
-            if (!$should_retry || $attempt >= $max_retries) {
-                if (is_wp_error($response)) {
-                    do_action('dataflair_http_call', array(
-                        'url'        => $url,
-                        'status'     => 0,
-                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                        'bytes'      => 0,
-                        'error'      => $response->get_error_code(),
-                    ));
-                } else {
-                    $body = wp_remote_retrieve_body($response);
-                    do_action('dataflair_http_call', array(
-                        'url'        => $url,
-                        'status'     => (int) wp_remote_retrieve_response_code($response),
-                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                        'bytes'      => is_string($body) ? strlen($body) : 0,
-                    ));
-                }
-                return $response;
-            }
-
-            // If caller is on a budget and the next sleep+attempt would bust
-            // it, bail out early so the HTTP caller can return a partial
-            // rather than burn the whole budget on backoff.
-            $delay = (int) pow(2, $attempt); // 1s, 2s, 4s...
-            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
-                && $budget->exceeded((float) $delay + 2.0)) {
-                if (is_wp_error($response)) {
-                    do_action('dataflair_http_call', array(
-                        'url'        => $url,
-                        'status'     => 0,
-                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                        'bytes'      => 0,
-                        'error'      => $response->get_error_code() . '_budget_cut',
-                    ));
-                } else {
-                    $body = wp_remote_retrieve_body($response);
-                    do_action('dataflair_http_call', array(
-                        'url'        => $url,
-                        'status'     => (int) wp_remote_retrieve_response_code($response),
-                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
-                        'bytes'      => is_string($body) ? strlen($body) : 0,
-                        'error'      => 'budget_cut_retry',
-                    ));
-                }
-                return $response;
-            }
-
-            $reason = is_wp_error($response)
-                ? 'WP_Error: ' . $response->get_error_message()
-                : 'HTTP ' . wp_remote_retrieve_response_code($response);
-            error_log('DataFlair api_get() transient failure on attempt ' . ($attempt + 1)
-                . ' (' . $reason . ') — retrying in ' . $delay . 's');
-            sleep($delay);
-            $attempt++;
-        }
+        // Phase 2 — delegate to the extracted HttpClientInterface. All
+        // retry/backoff/size-cap/budget/telemetry logic now lives in
+        // `DataFlair\Toplists\Http\ApiClient`. Return shape unchanged:
+        // array|WP_Error, byte-identical to pre-Phase-2 callers.
+        return $this->api_client()->get($url, $token, $timeout, $max_retries, $budget);
     }
 
     /**
@@ -4204,151 +4169,10 @@ class DataFlair_Toplists {
      * @return string|false Local URL to saved logo or false on failure
      */
     private function download_brand_logo($brand_data, $brand_slug) {
-        // Extract logo URL from brand data
-        $logo_url = '';
-        $logo_keys = array('logo', 'brandLogo', 'logoUrl', 'image', 'logoImage');
-        
-        foreach ($logo_keys as $key) {
-            if (!empty($brand_data[$key])) {
-                if (is_array($brand_data[$key])) {
-                    // Check for nested logo object with rectangular/square options
-                    if (!empty($brand_data[$key]['rectangular'])) {
-                        $logo_url = $brand_data[$key]['rectangular'];
-                        break;
-                    } elseif (!empty($brand_data[$key]['square'])) {
-                        $logo_url = $brand_data[$key]['square'];
-                        break;
-                    } elseif (!empty($brand_data[$key]['url'])) {
-                        $logo_url = $brand_data[$key]['url'];
-                        break;
-                    } elseif (!empty($brand_data[$key]['src'])) {
-                        $logo_url = $brand_data[$key]['src'];
-                        break;
-                    } elseif (!empty($brand_data[$key]['path'])) {
-                        $logo_url = $brand_data[$key]['path'];
-                        break;
-                    }
-                } else {
-                    $logo_url = $brand_data[$key];
-                    break;
-                }
-            }
-        }
-        
-        if (empty($logo_url) || !filter_var($logo_url, FILTER_VALIDATE_URL)) {
-            error_log('DataFlair: No valid logo URL found for brand "' . ($brand_data['name'] ?? 'unknown') . '". Available keys: ' . implode(', ', array_keys($brand_data)));
-            return false;
-        }
-        
-        error_log('DataFlair: Found logo URL for brand "' . ($brand_data['name'] ?? 'unknown') . '": ' . $logo_url);
-        
-        // Create logos directory if it doesn't exist
-        $upload_dir = DATAFLAIR_PLUGIN_DIR . 'assets/logos/';
-        if (!file_exists($upload_dir)) {
-            wp_mkdir_p($upload_dir);
-        }
-        
-        // Get file extension from URL
-        $path_info = pathinfo(parse_url($logo_url, PHP_URL_PATH));
-        $extension = !empty($path_info['extension']) ? $path_info['extension'] : 'png';
-        
-        // Only allow safe image extensions
-        $allowed_extensions = array('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg');
-        if (!in_array(strtolower($extension), $allowed_extensions)) {
-            $extension = 'png';
-        }
-        
-        // Create unique filename
-        $filename = sanitize_file_name($brand_slug) . '.' . $extension;
-        $file_path = $upload_dir . $filename;
-        
-        // Check if file already exists and is recent (less than 7 days old)
-        if (file_exists($file_path) && (time() - filemtime($file_path)) < (7 * 24 * 60 * 60)) {
-            // Return existing file URL
-            $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
-            error_log('DataFlair: Using cached logo for brand "' . ($brand_data['name'] ?? 'unknown') . '": ' . $file_url);
-            do_action(
-                'dataflair_brand_logo_stored',
-                isset($brand_data['id']) ? intval($brand_data['id']) : 0,
-                $file_url,
-                $logo_url
-            );
-            return $file_url;
-        }
-        
-        // Phase 0B H3 size + timeout caps:
-        //   - 3 MB max body (typical brand logos are 20-200 KB; anything > 3 MB
-        //     is either a misuploaded hero image or a full-resolution press pack).
-        //   - 8 s timeout (was 30; CDNs respond quickly when they respond at all).
-        //   - HEAD request first to read Content-Length cheaply; bail before
-        //     burning bandwidth on a response we'd reject anyway.
-        $logo_max_bytes = 3 * 1024 * 1024;
-        $logo_timeout   = 8;
-
-        $head = wp_remote_head($logo_url, array(
-            'timeout'   => max(3, (int) ceil($logo_timeout / 2)),
-            'sslverify' => false,
-        ));
-        if (!is_wp_error($head)) {
-            $content_length = (int) wp_remote_retrieve_header($head, 'content-length');
-            if ($content_length > 0 && $content_length > $logo_max_bytes) {
-                error_log(sprintf(
-                    'DataFlair: Logo at %s is %d bytes (> %d cap) — skipping download.',
-                    $logo_url,
-                    $content_length,
-                    $logo_max_bytes
-                ));
-                return false;
-            }
-        }
-
-        // Download the image under the cap.
-        $response = wp_remote_get($logo_url, array(
-            'timeout'             => $logo_timeout,
-            'sslverify'           => false,
-            'limit_response_size' => $logo_max_bytes,
-        ));
-
-        if (is_wp_error($response)) {
-            error_log('DataFlair: Failed to download logo from ' . $logo_url . ': ' . $response->get_error_message());
-            return false;
-        }
-
-        $image_data = wp_remote_retrieve_body($response);
-        $response_code = wp_remote_retrieve_response_code($response);
-
-        if ($response_code !== 200 || empty($image_data)) {
-            error_log('DataFlair: Failed to download logo, HTTP ' . $response_code);
-            return false;
-        }
-
-        if (strlen($image_data) >= $logo_max_bytes) {
-            error_log(sprintf(
-                'DataFlair: Logo download hit %d-byte cap at %s — treating as failed.',
-                $logo_max_bytes,
-                $logo_url
-            ));
-            return false;
-        }
-        
-        // Save the image
-        $saved = file_put_contents($file_path, $image_data);
-        
-        if ($saved === false) {
-            error_log('DataFlair: Failed to save logo to ' . $file_path);
-            return false;
-        }
-        
-        // Return the URL to the saved file
-        $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
-        error_log('DataFlair: Successfully saved logo for brand "' . ($brand_data['name'] ?? 'unknown') . '" to: ' . $file_url);
-        do_action(
-            'dataflair_brand_logo_stored',
-            isset($brand_data['id']) ? intval($brand_data['id']) : 0,
-            $file_url,
-            $logo_url
-        );
-        return $file_url;
+        // Phase 2 — delegate to the extracted LogoDownloaderInterface. All
+        // Phase 0B H3 invariants (3 MB size cap, 8 s timeout, HEAD-first,
+        // dataflair_brand_logo_stored hook, 7-day reuse window) preserved.
+        return $this->logo_downloader()->download($brand_data, (string) $brand_slug);
     }
     
     /**
@@ -5617,14 +5441,13 @@ class DataFlair_Toplists {
         $columns = 'api_brand_id, slug, name, local_logo_url, cached_review_post_id, review_url_override';
 
         if (!empty($wanted_ids)) {
+            // Phase 2 — H7 api_brand_id IN (...) batched fetch delegates to BrandsRepository.
+            // Repository returns ARRAY_A keyed by api_brand_id; recast to objects to keep
+            // downstream callers (render_casino_card, lookup_brand_meta_from_map) byte-compatible.
             $id_list = array_keys($wanted_ids);
-            $placeholders = implode(',', array_fill(0, count($id_list), '%d'));
-            $sql = $wpdb->prepare(
-                "SELECT $columns FROM $brands_table WHERE api_brand_id IN ($placeholders)",
-                $id_list
-            );
-            foreach ((array) $wpdb->get_results($sql) as $row) {
-                if (!empty($row->api_brand_id)) $by_id[intval($row->api_brand_id)] = $row;
+            foreach ($this->brands_repo()->findManyByApiBrandIds($id_list) as $api_id => $row_array) {
+                $row = (object) $row_array;
+                $by_id[(int) $api_id] = $row;
                 if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) $by_slug[(string) $row->slug] = $row;
                 if (!empty($row->name) && !isset($by_name[(string) $row->name])) $by_name[(string) $row->name] = $row;
             }
@@ -5698,26 +5521,8 @@ class DataFlair_Toplists {
      * @return array<int,int>
      */
     private function find_review_posts_by_brand_metas(array $brand_ids) {
-        global $wpdb;
-        if (empty($brand_ids)) return array();
-        $brand_ids = array_values(array_unique(array_map('intval', $brand_ids)));
-        $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
-        $sql = $wpdb->prepare(
-            "SELECT pm.meta_value AS brand_id, p.ID AS post_id
-             FROM $wpdb->postmeta pm
-             INNER JOIN $wpdb->posts p ON p.ID = pm.post_id
-             WHERE pm.meta_key = 'dataflair_brand_id'
-               AND pm.meta_value IN ($placeholders)
-               AND p.post_type = 'review'
-               AND p.post_status = 'publish'",
-            $brand_ids
-        );
-        $map = array();
-        foreach ((array) $wpdb->get_results($sql) as $row) {
-            $bid = intval($row->brand_id);
-            if (!isset($map[$bid])) $map[$bid] = intval($row->post_id);
-        }
-        return $map;
+        // Phase 2 — delegate to BrandsRepository. H8 INNER JOIN logic preserved.
+        return $this->brands_repo()->findReviewPostsByApiBrandIds($brand_ids);
     }
 
     /**

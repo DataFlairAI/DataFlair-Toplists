@@ -1,55 +1,61 @@
 <?php
 /**
- * H3 regression test: download_brand_logo() caps downloads at 3 MB with an
- * 8 s timeout and does a HEAD-before-GET for Content-Length.
+ * H3 regression test (Phase 2 retarget): scans `src/Http/LogoDownloader.php`
+ * for the documented Phase 0B invariants now that `download_brand_logo()` is
+ * a 1-line delegator. Behavioural assertions live in `LogoDownloaderTest`.
  *
- * Sigma latent-OOM root cause: a brand with a misuploaded hero image
- * (~50 MB PNG) triggered both a network hang and, on older code paths,
- * a sideload chain that called wp_check_filetype_and_ext → finfo_file on
- * the resulting file, blowing the 1 GB ceiling.
- *
- * This is a structural scan of download_brand_logo() in the plugin file
- * (same pattern as SyncApiSizeCapTest). Execution-path coverage lands in
- * Phase 2 when LogoDownloader is extracted as a testable class.
+ * Invariants asserted here:
+ *   - LOGO_MAX_BYTES = 3 MB
+ *   - LOGO_TIMEOUT = 8 s
+ *   - HEAD request issued before GET
+ *   - limit_response_size backstop passed into GET args
+ *   - GET body >= cap returns false (downstream treated as failed download)
+ *   - HEAD Content-Length > cap short-circuits
  */
 
+use DataFlair\Toplists\Http\LogoDownloader;
 use PHPUnit\Framework\TestCase;
 
 class LogoSizeCapTest extends TestCase {
 
-    private string $method_body = '';
+    private string $source = '';
 
     protected function setUp(): void {
         parent::setUp();
-        $this->method_body = $this->extractMethodBody('download_brand_logo');
-        $this->assertNotEmpty(
-            $this->method_body,
-            'download_brand_logo() method body must be found in plugin file.'
-        );
+        $path = dirname(dirname(__DIR__)) . '/../src/Http/LogoDownloader.php';
+        $resolved = realpath($path);
+        $this->assertNotFalse($resolved, 'src/Http/LogoDownloader.php must exist relative to tests dir.');
+        $contents = file_get_contents($resolved);
+        $this->assertNotFalse($contents, 'Could not read LogoDownloader.php source.');
+        $this->source = $contents;
+    }
+
+    public function test_logo_downloader_class_exists_and_loads(): void {
+        $this->assertTrue(class_exists(LogoDownloader::class), 'LogoDownloader must autoload.');
     }
 
     public function test_logo_download_caps_bytes_at_exactly_3mb(): void {
         $this->assertMatchesRegularExpression(
-            '/\$logo_max_bytes\s*=\s*3\s*\*\s*1024\s*\*\s*1024\s*;/',
-            $this->method_body,
+            '/LOGO_MAX_BYTES\s*=\s*3\s*\*\s*1024\s*\*\s*1024\s*;/',
+            $this->source,
             'Logo cap must be exactly 3 MB per Phase 0B H3 (3 * 1024 * 1024).'
         );
     }
 
     public function test_logo_download_uses_8_second_timeout(): void {
         $this->assertMatchesRegularExpression(
-            '/\$logo_timeout\s*=\s*8\s*;/',
-            $this->method_body,
+            '/LOGO_TIMEOUT\s*=\s*8\s*;/',
+            $this->source,
             'Logo timeout must be 8 s per Phase 0B H3 (was 30 s).'
         );
     }
 
     public function test_logo_download_issues_head_before_get(): void {
-        $head_pos = strpos($this->method_body, 'wp_remote_head(');
-        $get_pos  = strpos($this->method_body, 'wp_remote_get(');
+        $head_pos = strpos($this->source, 'wp_remote_head(');
+        $get_pos  = strpos($this->source, 'wp_remote_get(');
 
-        $this->assertNotFalse($head_pos, 'download_brand_logo() must issue a wp_remote_head() call.');
-        $this->assertNotFalse($get_pos,  'download_brand_logo() must still issue a wp_remote_get() call.');
+        $this->assertNotFalse($head_pos, 'LogoDownloader must issue a wp_remote_head() call.');
+        $this->assertNotFalse($get_pos,  'LogoDownloader must still issue a wp_remote_get() call.');
         $this->assertLessThan(
             $get_pos,
             $head_pos,
@@ -59,57 +65,33 @@ class LogoSizeCapTest extends TestCase {
 
     public function test_logo_download_passes_limit_response_size_into_get(): void {
         $this->assertMatchesRegularExpression(
-            '/[\'"]limit_response_size[\'"]\s*=>\s*\$logo_max_bytes/',
-            $this->method_body,
-            'Logo GET must pass limit_response_size => $logo_max_bytes as a backstop.'
+            '/[\'"]limit_response_size[\'"]\s*=>\s*self::LOGO_MAX_BYTES/',
+            $this->source,
+            'Logo GET must pass limit_response_size => self::LOGO_MAX_BYTES as a backstop.'
         );
     }
 
     public function test_logo_download_returns_false_when_cap_hit_on_get(): void {
         $this->assertMatchesRegularExpression(
-            '/strlen\(\$image_data\)\s*>=\s*\$logo_max_bytes/',
-            $this->method_body,
+            '/strlen\(\(string\) \$image_data\)\s*>=\s*self::LOGO_MAX_BYTES/',
+            $this->source,
             'Logo GET must treat cap-hit body as a failed download.'
         );
     }
 
     public function test_logo_download_bails_when_head_content_length_exceeds_cap(): void {
         $this->assertMatchesRegularExpression(
-            '/\$content_length\s*>\s*\$logo_max_bytes/',
-            $this->method_body,
+            '/\$content_length\s*>\s*self::LOGO_MAX_BYTES/',
+            $this->source,
             'Logo HEAD branch must bail when Content-Length > cap.'
         );
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────
-
-    private function extractMethodBody(string $methodName): string {
-        $source = file_get_contents(DATAFLAIR_PLUGIN_DIR . 'dataflair-toplists.php');
-        if ($source === false) return '';
-
-        $signaturePattern = '/function\s+' . preg_quote($methodName, '/') . '\s*\(/';
-        if (!preg_match($signaturePattern, $source, $m, PREG_OFFSET_CAPTURE)) {
-            return '';
-        }
-
-        $start = $m[0][1];
-        $openBrace = strpos($source, '{', $start);
-        if ($openBrace === false) return '';
-
-        $depth = 1;
-        $i     = $openBrace + 1;
-        $len   = strlen($source);
-        while ($i < $len && $depth > 0) {
-            $ch = $source[$i];
-            if ($ch === '{') $depth++;
-            elseif ($ch === '}') {
-                $depth--;
-                if ($depth === 0) {
-                    return substr($source, $openBrace + 1, $i - $openBrace - 1);
-                }
-            }
-            $i++;
-        }
-        return '';
+    public function test_logo_downloader_fires_brand_logo_stored_action(): void {
+        $this->assertStringContainsString(
+            "'dataflair_brand_logo_stored'",
+            $this->source,
+            'LogoDownloader must fire the Phase 0A dataflair_brand_logo_stored action hook.'
+        );
     }
 }

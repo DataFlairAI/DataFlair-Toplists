@@ -104,14 +104,22 @@ class RenderBatchQueryCountTest extends TestCase {
         $body = $this->extractMethodBody('prefetch_brand_metas_for_items');
         $this->assertNotEmpty($body, 'prefetch_brand_metas_for_items() body must be present in plugin file.');
 
-        $in_matches = preg_match_all(
+        // Phase 2 — the api_brand_id IN (…) query has moved into
+        // BrandsRepository::findManyByApiBrandIds(). The slug + name IN
+        // queries remain inline until the renderer is extracted in Phase 4.
+        $inline_in_matches = preg_match_all(
             '/WHERE\s+\w+\s+IN\s*\(\s*\$placeholders\s*\)/i',
             $body
         );
         $this->assertGreaterThanOrEqual(
-            3,
-            $in_matches,
-            'prefetch_brand_metas_for_items() must run IN (...) batched queries (one per key dimension: api_brand_id / slug / name).'
+            2,
+            $inline_in_matches,
+            'prefetch_brand_metas_for_items() must run inline IN (...) batches for slug + name.'
+        );
+        $this->assertStringContainsString(
+            '$this->brands_repo()->findManyByApiBrandIds(',
+            $body,
+            'The api_brand_id IN (...) batch must be delegated to BrandsRepository::findManyByApiBrandIds().'
         );
     }
 
