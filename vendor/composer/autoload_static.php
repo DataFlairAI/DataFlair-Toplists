@@ -13,6 +13,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     public static $prefixLengthsPsr4 = array (
         'D' =>
         array (
+            'DataFlair\\Toplists\\Sync\\' => 24,
             'DataFlair\\Toplists\\Support\\' => 27,
             'DataFlair\\Toplists\\Models\\' => 26,
             'DataFlair\\Toplists\\Logging\\' => 27,
@@ -27,6 +28,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     );
 
     public static $prefixDirsPsr4 = array (
+        'DataFlair\\Toplists\\Sync\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Sync',
+        ),
         'DataFlair\\Toplists\\Support\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes/Support',
@@ -182,6 +187,16 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',
         'DataFlair\\Toplists\\Models\\Toplist' => __DIR__ . '/../..' . '/includes/Toplist.php',
         'DataFlair\\Toplists\\Support\\WallClockBudget' => __DIR__ . '/../..' . '/includes/Support/WallClockBudget.php',
+        'DataFlair\\Toplists\\Sync\\AlternativesSyncService' => __DIR__ . '/../..' . '/src/Sync/AlternativesSyncService.php',
+        'DataFlair\\Toplists\\Sync\\AlternativesSyncServiceInterface' => __DIR__ . '/../..' . '/src/Sync/AlternativesSyncServiceInterface.php',
+        'DataFlair\\Toplists\\Sync\\BrandSyncService' => __DIR__ . '/../..' . '/src/Sync/BrandSyncService.php',
+        'DataFlair\\Toplists\\Sync\\BrandSyncServiceInterface' => __DIR__ . '/../..' . '/src/Sync/BrandSyncServiceInterface.php',
+        'DataFlair\\Toplists\\Sync\\GodClassToplistPersister' => __DIR__ . '/../..' . '/src/Sync/GodClassToplistPersister.php',
+        'DataFlair\\Toplists\\Sync\\SyncRequest' => __DIR__ . '/../..' . '/src/Sync/SyncRequest.php',
+        'DataFlair\\Toplists\\Sync\\SyncResult' => __DIR__ . '/../..' . '/src/Sync/SyncResult.php',
+        'DataFlair\\Toplists\\Sync\\ToplistPersisterInterface' => __DIR__ . '/../..' . '/src/Sync/ToplistPersisterInterface.php',
+        'DataFlair\\Toplists\\Sync\\ToplistSyncService' => __DIR__ . '/../..' . '/src/Sync/ToplistSyncService.php',
+        'DataFlair\\Toplists\\Sync\\ToplistSyncServiceInterface' => __DIR__ . '/../..' . '/src/Sync/ToplistSyncServiceInterface.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

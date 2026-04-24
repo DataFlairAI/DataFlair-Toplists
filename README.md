@@ -217,6 +217,17 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 1.12.1
+- **Phase 3 — sync services extracted.** Continues the strangler-fig arc started in Phase 2. The toplist and brand sync pipelines are now owned by dedicated service classes; the god-class AJAX handlers shrink to 5–20 line delegators. No public contract change: every AJAX endpoint, every response shape, every filter, every action hook, every option name preserved byte-for-byte.
+- Added: `DataFlair\Toplists\Sync\ToplistSyncService` implementing `ToplistSyncServiceInterface`. Owns the full bulk happy-path + progressive per-ID fallback (per_page=10 → per_page=5 × 2 → per_page=1 × 5), the 30 s hard deadline, the JSON decode + invalid-body error paths, the page-1 paginated `DELETE FROM wp_dataflair_toplists` reset, the `dataflair_toplists_batch_last_page` transient, and the legacy `dataflair_last_toplists_sync` / `dataflair_last_toplists_cron_run` option writes.
+- Added: `DataFlair\Toplists\Sync\BrandSyncService` implementing `BrandSyncServiceInterface`. Owns the 13-column brand upsert, the Active status filter, the page-1 paginated `DELETE FROM wp_dataflair_brands`, the 25 s `WallClockBudget` with 3 s headroom, the H4 `unset()` + `gc_collect_cycles()` memory hygiene, the `download_brand_logo()` invocation (with its 3 MB / 8 s cap + HEAD-before-GET), and the `dataflair_brand_logo_stored` action hook at store time.
+- Added: `DataFlair\Toplists\Sync\AlternativesSyncService` implementing `AlternativesSyncServiceInterface`. Covers the alternative-toplists CRUD surface with input guards (`toplist_id > 0`, save requires `toplist_id` + `geo`) and logger-side warnings on rejected input.
+- Added: immutable value objects `SyncRequest` (readonly `type`, `page`, `perPage`, `budgetSeconds`; factories `toplists()` / `brands()` honour H13 budget defaults of 25.0 s, per_page 10 / 5) and `SyncResult` (readonly `success`, `page`, `lastPage`, `synced`, `errors`, `partial`, `isComplete`, `nextPage`; `toArray()` preserves every legacy AJAX key so the admin JS continues to work verbatim).
+- Added: lazy filter-based DI for services — `dataflair_toplist_sync_service`, `dataflair_brand_sync_service`, `dataflair_alternatives_sync_service`. Non-interface filter returns are rejected.
+- Added: PSR-4 autoload entry for `DataFlair\Toplists\Sync\` → `src/Sync/`.
+- Changed: god-class AJAX handlers (`ajax_sync_toplists_batch`, `ajax_sync_brands_batch`, alternatives save/delete) are now thin delegators — nonce + capability + token precheck stay at the AJAX gate, everything below forwards into the service. Removed ~520 lines of now-dead private methods (`sync_toplists_page_per_id`, `sync_brands_page`, helpers). God-class shrinks to 6,343 lines.
+- Added: 38 new tests — `ToplistSyncServiceTest`, `BrandSyncServiceTest`, `AlternativesSyncServiceTest`, `SyncRequestTest`, `SyncResultTest`. Full suite: **324 tests, 753 assertions, all green**.
+
 ### 1.12.0
 - **Phase 2 — repositories + HTTP client extracted.** First real strangler-fig phase of the refactor arc. The god-class keeps every public method signature intact; the implementations now delegate through typed, testable collaborators.
 - Added: new `src/` tree. `src/Http/{ApiClient, LogoDownloader}` implement `HttpClientInterface` + `LogoDownloaderInterface`. `src/Database/{ToplistsRepository, BrandsRepository, AlternativesRepository}` implement matching interfaces — all Phase 0B / Phase 1 invariants preserved (15 MB response cap, 12 s timeout, 3 MB logo cap, 8 s logo timeout, HEAD-before-GET, 7-day reuse window, `dataflair_http_call` telemetry, `dataflair_brand_logo_stored` hook).
@@ -381,4 +392,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.12.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.12.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

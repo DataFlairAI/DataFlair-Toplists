@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.12.0
+ * Version: 1.12.1
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.12.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.12.1');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,19 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.12.1</h4>
+<ul>
+  <li><strong>Phase 3 — sync services extracted.</strong> Continues the strangler-fig arc started in Phase 2. The toplist and brand sync pipelines are now owned by dedicated service classes; the god-class AJAX handlers shrink to 5–20 line delegators. No public contract change: every AJAX endpoint, every response shape, every filter, every action hook, every option name preserved byte-for-byte.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Sync\\ToplistSyncService</code> implementing <code>ToplistSyncServiceInterface</code>. Owns the full bulk happy-path + progressive per-ID fallback (per_page=10 → per_page=5 × 2 → per_page=1 × 5), the 30 s hard deadline, the JSON decode + invalid-body error paths, the page-1 paginated <code>DELETE FROM wp_dataflair_toplists</code> reset, the <code>dataflair_toplists_batch_last_page</code> transient, and the legacy <code>dataflair_last_toplists_sync</code> / <code>dataflair_last_toplists_cron_run</code> option writes.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Sync\\BrandSyncService</code> implementing <code>BrandSyncServiceInterface</code>. Owns the 13-column brand upsert, the Active status filter, the page-1 paginated <code>DELETE FROM wp_dataflair_brands</code>, the 25 s <code>WallClockBudget</code> with 3 s headroom, the H4 <code>unset()</code> + <code>gc_collect_cycles()</code> memory hygiene, the <code>download_brand_logo()</code> invocation (with its 3 MB / 8 s cap + HEAD-before-GET), and the <code>dataflair_brand_logo_stored</code> action hook at store time.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Sync\\AlternativesSyncService</code> implementing <code>AlternativesSyncServiceInterface</code>. Covers the alternative-toplists CRUD surface with input guards (<code>toplist_id &gt; 0</code>, save requires <code>toplist_id</code> + <code>geo</code>) and logger-side warnings on rejected input.</li>
+  <li>Added: immutable value objects <code>SyncRequest</code> (readonly <code>type</code>, <code>page</code>, <code>perPage</code>, <code>budgetSeconds</code>; factories <code>toplists()</code> / <code>brands()</code> honour the H13 budget defaults of 25.0 s, per_page 10 for toplists and 5 for brands) and <code>SyncResult</code> (readonly <code>success</code>, <code>page</code>, <code>lastPage</code>, <code>synced</code>, <code>errors</code>, <code>partial</code>, <code>isComplete</code>, <code>nextPage</code>; <code>toArray()</code> preserves every legacy AJAX key — <code>page</code>, <code>last_page</code>, <code>synced</code>, <code>errors</code>, <code>partial</code>, <code>next_page</code>, <code>is_complete</code>, <code>total_synced</code>, <code>total_brands</code>, <code>skipped</code>, <code>skip_reason</code>, <code>fallback</code> — so the admin JS continues to work verbatim).</li>
+  <li>Added: lazy filter-based DI for services — <code>dataflair_toplist_sync_service</code>, <code>dataflair_brand_sync_service</code>, <code>dataflair_alternatives_sync_service</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
+  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Sync\\</code> → <code>src/Sync/</code>. Existing entries retained.</li>
+  <li>Changed: the god-class AJAX handlers <code>ajax_sync_toplists_batch</code>, <code>ajax_sync_brands_batch</code>, and the alternatives save/delete handlers are now thin delegators — nonce + capability + token precheck stay at the AJAX gate, everything below forwards into the service. Removed ~520 lines of now-dead private methods from the god-class (<code>sync_toplists_page_per_id</code>, <code>sync_brands_page</code>, plus helpers). God-class shrinks to 6,343 lines.</li>
+  <li>Added: 38 new tests — <code>ToplistSyncServiceTest</code> (bulk happy path, per-ID fallback on WP_Error, 400 fails fast vs 500 retries, invalid JSON, missing <code>data</code> key, page-1 DELETE reset, persist-failure counts as error), <code>BrandSyncServiceTest</code> (13-column upsert shape, Active-only filter, missing-id error path, page-1 DELETE, logo downloader invocation), <code>AlternativesSyncServiceTest</code> (input guards, delegation), <code>SyncRequestTest</code> + <code>SyncResultTest</code> (readonly enforcement, <code>toArray</code> legacy-key shape, partial keeps same page for retry, extra-keys overrides for fallback path). Full suite: <strong>324 tests, 753 assertions, all green</strong>.</li>
+</ul>
+
 <h4>1.12.0</h4>
 <ul>
   <li><strong>Phase 2 — repositories + HTTP client extracted.</strong> First real strangler-fig phase of the refactor arc. The god-class keeps every public method signature intact; the implementations now delegate through typed, testable collaborators.</li>
@@ -369,6 +382,19 @@ class DataFlair_Toplists {
     /** @var \DataFlair\Toplists\Database\AlternativesRepositoryInterface|null */
     private $alternatives_repo = null;
 
+    /**
+     * Phase 3 — sync services. Lazy-instantiated. See src/Sync/*.
+     *
+     * @var \DataFlair\Toplists\Sync\ToplistSyncServiceInterface|null
+     */
+    private $toplist_sync_service = null;
+
+    /** @var \DataFlair\Toplists\Sync\BrandSyncServiceInterface|null */
+    private $brand_sync_service = null;
+
+    /** @var \DataFlair\Toplists\Sync\AlternativesSyncServiceInterface|null */
+    private $alternatives_sync_service = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -473,7 +499,92 @@ class DataFlair_Toplists {
             : $default;
         return $this->alternatives_repo;
     }
-    
+
+    /**
+     * Lazy accessor for the Phase 3 toplist sync service.
+     * Filterable via `dataflair_toplist_sync_service`.
+     *
+     * @return \DataFlair\Toplists\Sync\ToplistSyncServiceInterface
+     */
+    private function toplist_sync_service() {
+        if ($this->toplist_sync_service instanceof \DataFlair\Toplists\Sync\ToplistSyncServiceInterface) {
+            return $this->toplist_sync_service;
+        }
+
+        $token   = trim((string) get_option('dataflair_api_token'));
+        $logger  = \DataFlair\Toplists\Logging\LoggerFactory::get();
+        $default = new \DataFlair\Toplists\Sync\ToplistSyncService(
+            $this->api_client(),
+            new \DataFlair\Toplists\Sync\GodClassToplistPersister($this),
+            $logger,
+            $token,
+            $this->get_api_base_url(),
+            \Closure::fromCallable([$this, 'build_detailed_api_error'])
+        );
+        $maybe = function_exists('apply_filters')
+            ? apply_filters('dataflair_toplist_sync_service', $default)
+            : $default;
+        $this->toplist_sync_service = ($maybe instanceof \DataFlair\Toplists\Sync\ToplistSyncServiceInterface)
+            ? $maybe
+            : $default;
+        return $this->toplist_sync_service;
+    }
+
+    /**
+     * Lazy accessor for the Phase 3 brand sync service.
+     * Filterable via `dataflair_brand_sync_service`.
+     *
+     * @return \DataFlair\Toplists\Sync\BrandSyncServiceInterface
+     */
+    private function brand_sync_service() {
+        if ($this->brand_sync_service instanceof \DataFlair\Toplists\Sync\BrandSyncServiceInterface) {
+            return $this->brand_sync_service;
+        }
+
+        $token   = trim((string) get_option('dataflair_api_token'));
+        $logger  = \DataFlair\Toplists\Logging\LoggerFactory::get();
+        $urlFn   = function ($page) { return $this->get_brands_api_url((int) $page); };
+        $default = new \DataFlair\Toplists\Sync\BrandSyncService(
+            $this->api_client(),
+            $this->logo_downloader(),
+            $this->brands_repo(),
+            $logger,
+            $token,
+            $urlFn,
+            \Closure::fromCallable([$this, 'build_detailed_api_error'])
+        );
+        $maybe = function_exists('apply_filters')
+            ? apply_filters('dataflair_brand_sync_service', $default)
+            : $default;
+        $this->brand_sync_service = ($maybe instanceof \DataFlair\Toplists\Sync\BrandSyncServiceInterface)
+            ? $maybe
+            : $default;
+        return $this->brand_sync_service;
+    }
+
+    /**
+     * Lazy accessor for the Phase 3 alternatives sync service.
+     * Filterable via `dataflair_alternatives_sync_service`.
+     *
+     * @return \DataFlair\Toplists\Sync\AlternativesSyncServiceInterface
+     */
+    private function alternatives_sync_service() {
+        if ($this->alternatives_sync_service instanceof \DataFlair\Toplists\Sync\AlternativesSyncServiceInterface) {
+            return $this->alternatives_sync_service;
+        }
+        $default = new \DataFlair\Toplists\Sync\AlternativesSyncService(
+            $this->alternatives_repo(),
+            \DataFlair\Toplists\Logging\LoggerFactory::get()
+        );
+        $maybe = function_exists('apply_filters')
+            ? apply_filters('dataflair_alternatives_sync_service', $default)
+            : $default;
+        $this->alternatives_sync_service = ($maybe instanceof \DataFlair\Toplists\Sync\AlternativesSyncServiceInterface)
+            ? $maybe
+            : $default;
+        return $this->alternatives_sync_service;
+    }
+
     private function init_hooks() {
         // Activation/Deactivation
         register_activation_hook(__FILE__, array($this, 'activate'));
@@ -2217,6 +2328,9 @@ class DataFlair_Toplists {
      * AJAX handler to sync toplists in batches
      */
     public function ajax_sync_toplists_batch() {
+        // Phase 3 — thin delegator. Nonce + capability + token precheck stay
+        // at the AJAX gate. Everything below moves into ToplistSyncService,
+        // which preserves every Phase 0B / Phase 1 invariant byte-for-byte.
         check_ajax_referer('dataflair_sync_toplists_batch', 'nonce');
 
         if (!current_user_can('manage_options')) {
@@ -2228,430 +2342,19 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
 
-        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        $page    = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        $request = \DataFlair\Toplists\Sync\SyncRequest::toplists($page);
+        $result  = $this->toplist_sync_service()->syncPage($request);
 
-        // Phase 1 — observability: batch-started hook.
-        $batch_t0 = microtime(true);
-        do_action('dataflair_sync_batch_started', array(
-            'type'            => 'toplists',
-            'page'            => $page,
-            'per_page'        => 10,
-            'budget_seconds'  => 25.0,
-        ));
-
-        if ($page === 1) {
-            // On the first batch, clear old transients and purge existing toplists.
-            // Phase 0B H11: TRUNCATE → paginated DELETE — binlog-row-based
-            // replication cannot replicate TRUNCATE on some hosts, and single
-            // unbounded DELETEs blow binlog packet limits on large tables.
-            $this->clear_tracker_transients();
-            global $wpdb;
-            $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-            $this->delete_all_paginated($table_name, 500);
-
-            // Also clear discovered endpoints on page 1
-            update_option('dataflair_api_endpoints', '');
-            // And clear the last_page hint cache so a fresh sync doesn't read stale totals.
-            delete_transient('dataflair_toplists_batch_last_page');
+        if ($result->success) {
+            wp_send_json_success($result->toArray());
         }
-
-        // H13: 25s cooperative wall-clock budget with 3s headroom.
-        $budget = new \DataFlair\Toplists\Support\WallClockBudget(25.0);
-
-        $base_url = $this->get_api_base_url();
-        // per_page=10 is tuned for the DataFlair API's serializer budget:
-        // per_page=20 times out on heavy pages (confirmed page 3 = 500 at 16s),
-        // but per_page=10 completes inside the API's ~15s window even on the
-        // heaviest pages (largest observed: 4MB / 10.7s). `include=items` is
-        // effectively a no-op on this tenant (items are embedded either way)
-        // but we keep it for compatibility with tenants that honor the flag.
-        $list_url = $base_url . '/toplists?per_page=10&page=' . $page . '&include=items';
-
-        $response = $this->api_get($list_url, $token, 12, 2, $budget);
-
-        if (is_wp_error($response)) {
-            // A WP_Error here (after api_get's internal retries) usually means the bulk
-            // call timed out on a heavy page. The per-ID fallback makes smaller requests
-            // that can still succeed on a congested / slow upstream.
-            error_log('DataFlair sync_toplists_batch: bulk call WP_Error on page ' . $page
-                . ' (' . $response->get_error_message() . ') — falling back to per-ID fetches');
-            $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url, $budget);
-            if ($fallback !== false) {
-                wp_send_json_success($fallback);
-            }
-            wp_send_json_error(array('message' => 'Failed to fetch toplist page ' . $page . ': ' . $response->get_error_message()));
-        }
-
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $response_headers = wp_remote_retrieve_headers($response);
-
-        // Auto-detect and store base URL from first successful response
-        if ($page === 1 && $status_code === 200) {
-            $parsed_url = parse_url($list_url);
-            if (isset($parsed_url['scheme']) && isset($parsed_url['host'])) {
-                $detected_base = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/api/v1';
-                $current_base = get_option('dataflair_api_base_url');
-                if (empty($current_base) || $current_base !== $detected_base) {
-                    update_option('dataflair_api_base_url', $detected_base);
-                }
-            }
-        }
-
-        // The bulk list endpoint with `include=items` can return 500 when a single
-        // page contains a toplist that's too heavy to serialize in one shot. When that
-        // happens, fall back to fetching the page shell (no `include=items`) and then
-        // pulling each toplist by its individual endpoint — same path cron uses,
-        // smaller payloads, proven reliable.
-        if ($status_code !== 200) {
-            if (in_array($status_code, array(500, 502, 503, 504), true)) {
-                error_log('DataFlair sync_toplists_batch: bulk call returned HTTP ' . $status_code
-                    . ' on page ' . $page . ' — falling back to per-ID fetches');
-                $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url, $budget);
-                if ($fallback !== false) {
-                    wp_send_json_success($fallback);
-                }
-            }
-
-            $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $list_url);
-            wp_send_json_error(array('message' => $error_msg));
-        }
-
-        $data = json_decode($body, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            wp_send_json_error(array('message' => 'JSON decode error: ' . json_last_error_msg()));
-        }
-
-        if (!isset($data['data'])) {
-            wp_send_json_error(array('message' => 'Invalid response format from API. Expected "data" key in response.'));
-        }
-
-        $synced = 0;
-        $errors = 0;
-        $last_page = 1;
-        $endpoints = [];
-
-        if (isset($data['meta']['last_page'])) {
-            $last_page = (int) $data['meta']['last_page'];
-            // Cache natural (per_page=20) last_page so the fallback path has a reliable
-            // total-pages signal when it has to skip a broken page mid-sync.
-            set_transient('dataflair_toplists_batch_last_page', $last_page, HOUR_IN_SECONDS);
-        }
-
-        $budget_exhausted = false;
-
-        if (is_array($data['data'])) {
-            foreach ($data['data'] as $toplist) {
-                // H13: bail out between items if the 25s budget is almost gone.
-                if ($budget->exceeded(3.0)) {
-                    $budget_exhausted = true;
-                    break;
-                }
-
-                if (isset($toplist['id'])) {
-                    $endpoint = $base_url . '/toplists/' . $toplist['id'];
-                    $endpoints[] = $endpoint;
-
-                    // Create the raw JSON string mimicking the single endpoint response
-                    $toplist_json = wp_json_encode(['data' => $toplist]);
-                    $result = $this->store_toplist_data($toplist, $toplist_json);
-
-                    if ($result) {
-                        $synced++;
-                    } else {
-                        $errors++;
-                    }
-
-                    // H4: drop the per-item working set immediately.
-                    unset($toplist_json, $result, $endpoint);
-                }
-
-                // H4: drop the bulk-response row once we've stored it.
-                unset($toplist);
-            }
-        }
-
-        // Append newly discovered endpoints
-        if (!empty($endpoints)) {
-            $existing_endpoints = get_option('dataflair_api_endpoints', '');
-            $new_endpoints_string = implode("\n", $endpoints);
-            if (!empty($existing_endpoints)) {
-                $new_endpoints_string = $existing_endpoints . "\n" . $new_endpoints_string;
-            }
-            update_option('dataflair_api_endpoints', $new_endpoints_string);
-        }
-
-        // H4: release the full decoded page before the next AJAX round-trip.
-        unset($data, $body);
-        if (function_exists('gc_collect_cycles')) {
-            gc_collect_cycles();
-        }
-
-        $is_complete = !$budget_exhausted && $page >= $last_page;
-
-        if ($is_complete) {
-            // Phase 1 — option rename: dataflair_last_toplists_cron_run →
-            // dataflair_last_toplists_sync. Legacy name written alongside for
-            // one release so any downstream reads that haven't migrated keep
-            // working. check_database_upgrade() cleans the legacy name up on
-            // next upgrade pass.
-            $ts = time();
-            update_option('dataflair_last_toplists_sync', $ts);
-            update_option('dataflair_last_toplists_cron_run', $ts);
-        }
-
-        do_action('dataflair_sync_batch_finished', array(
-            'type'            => 'toplists',
-            'page'            => $page,
-            'items_done'      => isset($synced) ? (int) $synced : 0,
-            'errors'          => isset($errors) ? (int) $errors : 0,
-            'partial'         => (bool) $budget_exhausted,
-            'elapsed_seconds' => round(microtime(true) - $batch_t0, 3),
-            'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
-        ));
-
-        wp_send_json_success(array(
-            'page'        => $page,
-            'last_page'   => $last_page,
-            'synced'      => $synced,
-            'errors'      => $errors,
-            'partial'     => $budget_exhausted,
-            'next_page'   => $budget_exhausted ? $page : ($page + 1),
-            'is_complete' => $is_complete,
-        ));
+        wp_send_json_error(array('message' => $result->message));
     }
 
-    /**
-     * Fallback sync for a single page when the bulk `include=items` call fails.
-     *
-     * Uses progressive splitting: if a natural 20-per-page slice fails, retry the
-     * same offset range as smaller slices (10×2, 5×4, 1×20). This isolates the
-     * specific DB row that's crashing the API serializer rather than discarding
-     * the whole page. Any IDs we *can* recover get fetched individually via
-     * /toplists/{id} (the same path cron uses).
-     *
-     * Always returns a batch-response array. When the page is truly unrecoverable
-     * (every split 500s), returns a `skipped: true` response so the batch loop
-     * keeps advancing instead of aborting the whole sync.
-     *
-     * @param int    $page
-     * @param string $token
-     * @param string $base_url
-     * @return array
-     */
-    private function sync_toplists_page_per_id($page, $token, $base_url, $budget = null) {
-        // Progressive splitting with TARGETED drill-down (fast — bounded at ~25s).
-        // Natural per_page is 10 (matches bulk list URL), split levels:
-        //   1. per_page=5 across 2 sub-pages     (2 calls)
-        //   2. per_page=1 ONLY on the per_page=5 sub-pages that actually failed
-        //      (worst case 2 + 10 = 12 calls, typical 2 + 0-5 = 2-7)
-        //
-        // We skip retrying per_page=10 here — if the bulk call already timed out
-        // at per_page=10, a second per_page=10 attempt will too (same slice size).
-        // Split slices use api_get with max_retries=0 and a 15s timeout:
-        // the splitting *is* the retry strategy. A 30s hard deadline caps the
-        // whole fallback so a misbehaving API can't stall the sync indefinitely.
-        $deadline          = time() + 30;
-        $collected_ids     = array();
-        $attempt_log       = array();
-        $natural_last_page = 0;
-
-        $try_slice = function ($per_page, $sub_page) use (
-            $token, $base_url, &$attempt_log, &$natural_last_page, $deadline
-        ) {
-            if (time() >= $deadline) {
-                $attempt_log[] = array(
-                    'per_page' => $per_page,
-                    'page'     => $sub_page,
-                    'status'   => 'deadline_exceeded',
-                );
-                return null;
-            }
-
-            $url      = $base_url . '/toplists?per_page=' . $per_page . '&page=' . $sub_page;
-            $response = $this->api_get($url, $token, 15, 0); // 15s timeout, no retries
-
-            $entry = array('per_page' => $per_page, 'page' => $sub_page);
-
-            if (is_wp_error($response)) {
-                $entry['status'] = 'wp_error';
-                $entry['error']  = $response->get_error_message();
-                $attempt_log[]   = $entry;
-                return null;
-            }
-
-            $status          = wp_remote_retrieve_response_code($response);
-            $entry['status'] = $status;
-
-            if ($status !== 200) {
-                $entry['body'] = substr(wp_remote_retrieve_body($response), 0, 200);
-                $attempt_log[] = $entry;
-                return null;
-            }
-
-            $data = json_decode(wp_remote_retrieve_body($response), true);
-            if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
-                $entry['status'] = 'invalid_json';
-                $attempt_log[]   = $entry;
-                return null;
-            }
-
-            if (isset($data['meta']['last_page'])) {
-                $sub_last = (int) $data['meta']['last_page'];
-                // Convert to natural per_page=10 last_page.
-                $natural  = (int) ceil(($sub_last * $per_page) / 10);
-                if ($natural > $natural_last_page) {
-                    $natural_last_page = $natural;
-                }
-            }
-
-            $ids = array();
-            foreach ($data['data'] as $toplist) {
-                if (isset($toplist['id'])) {
-                    $ids[] = $toplist['id'];
-                }
-            }
-            $entry['ids']  = count($ids);
-            $attempt_log[] = $entry;
-
-            return $ids;
-        };
-
-        // Level 1: per_page=5 across 2 sub-pages covering the same 10-row offset
-        // range as the failed per_page=10 natural page.
-        //   per_page=10 page=N covers offsets (N-1)*10 to N*10-1
-        //   per_page=5  covers those offsets via pages (2N-1) and (2N)
-        $failed_sub5 = array();
-        for ($i = 0; $i < 2; $i++) {
-            $sub5 = (2 * $page) - 1 + $i;
-            $ids5 = $try_slice(5, $sub5);
-            if (is_array($ids5)) {
-                $collected_ids = array_values(array_unique(array_merge($collected_ids, $ids5)));
-            } else {
-                $failed_sub5[] = $sub5;
-            }
-        }
-
-        // Level 2: per_page=1 ONLY on the per_page=5 slices that failed.
-        //   per_page=5 page=M covers offsets (M-1)*5 to M*5-1
-        //   per_page=1 hits each via pages (M-1)*5+1 .. M*5
-        foreach ($failed_sub5 as $sub5) {
-            $start1 = (($sub5 - 1) * 5) + 1;
-            for ($j = 0; $j < 5; $j++) {
-                if (time() >= $deadline) {
-                    break 2;
-                }
-                $ids1 = $try_slice(1, $start1 + $j);
-                if (is_array($ids1)) {
-                    $collected_ids = array_values(array_unique(array_merge($collected_ids, $ids1)));
-                }
-            }
-        }
-
-        // Pull last_page from a transient we stashed on the first successful page, so
-        // even a fully broken page can still hand the JS loop a sane "keep going" signal.
-        if ($natural_last_page <= 0) {
-            $stored = get_transient('dataflair_toplists_batch_last_page');
-            if ($stored) {
-                $natural_last_page = (int) $stored;
-            }
-        }
-        // Final safety: if we still have nothing, guess one page ahead so the loop
-        // advances at least once more. A truly final page will confirm on the next call.
-        if ($natural_last_page <= 0) {
-            $natural_last_page = $page + 1;
-        }
-
-        // Fully unrecoverable — skip this page and let the batch loop move on.
-        if (empty($collected_ids)) {
-            error_log('DataFlair sync_toplists_page_per_id: page ' . $page
-                . ' unrecoverable; every split failed. Attempts: ' . wp_json_encode($attempt_log));
-
-            $is_complete = $page >= $natural_last_page;
-            if ($is_complete) {
-                // Phase 1 — write both names for one release.
-                $ts = time();
-                update_option('dataflair_last_toplists_sync', $ts);
-                update_option('dataflair_last_toplists_cron_run', $ts);
-            }
-
-            return array(
-                'page'        => $page,
-                'last_page'   => $natural_last_page,
-                'synced'      => 0,
-                'errors'      => 0,
-                'is_complete' => $is_complete,
-                'skipped'     => true,
-                'skip_reason' => 'API returned errors for every split of page ' . $page
-                    . ' (tried per_page 5 and per_page 1 slices). This page will be retried on the next full sync.',
-            );
-        }
-
-        // Fetch each recovered ID individually and store.
-        $synced    = 0;
-        $errors    = 0;
-        $endpoints = array();
-        $budget_exhausted = false;
-
-        foreach ($collected_ids as $id) {
-            // H13: stop fetching per-ID if the budget is out. The caller
-            // still advances `next_page` to the same page so the loop
-            // retries what we didn't finish.
-            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
-                && $budget->exceeded(3.0)
-            ) {
-                $budget_exhausted = true;
-                break;
-            }
-
-            $endpoint    = $base_url . '/toplists/' . $id;
-            $endpoints[] = $endpoint;
-
-            if ($this->fetch_and_store_toplist($endpoint, $token)) {
-                $synced++;
-            } else {
-                $errors++;
-            }
-
-            unset($endpoint); // H4
-        }
-
-        if (!empty($endpoints)) {
-            $existing_endpoints   = get_option('dataflair_api_endpoints', '');
-            $new_endpoints_string = implode("\n", $endpoints);
-            if (!empty($existing_endpoints)) {
-                $new_endpoints_string = $existing_endpoints . "\n" . $new_endpoints_string;
-            }
-            update_option('dataflair_api_endpoints', $new_endpoints_string);
-        }
-
-        if (function_exists('gc_collect_cycles')) {
-            gc_collect_cycles();
-        }
-
-        $is_complete = !$budget_exhausted && $page >= $natural_last_page;
-        if ($is_complete) {
-            // Phase 1 — write both names for one release.
-            $ts = time();
-            update_option('dataflair_last_toplists_sync', $ts);
-            update_option('dataflair_last_toplists_cron_run', $ts);
-        }
-
-        return array(
-            'page'        => $page,
-            'last_page'   => $natural_last_page,
-            'synced'      => $synced,
-            'errors'      => $errors,
-            'is_complete' => $is_complete,
-            'fallback'    => true,
-            // `partial` signals the admin JS to either re-try this page (budget)
-            // or skip ahead (recovered < 20 rows). The budget path is authoritative.
-            'partial'     => $budget_exhausted || count($collected_ids) < 20,
-            'next_page'   => $budget_exhausted ? $page : ($page + 1),
-        );
-    }
-
+    // NOTE: sync_toplists_page_per_id() moved to DataFlair\Toplists\Sync\ToplistSyncService
+    // in v1.12.1 (Phase 3). The progressive-split fallback logic lives there now.
+    //
     // NOTE: cron_sync_toplists(), cron_sync_brands(), sync_all_toplists(),
     // sync_all_brands() were removed in v1.11.0 (Phase 0B H1). Auto-sync is
     // gone — paginated batch sync from the admin Tools page (or WP-CLI) is
@@ -4053,6 +3756,13 @@ class DataFlair_Toplists {
      * AJAX handler to sync brands in batches (one page at a time)
      */
     public function ajax_sync_brands_batch() {
+        // Phase 3 — thin delegator. Nonce + capability + token precheck stay
+        // at the AJAX gate. Everything below moves into BrandSyncService, which
+        // preserves every Phase 0B / Phase 1 / Phase 0A invariant byte-for-byte
+        // (15 MB/12 s HTTP cap, 3 MB/8 s logo cap, 25 s budget with 3 s
+        // headroom, H4 memory cleanup, paginated page-1 DELETE,
+        // dataflair_brand_logo_stored hook, dataflair_sync_batch_*/
+        // dataflair_sync_item_failed telemetry).
         check_ajax_referer('dataflair_sync_brands_batch', 'nonce');
 
         if (!current_user_can('manage_options')) {
@@ -4064,68 +3774,14 @@ class DataFlair_Toplists {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
 
-        // Get the page number from request
-        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        $page    = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        $request = \DataFlair\Toplists\Sync\SyncRequest::brands($page);
+        $result  = $this->brand_sync_service()->syncPage($request);
 
-        // Phase 1 — observability: batch-started hook.
-        $batch_t0 = microtime(true);
-        do_action('dataflair_sync_batch_started', array(
-            'type'            => 'brands',
-            'page'            => $page,
-            'per_page'        => 5,
-            'budget_seconds'  => 25.0,
-        ));
-
-        // On the first page of a full sync, purge all existing brand records so
-        // stale brands from a previous API key are not left behind.
-        // Phase 0B H11: paginated DELETE instead of TRUNCATE — safer under
-        // row-based binlog replication and won't blow the MySQL packet size
-        // on large brand tables.
-        if ($page === 1) {
-            global $wpdb;
-            $brands_table = $wpdb->prefix . 'dataflair_brands';
-            $this->delete_all_paginated($brands_table, 500);
+        if ($result->success) {
+            wp_send_json_success($result->toArray());
         }
-
-        // H13: cooperative wall-clock budget — keeps a single AJAX request
-        // inside the ~30s PHP max_execution_time ceiling, even if the upstream
-        // API is slow. Budget is 25s with a 3s headroom checked between brands.
-        $budget = new \DataFlair\Toplists\Support\WallClockBudget(25.0);
-
-        $result = $this->sync_brands_page($page, $token, $budget);
-
-        if ($result['success']) {
-            $partial = !empty($result['partial']);
-
-            do_action('dataflair_sync_batch_finished', array(
-                'type'            => 'brands',
-                'page'            => $page,
-                'items_done'      => (int) ($result['synced'] ?? 0),
-                'errors'          => (int) ($result['errors'] ?? 0),
-                'partial'         => $partial,
-                'elapsed_seconds' => round(microtime(true) - $batch_t0, 3),
-                'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
-            ));
-
-            wp_send_json_success(array(
-                'page'         => $page,
-                'last_page'    => $result['last_page'],
-                'synced'       => $result['synced'],
-                'errors'       => $result['errors'],
-                'total_synced' => $result['total_synced'],
-                'partial'      => $partial,
-                'next_page'    => $partial ? $page : ($page + 1),
-                // Only "complete" if the budget finished the page AND we're on the last page.
-                'is_complete'  => !$partial && $page >= $result['last_page'],
-            ));
-        } else {
-            do_action('dataflair_sync_item_failed', array(
-                'type'  => 'brands',
-                'page'  => $page,
-                'error' => (string) ($result['message'] ?? ''),
-            ));
-            wp_send_json_error(array('message' => $result['message']));
-        }
+        wp_send_json_error(array('message' => $result->message));
     }
     
     /**
@@ -4174,254 +3830,11 @@ class DataFlair_Toplists {
         // dataflair_brand_logo_stored hook, 7-day reuse window) preserved.
         return $this->logo_downloader()->download($brand_data, (string) $brand_slug);
     }
-    
-    /**
-     * Sync a single page of brands from API (15 brands per page)
-     */
-    private function sync_brands_page($page, $token, $budget = null) {
-        $brands_url = $this->get_brands_api_url($page);
 
-        $response = $this->api_get($brands_url, $token, 12, 2, $budget);
-
-        if (is_wp_error($response)) {
-            $error_msg = 'Failed to fetch brands page ' . $page . ': ' . $response->get_error_message();
-            error_log('DataFlair sync_brands_page error: ' . $error_msg);
-            return array('success' => false, 'message' => $error_msg);
-        }
-
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $response_headers = wp_remote_retrieve_headers($response);
-
-        if ($status_code !== 200) {
-            $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $brands_url);
-            error_log('DataFlair sync_brands_page error: ' . $error_msg);
-            return array('success' => false, 'message' => $error_msg);
-        }
-        
-        $data = json_decode($body, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $error_msg = 'JSON decode error: ' . json_last_error_msg();
-            error_log('DataFlair sync_brands_page error: ' . $error_msg);
-            return array('success' => false, 'message' => $error_msg);
-        }
-        
-        if (!isset($data['data'])) {
-            $error_msg = 'Invalid response format from API. Expected "data" key.';
-            error_log('DataFlair sync_brands_page error: ' . $error_msg);
-            return array('success' => false, 'message' => $error_msg);
-        }
-        
-        // Get pagination info
-        $last_page = isset($data['meta']['last_page']) ? intval($data['meta']['last_page']) : 1;
-        $total = isset($data['meta']['total']) ? intval($data['meta']['total']) : 0;
-        
-        $synced = 0;
-        $errors = 0;
-        $budget_exhausted_on_item = null;
-
-        global $wpdb;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-        // Log the number of brands on this page
-        $brands_on_page = count($data['data']);
-        error_log('DataFlair: Page ' . $page . ' has ' . $brands_on_page . ' brands');
-
-        // Process each brand on this page
-        $item_index = 0;
-        foreach ($data['data'] as $brand_data) {
-            // H13: cooperative time-budget check — bail out before starting a new
-            // brand if the wall-clock budget is running out. The caller turns this
-            // into a `partial:true` response so the admin JS re-issues the page.
-            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
-                && $budget->exceeded(3.0)
-            ) {
-                $budget_exhausted_on_item = $item_index;
-                break;
-            }
-            $item_index++;
-            // Check if brand is active
-            $brand_status = isset($brand_data['brandStatus']) ? $brand_data['brandStatus'] : '';
-            
-            error_log('DataFlair: Processing brand ID ' . (isset($brand_data['id']) ? $brand_data['id'] : 'unknown') . 
-                     ', Status: ' . $brand_status);
-            
-            if ($brand_status !== 'Active') {
-                error_log('DataFlair: Skipping brand - status is not Active');
-                continue; // Skip non-active brands
-            }
-            
-            if (!isset($brand_data['id'])) {
-                $errors++;
-                error_log('DataFlair brand missing ID: ' . json_encode($brand_data));
-                continue;
-            }
-            
-            $api_brand_id = $brand_data['id'];
-            $brand_name = isset($brand_data['name']) ? $brand_data['name'] : 'Unnamed Brand';
-            $brand_slug = isset($brand_data['slug']) ? $brand_data['slug'] : sanitize_title($brand_name);
-            
-            // Download and save logo locally
-            $local_logo_path = $this->download_brand_logo($brand_data, $brand_slug);
-            if ($local_logo_path) {
-                // Add local logo path to brand data
-                $brand_data['local_logo'] = $local_logo_path;
-                error_log('DataFlair: Logo saved locally for brand "' . $brand_name . '" at: ' . $local_logo_path);
-            }
-            
-            // Extract computed fields
-            $product_types = isset($brand_data['productTypes']) && is_array($brand_data['productTypes']) 
-                ? implode(', ', $brand_data['productTypes']) 
-                : '';
-            
-            $licenses = isset($brand_data['licenses']) && is_array($brand_data['licenses'])
-                ? implode(', ', $brand_data['licenses'])
-                : '';
-
-            // Extract V2 classification types (e.g. Casino, Sportsbook, Poker)
-            $classification_types = isset($brand_data['classificationTypes'])
-                && is_array($brand_data['classificationTypes'])
-                ? implode(', ', $brand_data['classificationTypes']) : '';
-
-            // Combine top geo countries and markets
-            $top_geos_arr = array();
-            if (isset($brand_data['topGeos']['countries']) && is_array($brand_data['topGeos']['countries'])) {
-                $top_geos_arr = array_merge($top_geos_arr, $brand_data['topGeos']['countries']);
-            }
-            if (isset($brand_data['topGeos']['markets']) && is_array($brand_data['topGeos']['markets'])) {
-                $top_geos_arr = array_merge($top_geos_arr, $brand_data['topGeos']['markets']);
-            }
-            $top_geos = implode(', ', $top_geos_arr);
-
-            // ⚠️ Warn if brand has offers but no topGeos — likely an API data issue
-            $brand_offers_count = isset($brand_data['offersCount']) ? intval($brand_data['offersCount'])
-                : (isset($brand_data['offers']) && is_array($brand_data['offers']) ? count($brand_data['offers']) : 0);
-            if (empty($top_geos_arr) && $brand_offers_count > 0) {
-                error_log(sprintf(
-                    '[DataFlair Sync] Brand #%d (%s): has %d offer(s) but no topGeos — check DataFlair admin',
-                    $api_brand_id,
-                    $brand_name,
-                    $brand_offers_count
-                ));
-            }
-            
-            // Count offers
-            $offers_count = isset($brand_data['offers']) && is_array($brand_data['offers']) 
-                ? count($brand_data['offers']) 
-                : 0;
-            
-            // Count trackers across all offers
-            $trackers_count = 0;
-            if (isset($brand_data['offers']) && is_array($brand_data['offers'])) {
-                foreach ($brand_data['offers'] as $offer) {
-                    if (isset($offer['trackers']) && is_array($offer['trackers'])) {
-                        $trackers_count += count($offer['trackers']);
-                    }
-                }
-            }
-            
-            // Insert or update
-            $existing = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM $brands_table_name WHERE api_brand_id = %d",
-                $api_brand_id
-            ));
-            
-            // Phase 0A H0: persist logo URL to its own column so render never sideloads.
-            // Null means "not yet downloaded" — template falls back to legacy local_logo
-            // (in JSON blob) or external URLs.
-            $local_logo_url_column = !empty($local_logo_path) ? $local_logo_path : null;
-
-            if ($existing) {
-                $result = $wpdb->update(
-                    $brands_table_name,
-                    array(
-                        'name' => $brand_name,
-                        'slug' => $brand_slug,
-                        'status' => $brand_status,
-                        'product_types' => $product_types,
-                        'licenses' => $licenses,
-                        'classification_types' => $classification_types,
-                        'top_geos' => $top_geos,
-                        'offers_count' => $offers_count,
-                        'trackers_count' => $trackers_count,
-                        'local_logo_url' => $local_logo_url_column,
-                        'data' => json_encode($brand_data),
-                        'last_synced' => current_time('mysql')
-                    ),
-                    array('api_brand_id' => $api_brand_id),
-                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s'),
-                    array('%d')
-                );
-            } else {
-                $result = $wpdb->insert(
-                    $brands_table_name,
-                    array(
-                        'api_brand_id' => $api_brand_id,
-                        'name' => $brand_name,
-                        'slug' => $brand_slug,
-                        'status' => $brand_status,
-                        'product_types' => $product_types,
-                        'licenses' => $licenses,
-                        'classification_types' => $classification_types,
-                        'top_geos' => $top_geos,
-                        'offers_count' => $offers_count,
-                        'trackers_count' => $trackers_count,
-                        'local_logo_url' => $local_logo_url_column,
-                        'data' => json_encode($brand_data),
-                        'last_synced' => current_time('mysql')
-                    ),
-                    array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s')
-                );
-            }
-            
-            if ($result !== false) {
-                $synced++;
-                error_log('DataFlair: Successfully synced brand ID ' . $api_brand_id . ' (' . $brand_name . ')');
-            } else {
-                $errors++;
-                error_log('DataFlair brand sync error for brand ID ' . $api_brand_id . ': ' . $wpdb->last_error);
-                error_log('DataFlair brand sync error - Last query: ' . $wpdb->last_query);
-            }
-
-            // H4: drop the per-brand working set before the next iteration so
-            // a stalled upstream can't accumulate dozens of decoded brand
-            // payloads in memory inside one request.
-            unset($brand_data, $existing, $result, $product_types, $licenses,
-                  $classification_types, $top_geos, $top_geos_arr,
-                  $offers_count, $trackers_count, $local_logo_path,
-                  $local_logo_url_column);
-        }
-
-        // Release the decoded response and run one cycle of the GC at the end
-        // of the page. Avoids keeping the full ~2-5MB JSON array live across
-        // the total_synced COUNT(*) query and the final wp_send_json_success.
-        unset($data, $body);
-        if (function_exists('gc_collect_cycles')) {
-            gc_collect_cycles();
-        }
-
-        error_log('DataFlair: Page ' . $page . ' complete. Synced: ' . $synced . ', Errors: ' . $errors);
-
-        // Get total synced count from database
-        $total_synced = $wpdb->get_var("SELECT COUNT(*) FROM $brands_table_name WHERE status = 'Active'");
-
-        error_log('DataFlair: Total active brands in database: ' . $total_synced);
-
-        $partial = $budget_exhausted_on_item !== null;
-
-        return array(
-            'success'      => true,
-            'last_page'    => $last_page,
-            'synced'       => $synced,
-            'errors'       => $errors,
-            'total_synced' => intval($total_synced),
-            'total_brands' => $total,
-            'partial'      => $partial,
-            'next_page'    => $partial ? $page : ($page + 1),
-        );
-    }
-    
+    // NOTE: sync_brands_page() moved to DataFlair\Toplists\Sync\BrandSyncService
+    // in v1.12.1 (Phase 3). All Phase 0B / Phase 1 / Phase 0A invariants are
+    // preserved byte-for-byte inside the service.
+    //
     // NOTE: sync_all_brands() removed in v1.11.0 (Phase 0B H1). Batched
     // sync via ajax_sync_brands_batch is now the only path — cron is gone.
 

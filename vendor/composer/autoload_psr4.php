@@ -6,6 +6,7 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'DataFlair\\Toplists\\Sync\\' => array($baseDir . '/src/Sync'),
     'DataFlair\\Toplists\\Support\\' => array($baseDir . '/includes/Support'),
     'DataFlair\\Toplists\\Models\\' => array($baseDir . '/includes'),
     'DataFlair\\Toplists\\Logging\\' => array($baseDir . '/includes/Logging'),
