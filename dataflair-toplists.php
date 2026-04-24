@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.11.0
+ * Version: 1.11.1
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.1');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,17 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.11.1</h4>
+<ul>
+  <li><strong>Phase 0.5 — perf rig + CI gate.</strong> Internal tooling release. No production-facing behaviour change. Gives the plugin a deterministic, repeatable perf harness so every subsequent refactor phase ships with a mechanical proof that it does not re-introduce the Sigma OOM.</li>
+  <li>Added: WP-CLI command <code>wp dataflair perf:seed --tier={S|Sigma|L|XL|P}</code>. Generates deterministic synthetic toplists + brands at five tier sizes — from 10 toplists / 50 brands (tier S, smoke) up to 2,000 toplists / 5,000 brands (tier P, punishing). Each tier has a documented target JSON payload per toplist so the render path is exercised at realistic blob sizes.</li>
+  <li>Added: WP-CLI command <code>wp dataflair perf:run --tier=Sigma --scenario={render|rest|admin|sync}</code>. Captures peak RSS, wall time, and query count across a scenario and fails with a non-zero exit when the configured thresholds (default 512 MB peak, 5 s wall) are breached.</li>
+  <li>Added: drop-in MU-plugin <code>mu-plugins/dataflair-perf-probe.php</code> that emits a single-line peak-memory / wall-time / query-count stanza to stderr and error_log on every WP request. Dependency-free — works on any WP surface (frontend, REST, AJAX, WP-CLI).</li>
+  <li>Added: <code>composer perf</code> script that wires the seed + run commands into a single repeatable invocation. Gracefully no-ops with a hint when WP-CLI is not on PATH so dev laptops without WP-CLI do not fail.</li>
+  <li>Added: GitHub Actions workflow <code>.github/workflows/perf-gate.yml</code> that runs the Sigma-tier render scenario on every PR targeting <code>epic/refactor-april</code> or <code>main</code>, under a <code>memory_limit=1G</code> PHP process with the 512 MB / 5 s gate. A <code>skip-perf-gate</code> PR label bypasses the gate for docs-only or known-flaky situations — never leave it on a code PR.</li>
+  <li>Added: <code>docs/PERF.md</code> — thresholds, tiers, scenarios, local run guide, probe output format, fatal-reproduction steps, environment variables, and the label-bypass policy.</li>
+</ul>
+
 <h4>1.11.0</h4>
 <ul>
   <li><strong>Phase 0B safety rails — defense-in-depth follow-up to 1.10.8.</strong> This release lands twelve latent-OOM, timeout-cap, and memory-hygiene fixes across the sync, render, admin, REST, and migration paths. No behaviour change on the happy path — everything here either caps an unbounded resource or yields under pressure.</li>
@@ -6908,11 +6919,23 @@ class DataFlair_Toplists {
 // Initialize plugin
 DataFlair_Toplists::get_instance();
 
-// Register WP-CLI commands (Phase 0A H0).
+// Register WP-CLI commands (Phase 0A H0 + Phase 0.5 perf rig).
 if (defined('WP_CLI') && WP_CLI) {
     require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/ReconcileReviewsCommand.php';
     \WP_CLI::add_command(
         'dataflair reconcile-reviews',
         \DataFlair\Toplists\Cli\ReconcileReviewsCommand::class
+    );
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/PerfSeedCommand.php';
+    \WP_CLI::add_command(
+        'dataflair perf:seed',
+        \DataFlair\Toplists\Cli\PerfSeedCommand::class
+    );
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/PerfRunCommand.php';
+    \WP_CLI::add_command(
+        'dataflair perf:run',
+        \DataFlair\Toplists\Cli\PerfRunCommand::class
     );
 }

@@ -178,6 +178,12 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.11.1
+
+1.11.1 is the Phase 0.5 **perf-rig + CI gate** release. Pure internal tooling — no production-facing behaviour change. Upgrade is a drop-in.
+
+Operators who want to run the perf gate locally need WP-CLI on `$PATH` and can then invoke `composer perf` from the plugin root. See `docs/PERF.md` for thresholds, tiers, scenarios, and how to read the probe output. CI runs the gate on every PR targeting `epic/refactor-april` or `main`.
+
 ### To 1.11.0
 
 1.11.0 is the Phase 0B **safety-rails** release. It removes the WP-cron auto-sync machinery entirely — sync now runs only when an operator triggers it from the admin **Tools** page or via WP-CLI. A one-time migration clears legacy cron schedules from prior installs (gated by the persistent option `dataflair_cron_cleared_v1_11`); nothing on the operator's side to do.
@@ -198,6 +204,15 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.11.1
+- **Phase 0.5 — perf rig + CI gate.** Internal tooling release. No production-facing behaviour change. Gives the plugin a deterministic, repeatable perf harness so every subsequent refactor phase ships with a mechanical proof that it does not re-introduce the Sigma OOM.
+- Added: WP-CLI command `wp dataflair perf:seed --tier={S|Sigma|L|XL|P}`. Generates deterministic synthetic toplists + brands at five tier sizes — from 10 toplists / 50 brands (tier S, smoke) up to 2,000 toplists / 5,000 brands (tier P, punishing).
+- Added: WP-CLI command `wp dataflair perf:run --tier=Sigma --scenario={render|rest|admin|sync}`. Captures peak RSS, wall time, and query count, fails non-zero on threshold breach (default 512 MB peak, 5 s wall).
+- Added: drop-in MU-plugin `mu-plugins/dataflair-perf-probe.php` that emits a single-line peak-memory / wall-time / query-count stanza on every WP request. Dependency-free.
+- Added: `composer perf` script that wires seed + run into a single invocation. Gracefully no-ops with a hint when WP-CLI is not on `$PATH`.
+- Added: GitHub Actions workflow `.github/workflows/perf-gate.yml` running the Sigma-tier render scenario on every PR targeting `epic/refactor-april` or `main`, under `memory_limit=1G`. The `skip-perf-gate` label bypasses the gate.
+- Added: `docs/PERF.md` — thresholds, tiers, scenarios, local run guide, probe output format, fatal-reproduction steps, env vars, and label-bypass policy.
 
 ### 1.11.0
 - **Phase 0B safety rails — defense-in-depth follow-up to 1.10.8.** Twelve latent-OOM, timeout-cap, and memory-hygiene fixes across sync, render, admin, REST, and migration paths. No behaviour change on the happy path.
@@ -334,4 +349,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.10.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.11.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

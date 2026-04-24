@@ -143,6 +143,8 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'Composer\\Installers\\YawikInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/YawikInstaller.php',
         'Composer\\Installers\\ZendInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZendInstaller.php',
         'Composer\\Installers\\ZikulaInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZikulaInstaller.php',
+        'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
+        'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',
         'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => __DIR__ . '/../..' . '/includes/Cli/ReconcileReviewsCommand.php',
         'DataFlair\\Toplists\\Models\\Brand' => __DIR__ . '/../..' . '/includes/Brand.php',
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',

@@ -1,0 +1,93 @@
+name: perf-gate
+
+on:
+  pull_request:
+    branches:
+      - epic/refactor-april
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  perf-gate:
+    name: Perf gate (tier-Sigma / render)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'pull_request' ||
+      !contains(github.event.pull_request.labels.*.name, 'skip-perf-gate')
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: wp
+          MYSQL_DATABASE: wordpress
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATAFLAIR_PERF_WP_PATH: ${{ github.workspace }}/wp
+      DATAFLAIR_PERF_TIER: Sigma
+      DATAFLAIR_PERF_SCENARIO: render
+      DATAFLAIR_PERF_MAX_RSS_MB: '512'
+      DATAFLAIR_PERF_MAX_WALL_S: '5'
+      DATAFLAIR_PERF_MEMORY_LIMIT: 1G
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli, mbstring, json
+          tools: composer, wp-cli
+
+      - name: Composer install (no-dev)
+        working-directory: plugin
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+      - name: Download WordPress core
+        run: |
+          mkdir -p "$DATAFLAIR_PERF_WP_PATH"
+          wp core download --path="$DATAFLAIR_PERF_WP_PATH" --force
+
+      - name: Configure WordPress
+        run: |
+          wp config create \
+            --path="$DATAFLAIR_PERF_WP_PATH" \
+            --dbname=wordpress \
+            --dbuser=root \
+            --dbpass=wp \
+            --dbhost=127.0.0.1:3306 \
+            --force
+          wp core install \
+            --path="$DATAFLAIR_PERF_WP_PATH" \
+            --url=http://localhost \
+            --title='DataFlair Perf' \
+            --admin_user=admin \
+            --admin_email=perf@example.com \
+            --admin_password=admin \
+            --skip-email
+
+      - name: Install plugin into WP
+        run: |
+          mkdir -p "$DATAFLAIR_PERF_WP_PATH/wp-content/plugins/dataflair-toplists"
+          rsync -a --delete \
+            --exclude='.git' --exclude='.claude' --exclude='node_modules' --exclude='.phpunit.result.cache' \
+            plugin/ "$DATAFLAIR_PERF_WP_PATH/wp-content/plugins/dataflair-toplists/"
+          wp plugin activate dataflair-toplists --path="$DATAFLAIR_PERF_WP_PATH"
+
+      - name: Install perf probe MU-plugin
+        run: |
+          mkdir -p "$DATAFLAIR_PERF_WP_PATH/wp-content/mu-plugins"
+          cp plugin/mu-plugins/dataflair-perf-probe.php \
+            "$DATAFLAIR_PERF_WP_PATH/wp-content/mu-plugins/"
+
+      - name: Run perf gate
+        working-directory: plugin
+        run: composer perf
