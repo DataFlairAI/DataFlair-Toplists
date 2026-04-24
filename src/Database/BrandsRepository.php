@@ -166,4 +166,16 @@ final class BrandsRepository implements BrandsRepositoryInterface
         );
         return $result !== false;
     }
+
+    public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool
+    {
+        $result = $this->wpdb->update(
+            $this->table,
+            ['review_url_override' => $url !== null && $url !== '' ? $url : null],
+            ['api_brand_id' => $api_brand_id],
+            ['%s'],
+            ['%d']
+        );
+        return $result !== false;
+    }
 }

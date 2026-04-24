@@ -89,23 +89,23 @@ class RenderIsReadOnlyTest extends TestCase
 
     public function test_render_template_has_no_forbidden_calls(): void
     {
-        $template = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        $template = DATAFLAIR_PLUGIN_DIR . 'views/frontend/casino-card.php';
         $source = file_get_contents($template);
-        $this->assertNotFalse($source, 'render-casino-card.php must be readable');
+        $this->assertNotFalse($source, 'views/frontend/casino-card.php must be readable');
 
         foreach (self::FORBIDDEN_FUNCTIONS as $fn) {
             $pattern = '/(?<![a-zA-Z0-9_\$>])' . preg_quote($fn, '/') . '\s*\(/';
             $this->assertDoesNotMatchRegularExpression(
                 $pattern,
                 $source,
-                "render-casino-card.php must not call forbidden function `$fn` at render time."
+                "views/frontend/casino-card.php must not call forbidden function `$fn` at render time."
             );
         }
 
         $this->assertDoesNotMatchRegularExpression(
             self::FORBIDDEN_THEME_HELPER_PATTERN,
             $source,
-            'render-casino-card.php must not call any strikeodds_* sideload-ish helper at render time.'
+            'views/frontend/casino-card.php must not call any strikeodds_* sideload-ish helper at render time.'
         );
     }
 
@@ -148,7 +148,7 @@ class RenderIsReadOnlyTest extends TestCase
         $customizations = [];
 
         ob_start();
-        include DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
+        include DATAFLAIR_PLUGIN_DIR . 'views/frontend/casino-card.php';
         ob_end_clean();
 
         $this->assertSame(

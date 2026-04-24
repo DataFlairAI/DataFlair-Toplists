@@ -77,4 +77,24 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
         $result = $this->wpdb->delete($this->table, ['api_toplist_id' => $api_toplist_id]);
         return $result !== false;
     }
+
+    public function collectGeoNames(): array
+    {
+        $rows = $this->wpdb->get_results("SELECT data FROM {$this->table}", ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $geos = [];
+        foreach ($rows as $row) {
+            $payload = json_decode((string) ($row['data'] ?? ''), true);
+            $name    = $payload['data']['geo']['name'] ?? null;
+            if (is_string($name) && $name !== '' && !in_array($name, $geos, true)) {
+                $geos[] = $name;
+            }
+        }
+
+        sort($geos);
+        return $geos;
+    }
 }

@@ -21,6 +21,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
             'DataFlair\\Toplists\\Frontend\\' => 28,
             'DataFlair\\Toplists\\Database\\' => 28,
             'DataFlair\\Toplists\\Cli\\' => 23,
+            'DataFlair\\Toplists\\Admin\\' => 25,
         ),
         'C' =>
         array (
@@ -60,6 +61,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Cli\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes/Cli',
+        ),
+        'DataFlair\\Toplists\\Admin\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Admin',
         ),
         'Composer\\Installers\\' =>
         array (
@@ -168,6 +173,24 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'Composer\\Installers\\YawikInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/YawikInstaller.php',
         'Composer\\Installers\\ZendInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZendInstaller.php',
         'Composer\\Installers\\ZikulaInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZikulaInstaller.php',
+        'DataFlair\\Toplists\\Admin\\AdminBootstrap' => __DIR__ . '/../..' . '/src/Admin/AdminBootstrap.php',
+        'DataFlair\\Toplists\\Admin\\AjaxHandlerInterface' => __DIR__ . '/../..' . '/src/Admin/AjaxHandlerInterface.php',
+        'DataFlair\\Toplists\\Admin\\AjaxRouter' => __DIR__ . '/../..' . '/src/Admin/AjaxRouter.php',
+        'DataFlair\\Toplists\\Admin\\Assets\\AdminAssetsRegistrar' => __DIR__ . '/../..' . '/src/Admin/Assets/AdminAssetsRegistrar.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\ApiPreviewHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/ApiPreviewHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\DeleteAlternativeToplistHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/DeleteAlternativeToplistHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\FetchAllBrandsHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/FetchAllBrandsHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\FetchAllToplistsHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/FetchAllToplistsHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\GetAlternativeToplistsHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/GetAlternativeToplistsHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\GetAvailableGeosHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/GetAvailableGeosHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\SaveAlternativeToplistHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/SaveAlternativeToplistHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\SaveReviewUrlHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/SaveReviewUrlHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\SaveSettingsHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/SaveSettingsHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\SyncBrandsBatchHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/SyncBrandsBatchHandler.php',
+        'DataFlair\\Toplists\\Admin\\Handlers\\SyncToplistsBatchHandler' => __DIR__ . '/../..' . '/src/Admin/Handlers/SyncToplistsBatchHandler.php',
+        'DataFlair\\Toplists\\Admin\\Pages\\BrandsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/BrandsPage.php',
+        'DataFlair\\Toplists\\Admin\\Pages\\PageInterface' => __DIR__ . '/../..' . '/src/Admin/Pages/PageInterface.php',
+        'DataFlair\\Toplists\\Admin\\Pages\\SettingsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/SettingsPage.php',
         'DataFlair\\Toplists\\Cli\\LogsCommand' => __DIR__ . '/../..' . '/includes/Cli/LogsCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',

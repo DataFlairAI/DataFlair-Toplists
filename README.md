@@ -178,6 +178,14 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.14.0
+
+1.14.0 is the Phase 5 **admin pages + AJAX router** release. No operator action required, no DB migration, no option rename — every `wp_ajax_dataflair_*` action name, nonce action, payload shape, and admin-JS integration is preserved byte-for-byte. The god-class's 11 `ajax_*` methods remain in place (they will stay until Phase 8 — shim birth) so any downstream code that invoked them directly continues to work.
+
+**Breaking for direct-include integrators only:** the casino-card template forwarding shim at `includes/render-casino-card.php` — deprecated in v1.13.0 with an explicit one-release removal notice — is **deleted in 1.14.0**. Downstream themes or plugins that were still including the old path must update to the new location at `views/frontend/casino-card.php`. Shortcode users, block users, and anyone consuming the rendered HTML are unaffected.
+
+Downstream integrators who want to supply a custom AJAX handler can replace the handler's dependencies via the existing repository/service filters (`dataflair_brands_repository`, `dataflair_toplists_repository`, `dataflair_alternatives_repository`, `dataflair_toplist_sync_service`, `dataflair_brand_sync_service`, `dataflair_api_client`). Swapping the `AdminBootstrap` itself is intentionally not exposed — the bootstrap is a thin wiring seam, not a public contract.
+
 ### To 1.13.0
 
 1.13.0 is the Phase 4 **rendering + ViewModels** release. No operator action required, no DB migration, no option rename — the god-class render methods retain their signatures and return byte-identical HTML. The casino-card template has moved from `includes/render-casino-card.php` to `views/frontend/casino-card.php`, but the old path is preserved as a forwarding shim for one release. Downstream integrators who include the template directly should update to the new path before 1.14.0 ships.
@@ -222,6 +230,19 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.14.0
+- **Phase 5 — admin pages + AJAX router extracted.** Every admin-side AJAX action is now registered through a single `AjaxRouter` that owns nonce + capability checks centrally, dispatches to one handler class per action, and wraps the structured response in `wp_send_json_*`. No public contract change: every `wp_ajax_dataflair_*` action name, nonce action, payload shape, and admin-JS integration preserved byte-for-byte.
+- Added: `DataFlair\Toplists\Admin\AjaxRouter` — per-action routing table (`handler`, `nonce`, `capability`), `check_ajax_referer()` + `current_user_can()` gate before any handler runs, `try/catch` around handler invocation so a thrown `Throwable` becomes a logged `ajax.router.handler_threw` warning + `wp_send_json_error` instead of a 500.
+- Added: `DataFlair\Toplists\Admin\AjaxHandlerInterface` — single-method contract (`handle(array $request): array`) returning `['success' => bool, 'data' => array|null]`. Eleven concrete handlers implement it: `SaveSettingsHandler`, `FetchAllToplistsHandler`, `SyncToplistsBatchHandler`, `FetchAllBrandsHandler`, `SyncBrandsBatchHandler`, `GetAlternativeToplistsHandler`, `SaveAlternativeToplistHandler`, `DeleteAlternativeToplistHandler`, `GetAvailableGeosHandler`, `ApiPreviewHandler`, `SaveReviewUrlHandler`.
+- Added: `DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar` — the `admin_enqueue_scripts` filter registration now lives in a dedicated registrar class. Select2 + `dataflair-admin` bundle enqueue + five `wp_localize_script` nonces preserved byte-for-byte.
+- Added: `DataFlair\Toplists\Admin\Pages\PageInterface` + `SettingsPage` + `BrandsPage` thin delegator seams. The 700-line `settings_page()` and 1,200-line `brands_page()` HTML bodies stay on the god-class for one more release and render through an injected `\Closure`; a follow-up moves the HTML into `views/admin/`.
+- Added: `DataFlair\Toplists\Admin\AdminBootstrap` — single wiring seam that instantiates the router, registers all 11 handlers with their matching nonce actions, and exposes `registerAssets()`. The god-class calls `$this->admin_bootstrap()->boot()` + `->registerAssets()` from `init_hooks()`.
+- Added: repository extensions used by the handlers — `AlternativesRepository::deleteById(int $id): bool`, `ToplistsRepository::collectGeoNames(): array` (parses `data.data.geo.name` out of every toplist's JSON blob, dedups, sorts alphabetically), and `BrandsRepository::updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool`.
+- Added: PSR-4 autoload entry for `DataFlair\Toplists\Admin\` → `src/Admin/`.
+- Changed: the eleven `add_action('wp_ajax_dataflair_*', …)` registrations in `init_hooks()` are now a single `$this->admin_bootstrap()->boot();` call. The legacy `ajax_*` methods on the god-class remain (kept until Phase 8 — shim birth). The single `add_action('admin_enqueue_scripts', …)` line becomes `$this->admin_bootstrap()->registerAssets();`.
+- Removed: `includes/render-casino-card.php` forwarding shim (deprecated in v1.13.0 with an explicit one-release removal notice). Template lives at `views/frontend/casino-card.php`.
+- Added: 17 new tests — `AjaxRouterTest` (unknown-action guard, nonce failure, cap denial, successful wrap, exception translation, `$_GET`+`$_POST` merge, registration listing), `GetAvailableGeosHandlerTest`, `SaveSettingsHandlerTest` (token trimmed not sanitised, password trimmed only, brands-api-version whitelisted, empty base URL deletes option, base URL pinned to `/api/vN`, colour fields sanitised, absent fields not written). Full suite: **358 tests, 823 assertions, all green**.
 
 ### 1.13.0
 - **Phase 4 — rendering + ViewModels extracted.** Casino-card and toplist-table render paths are now owned by dedicated classes. The casino-card template moved from `includes/render-casino-card.php` to `views/frontend/casino-card.php`; the old path stays as a forwarding shim for one release (deleted in Phase 5). No public contract change — `render_casino_card()` and `render_toplist_table()` on the god-class retain their signatures and return byte-identical HTML.
@@ -409,4 +430,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.13.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.14.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

@@ -38,4 +38,9 @@ interface AlternativesRepositoryInterface
      * Delete every alternative row under a parent toplist.
      */
     public function deleteByToplistId(int $toplist_id): bool;
+
+    /**
+     * Delete a single alternative row by its primary key.
+     */
+    public function deleteById(int $id): bool;
 }
