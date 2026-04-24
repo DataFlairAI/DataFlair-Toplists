@@ -48,6 +48,9 @@
         ],
         "install-dev": [
             "composer install --prefer-dist --optimize-autoloader --no-interaction --no-progress"
+        ],
+        "perf": [
+            "@php bin/perf-gate.php"
         ]
     },
     "config": {
