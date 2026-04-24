@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.11.1
+ * Version: 1.11.2
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.1');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.2');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,18 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.11.2</h4>
+<ul>
+  <li><strong>Phase 1 — observability foundation.</strong> Lands before any extraction phase so every subsequent refactor (Phase 2 and later) ships with a contract for structured logging + telemetry in place. Consumers (Sentry on Sigma, stdout on local, file on shared hosts) are swappable without touching plugin code.</li>
+  <li>Added: pluggable <code>DataFlair\Toplists\Logging\LoggerInterface</code> (PSR-3-shaped, hand-written — no <code>psr/log</code> dependency). Methods: <code>emergency/alert/critical/error/warning/notice/info/debug</code>, each accepting <code>(string $message, array $context = [])</code>.</li>
+  <li>Added: three bundled implementations — <code>NullLogger</code> (no-op), <code>ErrorLogLogger</code> (writes to <code>error_log()</code> with a <code>[DataFlair][LEVEL]</code> prefix and JSON-encoded context), and a <code>SentryLogger</code> stub for downstream subclasses.</li>
+  <li>Added: <code>LoggerFactory::get()</code> resolves the active logger via <code>apply_filters(\'dataflair_logger\', …)</code>. Caches per-request. A filter return value that does not implement <code>LoggerInterface</code> is rejected and the default is kept. Minimum log level filterable via <code>dataflair_logger_level</code> (default: <code>notice</code>).</li>
+  <li>Added: six stable telemetry hooks emitted at named call sites — <code>dataflair_sync_batch_started</code>, <code>dataflair_sync_batch_finished</code>, <code>dataflair_sync_item_failed</code>, <code>dataflair_render_started</code>, <code>dataflair_render_finished</code>, <code>dataflair_http_call</code>. Structured payloads include <code>elapsed_seconds</code>, <code>memory_peak</code>, <code>page</code>, <code>per_page</code>, <code>budget_seconds</code>, etc. These are the telemetry points the later extraction phases will preserve byte-for-byte.</li>
+  <li>Added: WP-CLI command <code>wp dataflair logs [--since=15m] [--level=warning] [--limit=200]</code>. Tails the active logger — for <code>ErrorLogLogger</code>, stream-reads the last 512 KB of the <code>error_log</code> destination, filters by the <code>[DataFlair]</code> tag + level threshold + time window. Custom loggers register their own tail via the <code>dataflair_logs_tail</code> filter.</li>
+  <li>Changed: option rename migration (one-time, gated by <code>dataflair_options_renamed_v1_11_2</code>). <code>dataflair_last_toplists_cron_run</code> becomes <code>dataflair_last_toplists_sync</code>; brands equivalent. The legacy names continue to be written in parallel for one release so any downstream reader keeps working, and <code>format_last_sync_label()</code> falls back to the legacy name when the new one is empty.</li>
+  <li>Tests: +13 new tests covering the <code>LoggerInterface</code> contract shape, factory resolution + caching + filter fallbacks, <code>ErrorLogLogger</code> min-level + JSON context encoding, and the <code>wp dataflair logs</code> command (tag filter, level filter, since filter, custom-tail precedence, limit cap). Total suite: 247 tests, 566 assertions, all green.</li>
+</ul>
+
 <h4>1.11.1</h4>
 <ul>
   <li><strong>Phase 0.5 — perf rig + CI gate.</strong> Internal tooling release. No production-facing behaviour change. Gives the plugin a deterministic, repeatable perf harness so every subsequent refactor phase ships with a mechanical proof that it does not re-introduce the Sigma OOM.</li>
@@ -519,6 +531,26 @@ class DataFlair_Toplists {
             wp_clear_scheduled_hook('dataflair_sync_cron');
             wp_clear_scheduled_hook('dataflair_brands_sync_cron');
             update_option('dataflair_cron_cleared_v1_11', '1');
+        }
+
+        // Phase 1 — option rename migration. The `dataflair_last_*_cron_run`
+        // names were kept as option keys after the cron machinery was deleted
+        // in v1.11.0; rename them to the more accurate `dataflair_last_*_sync`
+        // now that we have an observability release to carry the change.
+        // One-time, gated so reverting + re-upgrading is idempotent.
+        if (get_option('dataflair_options_renamed_v1_11_2') !== '1') {
+            foreach (array(
+                'dataflair_last_toplists_cron_run' => 'dataflair_last_toplists_sync',
+                'dataflair_last_brands_cron_run'   => 'dataflair_last_brands_sync',
+            ) as $legacy => $new) {
+                $legacy_value = get_option($legacy);
+                if ($legacy_value !== false && get_option($new) === false) {
+                    update_option($new, $legacy_value);
+                }
+                // Intentionally keep the legacy row until one release later;
+                // read paths fall back gracefully. Phase 2 or later can delete.
+            }
+            update_option('dataflair_options_renamed_v1_11_2', '1');
         }
 
         // Self-heal: ensure all tables exist even if activation hook never fired
@@ -1203,7 +1235,7 @@ class DataFlair_Toplists {
                         <div id="dataflair-toplist-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: #fff; font-size: 12px; line-height: 20px; font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,0.5);">0%</div>
                     </div>
                     <p class="description">Fetches all toplists from the DataFlair API. Existing toplists will be updated.</p>
-                    <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_toplists_cron_run')); ?></p>
+                    <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_toplists_sync')); ?></p>
             
             <hr>
             
@@ -1889,8 +1921,20 @@ class DataFlair_Toplists {
      * @return array|\WP_Error                                              wp_remote_get-shaped array or WP_Error.
      */
     private function api_get($url, $token, $timeout = 12, $max_retries = 2, $budget = null) {
+        // Phase 1 — observability: single http_call hook emitted at every
+        // return path with the total wall-clock cost, response code (when
+        // known), and byte count.
+        $http_t0 = microtime(true);
+
         if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget) {
             if ($budget->exceeded(1.0)) {
+                do_action('dataflair_http_call', array(
+                    'url'        => $url,
+                    'status'     => 0,
+                    'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                    'bytes'      => 0,
+                    'error'      => 'budget_exhausted_before_request',
+                ));
                 return new \WP_Error(
                     'dataflair_budget_exhausted',
                     'Wall-clock budget exhausted before api_get() could start.'
@@ -1964,6 +2008,13 @@ class DataFlair_Toplists {
             if (!is_wp_error($response)) {
                 $body = wp_remote_retrieve_body($response);
                 if ($body !== '' && strlen($body) >= $max_bytes) {
+                    do_action('dataflair_http_call', array(
+                        'url'        => $url,
+                        'status'     => (int) wp_remote_retrieve_response_code($response),
+                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                        'bytes'      => strlen($body),
+                        'error'      => 'response_too_large',
+                    ));
                     return new \WP_Error(
                         'dataflair_response_too_large',
                         sprintf('Upstream response exceeded %d byte cap.', $max_bytes),
@@ -1983,6 +2034,23 @@ class DataFlair_Toplists {
             }
 
             if (!$should_retry || $attempt >= $max_retries) {
+                if (is_wp_error($response)) {
+                    do_action('dataflair_http_call', array(
+                        'url'        => $url,
+                        'status'     => 0,
+                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                        'bytes'      => 0,
+                        'error'      => $response->get_error_code(),
+                    ));
+                } else {
+                    $body = wp_remote_retrieve_body($response);
+                    do_action('dataflair_http_call', array(
+                        'url'        => $url,
+                        'status'     => (int) wp_remote_retrieve_response_code($response),
+                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                        'bytes'      => is_string($body) ? strlen($body) : 0,
+                    ));
+                }
                 return $response;
             }
 
@@ -1992,6 +2060,24 @@ class DataFlair_Toplists {
             $delay = (int) pow(2, $attempt); // 1s, 2s, 4s...
             if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
                 && $budget->exceeded((float) $delay + 2.0)) {
+                if (is_wp_error($response)) {
+                    do_action('dataflair_http_call', array(
+                        'url'        => $url,
+                        'status'     => 0,
+                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                        'bytes'      => 0,
+                        'error'      => $response->get_error_code() . '_budget_cut',
+                    ));
+                } else {
+                    $body = wp_remote_retrieve_body($response);
+                    do_action('dataflair_http_call', array(
+                        'url'        => $url,
+                        'status'     => (int) wp_remote_retrieve_response_code($response),
+                        'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                        'bytes'      => is_string($body) ? strlen($body) : 0,
+                        'error'      => 'budget_cut_retry',
+                    ));
+                }
                 return $response;
             }
 
@@ -2179,6 +2265,15 @@ class DataFlair_Toplists {
 
         $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
 
+        // Phase 1 — observability: batch-started hook.
+        $batch_t0 = microtime(true);
+        do_action('dataflair_sync_batch_started', array(
+            'type'            => 'toplists',
+            'page'            => $page,
+            'per_page'        => 10,
+            'budget_seconds'  => 25.0,
+        ));
+
         if ($page === 1) {
             // On the first batch, clear old transients and purge existing toplists.
             // Phase 0B H11: TRUNCATE → paginated DELETE — binlog-row-based
@@ -2331,8 +2426,25 @@ class DataFlair_Toplists {
         $is_complete = !$budget_exhausted && $page >= $last_page;
 
         if ($is_complete) {
-            update_option('dataflair_last_toplists_cron_run', time());
+            // Phase 1 — option rename: dataflair_last_toplists_cron_run →
+            // dataflair_last_toplists_sync. Legacy name written alongside for
+            // one release so any downstream reads that haven't migrated keep
+            // working. check_database_upgrade() cleans the legacy name up on
+            // next upgrade pass.
+            $ts = time();
+            update_option('dataflair_last_toplists_sync', $ts);
+            update_option('dataflair_last_toplists_cron_run', $ts);
         }
+
+        do_action('dataflair_sync_batch_finished', array(
+            'type'            => 'toplists',
+            'page'            => $page,
+            'items_done'      => isset($synced) ? (int) $synced : 0,
+            'errors'          => isset($errors) ? (int) $errors : 0,
+            'partial'         => (bool) $budget_exhausted,
+            'elapsed_seconds' => round(microtime(true) - $batch_t0, 3),
+            'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
+        ));
 
         wp_send_json_success(array(
             'page'        => $page,
@@ -2493,7 +2605,10 @@ class DataFlair_Toplists {
 
             $is_complete = $page >= $natural_last_page;
             if ($is_complete) {
-                update_option('dataflair_last_toplists_cron_run', time());
+                // Phase 1 — write both names for one release.
+                $ts = time();
+                update_option('dataflair_last_toplists_sync', $ts);
+                update_option('dataflair_last_toplists_cron_run', $ts);
             }
 
             return array(
@@ -2552,7 +2667,10 @@ class DataFlair_Toplists {
 
         $is_complete = !$budget_exhausted && $page >= $natural_last_page;
         if ($is_complete) {
-            update_option('dataflair_last_toplists_cron_run', time());
+            // Phase 1 — write both names for one release.
+            $ts = time();
+            update_option('dataflair_last_toplists_sync', $ts);
+            update_option('dataflair_last_toplists_cron_run', $ts);
         }
 
         return array(
@@ -2762,7 +2880,7 @@ class DataFlair_Toplists {
             </div>
             
             <p class="description">Fetches all active brands from the DataFlair API in batches of 15. Existing brands will be updated.</p>
-            <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_brands_cron_run')); ?></p>
+            <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_brands_sync')); ?></p>
             
             <hr>
             
@@ -3984,6 +4102,15 @@ class DataFlair_Toplists {
         // Get the page number from request
         $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
 
+        // Phase 1 — observability: batch-started hook.
+        $batch_t0 = microtime(true);
+        do_action('dataflair_sync_batch_started', array(
+            'type'            => 'brands',
+            'page'            => $page,
+            'per_page'        => 5,
+            'budget_seconds'  => 25.0,
+        ));
+
         // On the first page of a full sync, purge all existing brand records so
         // stale brands from a previous API key are not left behind.
         // Phase 0B H11: paginated DELETE instead of TRUNCATE — safer under
@@ -4004,6 +4131,17 @@ class DataFlair_Toplists {
 
         if ($result['success']) {
             $partial = !empty($result['partial']);
+
+            do_action('dataflair_sync_batch_finished', array(
+                'type'            => 'brands',
+                'page'            => $page,
+                'items_done'      => (int) ($result['synced'] ?? 0),
+                'errors'          => (int) ($result['errors'] ?? 0),
+                'partial'         => $partial,
+                'elapsed_seconds' => round(microtime(true) - $batch_t0, 3),
+                'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
+            ));
+
             wp_send_json_success(array(
                 'page'         => $page,
                 'last_page'    => $result['last_page'],
@@ -4016,6 +4154,11 @@ class DataFlair_Toplists {
                 'is_complete'  => !$partial && $page >= $result['last_page'],
             ));
         } else {
+            do_action('dataflair_sync_item_failed', array(
+                'type'  => 'brands',
+                'page'  => $page,
+                'error' => (string) ($result['message'] ?? ''),
+            ));
             wp_send_json_error(array('message' => $result['message']));
         }
     }
@@ -4941,6 +5084,9 @@ class DataFlair_Toplists {
      * Shortcode handler
      */
     public function toplist_shortcode($atts) {
+        // Phase 1 — observability: capture render wall time + item count.
+        $render_t0 = microtime(true);
+
         // Extract shortcode-specific attributes
         $shortcode_defaults = array(
             'id'    => '',  // Primary — looks up by api_toplist_id
@@ -4952,6 +5098,12 @@ class DataFlair_Toplists {
 
         // Merge with defaults but preserve all other attributes (for customization)
         $atts = wp_parse_args($atts, $shortcode_defaults);
+
+        do_action('dataflair_render_started', array(
+            'toplist_id' => (int) ($atts['id'] ?? 0),
+            'slug'       => (string) ($atts['slug'] ?? ''),
+            'layout'     => (string) ($atts['layout'] ?? 'cards'),
+        ));
 
         if (empty($atts['id']) && empty($atts['slug'])) {
             return '<p style="color: red;">DataFlair Error: Toplist ID or slug is required</p>';
@@ -5006,9 +5158,16 @@ class DataFlair_Toplists {
         unset($customizations['id'], $customizations['title'], $customizations['limit'], $customizations['layout'], $customizations['prosCons']);
 
         if (isset($atts['layout']) && $atts['layout'] === 'table') {
-            return $this->render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data);
+            $table_html = $this->render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data);
+            do_action('dataflair_render_finished', array(
+                'toplist_id'  => (int) ($atts['id'] ?? 0),
+                'item_count'  => count($items),
+                'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+                'layout'      => 'table',
+            ));
+            return $table_html;
         }
-        
+
         ob_start();
         ?>
         <div class="dataflair-toplist">
@@ -5031,7 +5190,16 @@ class DataFlair_Toplists {
             endforeach; ?>
         </div>
         <?php
-        return ob_get_clean();
+        $html = ob_get_clean();
+
+        do_action('dataflair_render_finished', array(
+            'toplist_id'  => (int) ($atts['id'] ?? 0),
+            'item_count'  => count($items),
+            'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+            'layout'      => 'cards',
+        ));
+
+        return $html;
     }
 
     /**
@@ -6388,8 +6556,31 @@ class DataFlair_Toplists {
      * (still named `dataflair_last_*_cron_run` for backward compat — option
      * rename lands in Phase 1 via a dedicated migration).
      */
+    /**
+     * Accepts either the legacy `dataflair_last_*_cron_run` name or the new
+     * `dataflair_last_*_sync` name and returns a human "Last sync: ..." label.
+     *
+     * Phase 1 renamed the stored option; the admin pages still pass the
+     * legacy key for one release, so this helper falls back through:
+     *   1. the key it was given
+     *   2. the new-name twin (if caller passed legacy)
+     *   3. the legacy-name twin (if caller passed new)
+     */
     private function format_last_sync_label($option_key) {
         $last_run = get_option($option_key);
+
+        if (!$last_run) {
+            $alt = null;
+            if (strpos($option_key, '_cron_run') !== false) {
+                $alt = str_replace('_cron_run', '_sync', $option_key);
+            } elseif (strpos($option_key, '_sync') !== false) {
+                $alt = str_replace('_sync', '_cron_run', $option_key);
+            }
+            if ($alt) {
+                $last_run = get_option($alt);
+            }
+        }
+
         return 'Last sync: ' . ($last_run ? $this->time_ago($last_run) : 'never');
     }
 
@@ -6937,5 +7128,11 @@ if (defined('WP_CLI') && WP_CLI) {
     \WP_CLI::add_command(
         'dataflair perf:run',
         \DataFlair\Toplists\Cli\PerfRunCommand::class
+    );
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/LogsCommand.php';
+    \WP_CLI::add_command(
+        'dataflair logs',
+        \DataFlair\Toplists\Cli\LogsCommand::class
     );
 }

@@ -15,6 +15,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         array (
             'DataFlair\\Toplists\\Support\\' => 27,
             'DataFlair\\Toplists\\Models\\' => 26,
+            'DataFlair\\Toplists\\Logging\\' => 27,
             'DataFlair\\Toplists\\Cli\\' => 23,
         ),
         'C' =>
@@ -31,6 +32,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes',
+        ),
+        'DataFlair\\Toplists\\Logging\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/includes/Logging',
         ),
         'DataFlair\\Toplists\\Cli\\' =>
         array (
@@ -143,9 +148,15 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'Composer\\Installers\\YawikInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/YawikInstaller.php',
         'Composer\\Installers\\ZendInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZendInstaller.php',
         'Composer\\Installers\\ZikulaInstaller' => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers/ZikulaInstaller.php',
+        'DataFlair\\Toplists\\Cli\\LogsCommand' => __DIR__ . '/../..' . '/includes/Cli/LogsCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',
         'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => __DIR__ . '/../..' . '/includes/Cli/ReconcileReviewsCommand.php',
+        'DataFlair\\Toplists\\Logging\\ErrorLogLogger' => __DIR__ . '/../..' . '/includes/Logging/ErrorLogLogger.php',
+        'DataFlair\\Toplists\\Logging\\LoggerFactory' => __DIR__ . '/../..' . '/includes/Logging/LoggerFactory.php',
+        'DataFlair\\Toplists\\Logging\\LoggerInterface' => __DIR__ . '/../..' . '/includes/Logging/LoggerInterface.php',
+        'DataFlair\\Toplists\\Logging\\NullLogger' => __DIR__ . '/../..' . '/includes/Logging/NullLogger.php',
+        'DataFlair\\Toplists\\Logging\\SentryLogger' => __DIR__ . '/../..' . '/includes/Logging/SentryLogger.php',
         'DataFlair\\Toplists\\Models\\Brand' => __DIR__ . '/../..' . '/includes/Brand.php',
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',
