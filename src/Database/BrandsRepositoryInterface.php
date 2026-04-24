@@ -29,6 +29,15 @@ interface BrandsRepositoryInterface
     public function findBySlug(string $slug): ?array;
 
     /**
+     * Look up a single brand row by display name.
+     * Used by the `render_casino_card` legacy cascade (Phase 4 extraction)
+     * when neither api_brand_id nor slug resolves a row.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findByName(string $name): ?array;
+
+    /**
      * Batch-fetch brand rows by upstream DataFlair brand IDs.
      * Returns a map keyed by `api_brand_id`. Used by `render_toplist_table()` (Phase 0B H7).
      *

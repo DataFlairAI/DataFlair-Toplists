@@ -18,6 +18,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
             'DataFlair\\Toplists\\Models\\' => 26,
             'DataFlair\\Toplists\\Logging\\' => 27,
             'DataFlair\\Toplists\\Http\\' => 24,
+            'DataFlair\\Toplists\\Frontend\\' => 28,
             'DataFlair\\Toplists\\Database\\' => 28,
             'DataFlair\\Toplists\\Cli\\' => 23,
         ),
@@ -47,6 +48,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Http\\' =>
         array (
             0 => __DIR__ . '/../..' . '/src/Http',
+        ),
+        'DataFlair\\Toplists\\Frontend\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Frontend',
         ),
         'DataFlair\\Toplists\\Database\\' =>
         array (
@@ -173,6 +178,13 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Database\\BrandsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/BrandsRepositoryInterface.php',
         'DataFlair\\Toplists\\Database\\ToplistsRepository' => __DIR__ . '/../..' . '/src/Database/ToplistsRepository.php',
         'DataFlair\\Toplists\\Database\\ToplistsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/ToplistsRepositoryInterface.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\CardRenderer' => __DIR__ . '/../..' . '/src/Frontend/Render/CardRenderer.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\CardRendererInterface' => __DIR__ . '/../..' . '/src/Frontend/Render/CardRendererInterface.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\ProsConsResolver' => __DIR__ . '/../..' . '/src/Frontend/Render/ProsConsResolver.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\TableRenderer' => __DIR__ . '/../..' . '/src/Frontend/Render/TableRenderer.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\TableRendererInterface' => __DIR__ . '/../..' . '/src/Frontend/Render/TableRendererInterface.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\ViewModels\\CasinoCardVM' => __DIR__ . '/../..' . '/src/Frontend/Render/ViewModels/CasinoCardVM.php',
+        'DataFlair\\Toplists\\Frontend\\Render\\ViewModels\\ToplistTableVM' => __DIR__ . '/../..' . '/src/Frontend/Render/ViewModels/ToplistTableVM.php',
         'DataFlair\\Toplists\\Http\\ApiClient' => __DIR__ . '/../..' . '/src/Http/ApiClient.php',
         'DataFlair\\Toplists\\Http\\HttpClientInterface' => __DIR__ . '/../..' . '/src/Http/HttpClientInterface.php',
         'DataFlair\\Toplists\\Http\\LogoDownloader' => __DIR__ . '/../..' . '/src/Http/LogoDownloader.php',

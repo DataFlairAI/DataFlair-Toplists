@@ -178,6 +178,12 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.13.0
+
+1.13.0 is the Phase 4 **rendering + ViewModels** release. No operator action required, no DB migration, no option rename — the god-class render methods retain their signatures and return byte-identical HTML. The casino-card template has moved from `includes/render-casino-card.php` to `views/frontend/casino-card.php`, but the old path is preserved as a forwarding shim for one release. Downstream integrators who include the template directly should update to the new path before 1.14.0 ships.
+
+Downstream integrators who want to supply a custom renderer can now register one via the `dataflair_card_renderer` or `dataflair_table_renderer` filter. Implement the matching interface (`CardRendererInterface` or `TableRendererInterface`) and return your instance; the plugin will consume it in place of the default. Filter returns that do not implement the documented interface are rejected and the default kept.
+
 ### To 1.11.2
 
 1.11.2 is the Phase 1 **observability foundation** release. Additive only — the old code paths continue to work unchanged. No operator action required.
@@ -216,6 +222,17 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.13.0
+- **Phase 4 — rendering + ViewModels extracted.** Casino-card and toplist-table render paths are now owned by dedicated classes. The casino-card template moved from `includes/render-casino-card.php` to `views/frontend/casino-card.php`; the old path stays as a forwarding shim for one release (deleted in Phase 5). No public contract change — `render_casino_card()` and `render_toplist_table()` on the god-class retain their signatures and return byte-identical HTML.
+- Added: `DataFlair\Toplists\Frontend\Render\CardRenderer` implementing `CardRendererInterface`. Wraps the casino-card template-include path through an immutable `CasinoCardVM` ViewModel (readonly `item`, `toplistId`, `customizations`, `prosConsData`, `brandMetaMap`). Preserves every Phase 0A / 0B / Phase 1 invariant — read-only (no `wp_remote_*`, no `wp_insert_post`, no `wp_handle_sideload`, no `update_option`, no `update_post_meta`), precomputed `local_logo_url` verbatim, `cached_review_post_id` preferred over `WP_Query`, prefetched `brand_meta_map` wins over per-card repository calls (H7 contract), and the `dataflair_review_url` filter fires on the resolved URL. The god-class delegator drops the legacy pre-Phase-0A fallback (it was unreachable in practice and violated the read-only contract).
+- Added: `DataFlair\Toplists\Frontend\Render\TableRenderer` implementing `TableRendererInterface`. Wraps the block-editor debug `layout=table` accordion through the immutable `ToplistTableVM` ViewModel (readonly `items`, `title`, `isStale`, `lastSynced`, `prosConsData`). HTML output is byte-identical to the god-class method.
+- Added: `DataFlair\Toplists\Frontend\Render\ProsConsResolver` trait shared by both renderers, keeping `resolve_pros_cons_for_table_item()` on `$this` so the template's call surface is unchanged when `$this` rebinds to the renderer instead of the god-class.
+- Added: lazy filter-based DI for the renderers — `dataflair_card_renderer`, `dataflair_table_renderer`. Filter returns that do not implement the documented interface are rejected and the default kept.
+- Added: `BrandsRepository::findByName(string $name)` — backs the legacy per-card name-based review-URL fallback cascade used by `CardRenderer` when the caller passes a null `brand_meta_map`.
+- Added: PSR-4 autoload entry for `DataFlair\Toplists\Frontend\` → `src/Frontend/`.
+- Changed: the god-class `render_casino_card()` shrinks from 638 lines to a 15-line delegator; `render_toplist_table()` from 136 lines to an 11-line delegator. Plugin file drops from 6,411 to 5,663 lines. The template path `includes/render-casino-card.php` still works through the forwarding shim.
+- Added: 17 new tests — `CasinoCardVMTest` + `ToplistTableVMTest` (readonly enforcement, defaults, full construction), `CardRendererTest` (Brain Monkey integration: map path does not query the repo, null-map falls back to `findByApiBrandId`, `dataflair_review_url` filter fires with the right initial URL in both paths), `TableRendererTest` (accordion wrapper, stale-notice gating, title omission, pros/cons propagation, offer fields rendered). Full suite: **341 tests, 793 assertions, all green**.
 
 ### 1.12.1
 - **Phase 3 — sync services extracted.** Continues the strangler-fig arc started in Phase 2. The toplist and brand sync pipelines are now owned by dedicated service classes; the god-class AJAX handlers shrink to 5–20 line delegators. No public contract change: every AJAX endpoint, every response shape, every filter, every action hook, every option name preserved byte-for-byte.
@@ -392,4 +409,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.12.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 1.13.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
