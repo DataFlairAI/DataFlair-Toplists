@@ -302,6 +302,7 @@ final class FakeBrandsRepo implements BrandsRepositoryInterface
 
     public function findByApiBrandId(int $id): ?array { return null; }
     public function findBySlug(string $slug): ?array { return null; }
+    public function findByName(string $name): ?array { return null; }
     public function findManyByApiBrandIds(array $ids): array { return []; }
     public function findReviewPostsByApiBrandIds(array $ids): array { return []; }
 

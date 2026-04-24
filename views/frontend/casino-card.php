@@ -1,0 +1,531 @@
+<?php
+/**
+ * Render a single casino card for toplist
+ * Using custom CSS classes for reliable styling
+ */
+
+// Extract data
+$brand = $item['brand'];
+$offer = $item['offer'];
+$position = $item['position'];
+
+$brand_name = esc_html($brand['name']);
+$brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_name);
+
+// Product type and labels — resolve once, used throughout the template
+$product_type = $brand['type'] ?? $brand['productType'] ?? $brand['product_type'] ?? 'casino';
+$labels = ProductTypeLabels::getLabels($product_type);
+
+// Handle logo - prioritize sync-time pre-computed local_logo_url column,
+// then legacy local_logo from the JSON blob, then external URLs.
+// Rendering must never hit the network — see RenderIsReadOnlyTest (Phase 0A H0).
+$logo_url = '';
+
+// First, check if we have the sync-time pre-computed logo URL (v1.10.8+).
+if (!empty($brand['local_logo_url'])) {
+    $logo_url = $brand['local_logo_url'];
+} elseif (!empty($brand['local_logo'])) {
+    $logo_url = $brand['local_logo'];
+} else {
+    // Fallback to external logo URLs
+    $logo_sources = array(
+        'logo',           // Standard key
+        'brandLogo',      // Alternative key
+        'logoUrl',        // Alternative key
+        'image',          // Alternative key
+        'logoImage'       // Alternative key
+    );
+
+    foreach ($logo_sources as $key) {
+        if (!empty($brand[$key])) {
+            if (is_array($brand[$key])) {
+                // Check for nested logo object with rectangular/square options
+                if (!empty($brand[$key]['rectangular'])) {
+                    $logo_url = $brand[$key]['rectangular'];
+                    break;
+                } elseif (!empty($brand[$key]['square'])) {
+                    $logo_url = $brand[$key]['square'];
+                    break;
+                } elseif (!empty($brand[$key]['url'])) {
+                    $logo_url = $brand[$key]['url'];
+                    break;
+                } elseif (!empty($brand[$key]['src'])) {
+                    $logo_url = $brand[$key]['src'];
+                    break;
+                } elseif (!empty($brand[$key]['path'])) {
+                    $logo_url = $brand[$key]['path'];
+                    break;
+                } elseif (!empty($brand[$key][0])) {
+                    $logo_url = $brand[$key][0];
+                    break;
+                }
+            } else {
+                // It's a string - use directly
+                $logo_url = $brand[$key];
+                break;
+            }
+        }
+    }
+}
+
+// Clean and validate the logo URL
+if (!empty($logo_url) && !is_array($logo_url)) {
+    $logo_url = esc_url($logo_url);
+} else {
+    $logo_url = '';
+}
+
+$rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);
+$offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
+
+// Pros / feature bullets
+// Default: review post meta (_review_pros, pipe-separated, entered by editor)
+// Override: block editor pros/cons (per-toplist, set in Gutenberg inspector)
+$features = array();
+$resolved_pros = array();
+$resolved_cons = array();
+
+// 1. Check for per-toplist block editor overrides (supports stable and legacy keys)
+if (isset($this) && method_exists($this, 'resolve_pros_cons_for_table_item')) {
+    $resolved = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
+    $resolved_pros = !empty($resolved['pros']) && is_array($resolved['pros']) ? $resolved['pros'] : array();
+    $resolved_cons = !empty($resolved['cons']) && is_array($resolved['cons']) ? $resolved['cons'] : array();
+    if (!empty($resolved_pros)) {
+        $features = array_slice($resolved_pros, 0, 3);
+    }
+}
+
+// 2. Default: review CPT _review_pros (try slug variants, then _review_brand_id).
+if (empty($features) && function_exists('post_type_exists') && post_type_exists('review')) {
+    $review_post      = null;
+    $slug_candidates  = array();
+    $brand_name_plain = isset($brand['name']) ? (string) $brand['name'] : '';
+
+    if (!empty($brand['slug'])) {
+        $slug_candidates[] = sanitize_title((string) $brand['slug']);
+        $slug_candidates[] = (string) $brand['slug'];
+    }
+    if ($brand_name_plain !== '') {
+        $slug_candidates[] = sanitize_title($brand_name_plain);
+    }
+    $slug_candidates = array_values(array_unique(array_filter($slug_candidates)));
+
+    foreach ($slug_candidates as $try_slug) {
+        $found = get_page_by_path($try_slug, OBJECT, 'review');
+        // Only use a public review: get_page_by_path can return drafts (e.g. duplicate brand slug).
+        if ($found instanceof WP_Post && 'publish' === $found->post_status) {
+            $review_post = $found;
+            break;
+        }
+    }
+
+    $api_brand_id = intval($brand['api_brand_id'] ?? $brand['id'] ?? 0);
+    if (!$review_post && $api_brand_id > 0) {
+        $review_by_brand = new WP_Query(
+            array(
+                'post_type'              => 'review',
+                'posts_per_page'         => 1,
+                'post_status'            => 'publish',
+                'orderby'                => 'modified',
+                'order'                  => 'DESC',
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => false,
+                'update_post_term_cache' => false,
+                'meta_query'             => array(
+                    array(
+                        'key'   => '_review_brand_id',
+                        'value' => (string) $api_brand_id,
+                    ),
+                ),
+            )
+        );
+        if ($review_by_brand->have_posts()) {
+            $review_post = $review_by_brand->posts[0];
+        }
+        wp_reset_postdata();
+    }
+
+    if ($review_post instanceof WP_Post) {
+        $review_pros_raw = get_post_meta($review_post->ID, '_review_pros', true);
+        if (is_string($review_pros_raw) && $review_pros_raw !== '') {
+            $review_pros_arr = array_filter(array_map('trim', explode('|', $review_pros_raw)));
+            if (!empty($review_pros_arr)) {
+                $features = array_slice($review_pros_arr, 0, 3);
+            }
+        }
+    }
+}
+
+// 3. API item features when still empty
+if (empty($features) && !empty($item['features'])) {
+    $features = array_slice($item['features'], 0, 3);
+}
+
+$detail_pros = !empty($resolved_pros) ? $resolved_pros : (!empty($item['pros']) && is_array($item['pros']) ? $item['pros'] : array());
+$detail_cons = !empty($resolved_cons) ? $resolved_cons : (!empty($item['cons']) && is_array($item['cons']) ? $item['cons'] : array());
+$detail_pros = array_values(array_filter(array_map('trim', $detail_pros), function($value) {
+    return $value !== '';
+}));
+$detail_cons = array_values(array_filter(array_map('trim', $detail_cons), function($value) {
+    return $value !== '';
+}));
+
+// Payment methods - check multiple possible keys
+$payment_methods = array();
+if (!empty($item['payment_methods'])) {
+    $payment_methods = $item['payment_methods'];
+} elseif (!empty($item['paymentMethods'])) {
+    $payment_methods = $item['paymentMethods'];
+} elseif (!empty($brand['payment_methods'])) {
+    $payment_methods = $brand['payment_methods'];
+} elseif (!empty($brand['paymentMethods'])) {
+    $payment_methods = $brand['paymentMethods'];
+}
+
+$bonus_code    = (!empty($offer['bonus_code']) && trim($offer['bonus_code']) !== 'N/A') ? $offer['bonus_code'] : '';
+$bonus_wagering = !empty($offer['bonus_wagering_requirement']) ? esc_html($offer['bonus_wagering_requirement']) : '';
+$min_deposit = !empty($offer['minimum_deposit']) ? esc_html($offer['minimum_deposit']) : '';
+$payout_time = !empty($offer['payout_time']) ? esc_html($offer['payout_time']) : '';
+$max_payout = !empty($offer['max_payout']) ? esc_html($offer['max_payout']) : 'None';
+$games_count = !empty($item['games_count']) ? esc_html($item['games_count']) : '';
+
+// Handle licenses (might be array or string)
+$licenses = '';
+if (!empty($brand['licenses'])) {
+    if (is_array($brand['licenses'])) {
+        $licenses = esc_html(implode(', ', $brand['licenses']));
+    } else {
+        $licenses = esc_html($brand['licenses']);
+    }
+}
+
+$reviewer = !empty($item['reviewer']) ? esc_html($item['reviewer']) : '';
+
+// Get tracker data and campaign name from API
+$tracker_url = '';
+$campaign_name = '';
+$has_valid_tracker = false;
+
+// First, check for trackerLink in trackers array (from API)
+// Trackers structure: offer.trackers[0].trackerLink and offer.trackers[0].campaignName
+if (!empty($offer['trackers']) && is_array($offer['trackers']) && count($offer['trackers']) > 0) {
+    $first_tracker = $offer['trackers'][0];
+    if (!empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
+        $tracker_url = $first_tracker['trackerLink'];
+        $campaign_name = !empty($first_tracker['campaignName']) ? $first_tracker['campaignName'] : '';
+        
+        // Store tracker URL in transient for redirect handler
+        if (!empty($campaign_name) && !empty($tracker_url)) {
+            $transient_key = 'dataflair_tracker_' . md5($campaign_name);
+            set_transient($transient_key, $tracker_url, 30 * DAY_IN_SECONDS); // 30 days expiry
+            $has_valid_tracker = true;
+        }
+    }
+}
+
+// Fallback to tracking_url (if trackers array doesn't have trackerLink)
+if (empty($tracker_url) && !empty($offer['tracking_url'])) {
+    $tracker_url = is_array($offer['tracking_url']) ? '' : $offer['tracking_url'];
+}
+
+// Fallback to other URL fields
+if (empty($tracker_url)) {
+    if (!empty($offer['url'])) {
+        $tracker_url = is_array($offer['url']) ? '' : $offer['url'];
+    } elseif (!empty($brand['url'])) {
+        $tracker_url = is_array($brand['url']) ? '' : $brand['url'];
+    }
+}
+
+// Generate redirect URL if we have campaign name, otherwise use direct URL
+if ($has_valid_tracker && !empty($campaign_name)) {
+    // Use /go/?campaign=campaign-name format
+    $casino_url = home_url('/go/?campaign=' . urlencode($campaign_name));
+} else {
+    // Fallback to direct URL (or disabled if no URL)
+    $casino_url = !empty($tracker_url) ? esc_url($tracker_url) : '#';
+}
+
+// Override wins above everything — set in plugin admin per brand
+if (!empty($brand['review_url_override'])) {
+    $review_url = esc_url($brand['review_url_override']);
+}
+
+// Get review URL - use pre-set URL from parent function, or generate it
+if (!isset($review_url) || empty($review_url)) {
+    // Check if review URL was passed from parent function
+    if (!empty($brand['review_url']) && !is_array($brand['review_url'])) {
+        $review_url = esc_url($brand['review_url']);
+    } else {
+        // Generate review URL: /reviews/{brand-slug}
+        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+        $review_url = home_url('/reviews/' . $brand_slug . '/');
+    }
+}
+
+// Fallback to casino URL if review URL is still empty
+if (empty($review_url)) {
+    $review_url = $casino_url;
+}
+
+// "Read Review" CTA: only when there is an explicit override or a published review CPT (not draft-only / slug placeholder for logo/name links).
+$show_read_review_link = !empty($brand['review_url_override'])
+    || !empty($dataflair_review_url_is_admin_override)
+    || !empty($dataflair_review_cpt_is_published);
+?>
+
+<div class="casino-card-wrapper" x-data="{ showDetails: false }" data-position="<?php echo esc_attr($position); ?>" data-product-type="<?php echo esc_attr(ProductTypeLabels::normalizeType($product_type)); ?>">
+    
+    <?php if ($position === 1): ?>
+    <div class="casino-card-ribbon">
+        <svg class="ribbon-star" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+        </svg>
+        OUR TOP CHOICE
+    </div>
+    <?php endif; ?>
+    
+    <div class="casino-card <?php echo $position === 1 ? 'top-choice' : ''; ?>">
+        
+        <div class="casino-card-main">
+            
+            <!-- Brand Column -->
+            <div class="casino-brand-col">
+                <div class="casino-position-badge">
+                    <?php echo esc_html($position); ?>
+                </div>
+                
+                <div class="casino-logo">
+                    <a href="<?php echo esc_url($review_url); ?>">
+                        <?php if (!empty($logo_url)): ?>
+                            <img src="<?php echo esc_url($logo_url); ?>" 
+                                 alt="<?php echo esc_attr($brand_name); ?>" 
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="casino-logo-placeholder" style="display: none;">
+                                <?php echo esc_html(substr($brand_name, 0, 2)); ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="casino-logo-placeholder">
+                                <?php echo esc_html(substr($brand_name, 0, 2)); ?>
+                            </div>
+                        <?php endif; ?>
+                    </a>
+                </div>
+                
+                <div class="casino-brand-info">
+                    <a href="<?php echo esc_url($review_url); ?>" class="casino-brand-name">
+                        <?php echo esc_html($brand_name); ?>
+                    </a>
+                    
+                    <?php if ($rating > 0): ?>
+                    <div class="casino-rating">
+                        <span class="rating-label">Our rating:</span>
+                        <svg class="rating-star" viewBox="0 0 20 20">
+                            <path fill="currentColor" d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
+                        <span class="rating-value"><?php echo esc_html($rating); ?><span class="rating-max">/5</span></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($show_read_review_link)) : ?>
+                    <a href="<?php echo esc_url($review_url); ?>" class="casino-review-link">
+                        Read Review
+                        <svg class="review-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <!-- Bonus Column -->
+            <div class="casino-bonus-col">
+                <div class="bonus-label"><?php echo esc_html($labels['offer_text_label']); ?></div>
+                <div class="bonus-text">
+                    <?php echo esc_html($offer_text ?: 'Bonus Available'); ?>
+                </div>
+                <?php if (!empty($bonus_code)): ?>
+                <div class="promo-code-row">
+                    <span class="promo-code-label">Promo Code:</span>
+                    <button class="promo-code-copy" data-code="<?php echo esc_attr($bonus_code); ?>">
+                        <span class="promo-code-value"><?php echo esc_html($bonus_code); ?></span>
+                        <svg class="promo-code-copy-icon" width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
+                        </svg>
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- Features Column -->
+            <div class="casino-features-col">
+                <?php if (!empty($features)): ?>
+                    <?php foreach ($features as $feature): ?>
+                    <div class="feature-item">
+                        <svg class="feature-check" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <span><?php echo esc_html($feature); ?></span>
+                    </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="feature-item no-features">No features listed</div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- CTA Column -->
+            <div class="casino-cta-col">
+                <?php if ($has_valid_tracker && !empty($casino_url) && $casino_url !== '#'): ?>
+                    <a href="<?php echo esc_url($casino_url); ?>" target="_blank" rel="nofollow" class="casino-cta-button">
+                        Visit Site
+                    </a>
+                <?php else: ?>
+                    <button type="button" class="casino-cta-button" disabled>
+                        Visit Site
+                    </button>
+                <?php endif; ?>
+                
+                <button type="button" class="casino-toggle-button" @click="showDetails = !showDetails">
+                    <span x-text="showDetails ? 'Show less' : 'Show more'">Show more</span>
+                    <svg class="toggle-arrow" :class="showDetails ? 'rotated' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+            </div>
+            
+        </div>
+        
+        <!-- Expandable Details -->
+        <div class="casino-card-details" 
+             x-show="showDetails" 
+             x-transition:enter="details-enter"
+             x-transition:enter-start="details-enter-start"
+             x-transition:enter-end="details-enter-end"
+             style="display: none;">
+            
+            <!-- Payment Methods -->
+            <?php if (!empty($payment_methods) && is_array($payment_methods)): ?>
+            <div class="details-section">
+                <h4 class="details-heading">
+                    <svg class="heading-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                    </svg>
+                    Payment Methods
+                </h4>
+                <div class="payment-methods-grid">
+                    <?php foreach (array_slice($payment_methods, 0, 10) as $method): 
+                        $method_name = is_array($method) ? ($method['name'] ?? '') : $method;
+                        $method_logo_raw = is_array($method) ? ($method['logo'] ?? '') : '';
+                        // Ensure logo is a string, not an array
+                        $method_logo = (!empty($method_logo_raw) && !is_array($method_logo_raw)) ? $method_logo_raw : '';
+                    ?>
+                        <?php if (!empty($method_logo)): ?>
+                        <div class="payment-icon-wrapper">
+                            <img src="<?php echo esc_url($method_logo); ?>" 
+                                 alt="<?php echo esc_attr($method_name); ?>" 
+                                 class="payment-icon"
+                                 title="<?php echo esc_attr($method_name); ?>">
+                        </div>
+                        <?php elseif (!empty($method_name)): ?>
+                        <div class="payment-text"><?php echo esc_html($method_name); ?></div>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Metrics Grid -->
+            <div class="casino-metrics-grid">
+                <?php if (!empty($bonus_wagering)): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['bonus_wagering_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($bonus_wagering); ?>x</div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($min_deposit)): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['min_deposit_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($min_deposit); ?></div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($games_count) && ProductTypeLabels::isFieldVisible($product_type, 'games_count')): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['games_count_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($games_count); ?>+</div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($payout_time)): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['payout_time_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($payout_time); ?></div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($max_payout)): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['max_payout_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($max_payout); ?></div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($licenses)): ?>
+                <div class="metric-item">
+                    <div class="metric-label"><?php echo esc_html($labels['licences_label']); ?></div>
+                    <div class="metric-value"><?php echo esc_html($licenses); ?></div>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php if (!empty($detail_pros) || !empty($detail_cons)): ?>
+            <div class="details-section">
+                <h4 class="details-heading">Pros &amp; Cons</h4>
+                <div class="grid grid-cols-1 tablet:grid-cols-2 gap-4">
+                    <?php if (!empty($detail_pros)): ?>
+                    <div>
+                        <h5 class="text-base font-semibold mb-2 text-green-700">Pros</h5>
+                        <ul class="list-disc list-inside flex flex-col gap-1">
+                            <?php foreach ($detail_pros as $pro): ?>
+                                <li class="text-sm text-gray-700"><?php echo esc_html($pro); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($detail_cons)): ?>
+                    <div>
+                        <h5 class="text-base font-semibold mb-2 text-red-600">Cons</h5>
+                        <ul class="list-disc list-inside flex flex-col gap-1">
+                            <?php foreach ($detail_cons as $con): ?>
+                                <li class="text-sm text-gray-700"><?php echo esc_html($con); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Footer Info -->
+            <div class="details-footer">
+                <?php if (!empty($reviewer)): ?>
+                <div class="reviewer-info">
+                    <svg class="reviewer-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clip-rule="evenodd"/>
+                    </svg>
+                    Reviewed by <strong><?php echo esc_html($reviewer); ?></strong>
+                </div>
+                <?php endif; ?>
+                
+                <div class="rg-disclaimer">
+                    <strong>18+ only.</strong> Please gamble responsibly. 
+                    <a href="https://www.gambleaware.org" target="_blank">www.gambleaware.org</a>
+                </div>
+            </div>
+            
+        </div>
+        
+    </div>
+    
+</div>

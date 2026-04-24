@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.12.1
+ * Version: 1.13.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.12.1');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.13.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,19 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.13.0</h4>
+<ul>
+  <li><strong>Phase 4 — rendering + ViewModels extracted.</strong> The casino-card and toplist-table renderers are now owned by dedicated classes. The casino-card template has moved from <code>includes/render-casino-card.php</code> to <code>views/frontend/casino-card.php</code>; the old path stays as a forwarding shim for one release (deleted in Phase 5). No public contract change: <code>render_casino_card()</code> and <code>render_toplist_table()</code> on the god-class retain their signatures and continue to return byte-identical HTML.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\CardRenderer</code> implementing <code>CardRendererInterface</code>. Wraps the casino-card template-include path through an immutable <code>CasinoCardVM</code> ViewModel (readonly <code>item</code>, <code>toplistId</code>, <code>customizations</code>, <code>prosConsData</code>, <code>brandMetaMap</code>). Preserves every Phase 0A / 0B / Phase 1 invariant — read-only (no <code>wp_remote_*</code>, no <code>wp_insert_post</code>, no <code>wp_handle_sideload</code>, no <code>update_option</code>, no <code>update_post_meta</code>), precomputed <code>local_logo_url</code> consumed verbatim, <code>cached_review_post_id</code> preferred over <code>WP_Query</code>, prefetched <code>brand_meta_map</code> wins over per-card repository calls (H7 contract), and the <code>dataflair_review_url</code> filter fires on the resolved URL. The god-class delegator drops the legacy pre-Phase-0A fallback (it was unreachable in practice and violated the read-only contract).</li>
+  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\TableRenderer</code> implementing <code>TableRendererInterface</code>. Wraps the block-editor debug <code>layout=table</code> accordion output through the immutable <code>ToplistTableVM</code> ViewModel (readonly <code>items</code>, <code>title</code>, <code>isStale</code>, <code>lastSynced</code>, <code>prosConsData</code>). HTML output is byte-identical to the god-class method.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\ProsConsResolver</code> trait — shared helper that both renderers consume. Keeps <code>resolve_pros_cons_for_table_item()</code> public so the template\'s <code>$this-></code> call surface is unchanged when <code>$this</code> rebinds to the renderer instance instead of the god-class.</li>
+  <li>Added: lazy filter-based DI for the renderers — <code>dataflair_card_renderer</code>, <code>dataflair_table_renderer</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
+  <li>Added: <code>BrandsRepository::findByName(string $name)</code> — backs the legacy per-card name-based review-URL fallback cascade used by <code>CardRenderer</code> when the caller passes a <code>null</code> <code>brand_meta_map</code>.</li>
+  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Frontend\\</code> → <code>src/Frontend/</code>. Existing entries retained.</li>
+  <li>Changed: the god-class <code>render_casino_card()</code> shrinks from 638 lines to a 15-line delegator, and <code>render_toplist_table()</code> from 136 lines to an 11-line delegator. Plugin file drops from 6,411 to 5,663 lines. Template path references still work through the forwarding shim at <code>includes/render-casino-card.php</code>.</li>
+  <li>Added: 17 new tests — <code>CasinoCardVMTest</code> + <code>ToplistTableVMTest</code> (readonly enforcement, default values, full-field construction), <code>CardRendererTest</code> (Brain Monkey integration — map-path does not query the repo, null-map falls back to <code>findByApiBrandId</code>, <code>dataflair_review_url</code> filter fires with the right initial URL in both paths), <code>TableRendererTest</code> (accordion wrapper, stale notice gating, title omission, pros/cons propagation through VM, offer fields rendered). Full suite: <strong>341 tests, 793 assertions, all green</strong>.</li>
+</ul>
+
 <h4>1.12.1</h4>
 <ul>
   <li><strong>Phase 3 — sync services extracted.</strong> Continues the strangler-fig arc started in Phase 2. The toplist and brand sync pipelines are now owned by dedicated service classes; the god-class AJAX handlers shrink to 5–20 line delegators. No public contract change: every AJAX endpoint, every response shape, every filter, every action hook, every option name preserved byte-for-byte.</li>
@@ -395,6 +408,16 @@ class DataFlair_Toplists {
     /** @var \DataFlair\Toplists\Sync\AlternativesSyncServiceInterface|null */
     private $alternatives_sync_service = null;
 
+    /**
+     * Phase 4 — renderers. Lazy-instantiated. See src/Frontend/Render/*.
+     *
+     * @var \DataFlair\Toplists\Frontend\Render\CardRendererInterface|null
+     */
+    private $card_renderer = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Render\TableRendererInterface|null */
+    private $table_renderer = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -583,6 +606,51 @@ class DataFlair_Toplists {
             ? $maybe
             : $default;
         return $this->alternatives_sync_service;
+    }
+
+    /**
+     * Lazy accessor for the Phase 4 card renderer.
+     * Filterable via `dataflair_card_renderer`. Filter returns that do not
+     * implement {@see \DataFlair\Toplists\Frontend\Render\CardRendererInterface}
+     * are rejected and the default is used.
+     *
+     * @return \DataFlair\Toplists\Frontend\Render\CardRendererInterface
+     */
+    private function card_renderer() {
+        if ($this->card_renderer instanceof \DataFlair\Toplists\Frontend\Render\CardRendererInterface) {
+            return $this->card_renderer;
+        }
+        $default = new \DataFlair\Toplists\Frontend\Render\CardRenderer(
+            $this->brands_repo(),
+            \DataFlair\Toplists\Logging\LoggerFactory::get()
+        );
+        $maybe = function_exists('apply_filters')
+            ? apply_filters('dataflair_card_renderer', $default)
+            : $default;
+        $this->card_renderer = ($maybe instanceof \DataFlair\Toplists\Frontend\Render\CardRendererInterface)
+            ? $maybe
+            : $default;
+        return $this->card_renderer;
+    }
+
+    /**
+     * Lazy accessor for the Phase 4 table (accordion) renderer.
+     * Filterable via `dataflair_table_renderer`.
+     *
+     * @return \DataFlair\Toplists\Frontend\Render\TableRendererInterface
+     */
+    private function table_renderer() {
+        if ($this->table_renderer instanceof \DataFlair\Toplists\Frontend\Render\TableRendererInterface) {
+            return $this->table_renderer;
+        }
+        $default = new \DataFlair\Toplists\Frontend\Render\TableRenderer();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_table_renderer', $default)
+            : $default;
+        $this->table_renderer = ($maybe instanceof \DataFlair\Toplists\Frontend\Render\TableRendererInterface)
+            ? $maybe
+            : $default;
+        return $this->table_renderer;
     }
 
     private function init_hooks() {
@@ -4450,141 +4518,16 @@ class DataFlair_Toplists {
      * @return string
      */
     private function render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data = array()) {
-        ob_start();
-        ?>
-        <div class="dataflair-toplist dataflair-toplist-table">
-            <?php if ($is_stale): ?>
-                <div class="dataflair-notice">
-                    ⚠️ This data was last updated on <?php echo date('M d, Y', $last_synced); ?>. Using cached version.
-                </div>
-            <?php endif; ?>
-
-            <?php if (!empty($title)): ?>
-                <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
-            <?php endif; ?>
-
-            <div class="dataflair-toplist-accordion" style="display:flex;flex-direction:column;gap:12px;">
-                <?php foreach ($items as $item): ?>
-                    <?php
-                    $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
-                    $offer = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
-                    $resolved_pros_cons = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
-
-                    $payment_methods = array();
-                    if (!empty($item['payment_methods']) && is_array($item['payment_methods'])) {
-                        $payment_methods = $item['payment_methods'];
-                    } elseif (!empty($item['paymentMethods']) && is_array($item['paymentMethods'])) {
-                        $payment_methods = $item['paymentMethods'];
-                    } elseif (!empty($brand['payment_methods']) && is_array($brand['payment_methods'])) {
-                        $payment_methods = $brand['payment_methods'];
-                    } elseif (!empty($brand['paymentMethods']) && is_array($brand['paymentMethods'])) {
-                        $payment_methods = $brand['paymentMethods'];
-                    }
-
-                    $licenses = '';
-                    if (!empty($brand['licenses'])) {
-                        $licenses = is_array($brand['licenses']) ? implode(', ', $brand['licenses']) : (string) $brand['licenses'];
-                    }
-
-                    $features = '';
-                    if (!empty($item['features']) && is_array($item['features'])) {
-                        $features = implode(' | ', $item['features']);
-                    }
-
-                    $product_type = '';
-                    if (!empty($brand['type'])) {
-                        $product_type = $brand['type'];
-                    } elseif (!empty($brand['productType'])) {
-                        $product_type = $brand['productType'];
-                    } elseif (!empty($brand['product_type'])) {
-                        $product_type = $brand['product_type'];
-                    }
-
-                    $rating = '';
-                    if (!empty($item['rating'])) {
-                        $rating = (string) $item['rating'];
-                    } elseif (!empty($brand['rating'])) {
-                        $rating = (string) $brand['rating'];
-                    }
-                    ?>
-                    <details style="border:1px solid #d1d5db;border-radius:8px;background:#fff;">
-                        <summary style="cursor:pointer;padding:12px 14px;font-weight:600;background:#f9fafb;">
-                            #<?php echo esc_html((string) (isset($item['position']) ? $item['position'] : '')); ?>
-                            <?php echo esc_html((string) (isset($brand['name']) ? $brand['name'] : 'Unknown Brand')); ?>
-                        </summary>
-                        <div style="padding:12px;display:flex;flex-direction:column;gap:12px;">
-                            <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                                <tbody>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;width:180px;">Product Type</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) $product_type); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Rating</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($rating); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Offer</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['offerText']) ? $offer['offerText'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Bonus Code</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['bonus_code']) ? $offer['bonus_code'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Bonus Wagering</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['bonus_wagering_requirement']) ? $offer['bonus_wagering_requirement'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Min Deposit</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['minimum_deposit']) ? $offer['minimum_deposit'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Payout Time</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['payout_time']) ? $offer['payout_time'] : '')); ?></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-
-                            <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                                <tbody>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;width:180px;">Max Payout</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($offer['max_payout']) ? $offer['max_payout'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Games Count</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html((string) (isset($item['games_count']) ? $item['games_count'] : '')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Payment Methods</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($payment_methods) ? implode(', ', $payment_methods) : ''); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Licenses</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($licenses); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Features</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html($features); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Pros</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($resolved_pros_cons['pros']) ? implode(' | ', $resolved_pros_cons['pros']) : ''); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th style="text-align:left;border:1px solid #d1d5db;padding:8px;">Cons</th>
-                                        <td style="border:1px solid #d1d5db;padding:8px;"><?php echo esc_html(!empty($resolved_pros_cons['cons']) ? implode(' | ', $resolved_pros_cons['cons']) : ''); ?></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </details>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php
-        return ob_get_clean();
+        // Phase 4 — delegate to TableRenderer. Filterable via `dataflair_table_renderer`.
+        return $this->table_renderer()->render(
+            new \DataFlair\Toplists\Frontend\Render\ViewModels\ToplistTableVM(
+                (array) $items,
+                (string) $title,
+                (bool) $is_stale,
+                (int) $last_synced,
+                (array) $pros_cons_data
+            )
+        );
     }
 
     /**
@@ -4945,643 +4888,20 @@ class DataFlair_Toplists {
      * @codeCoverageIgnore
      */
     private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array(), $brand_meta_map = null) {
-        global $wpdb;
-        // Check if new template exists
-        $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
-        require_once DATAFLAIR_PLUGIN_DIR . 'includes/ProductTypeLabels.php';
-
-        if (file_exists($template_path)) {
-            // ── Phase 0A H0: render_casino_card() is read-only ─────────────────────────
-            // Prior versions sideloaded the brand logo via a theme helper and auto-
-            // created a review CPT on cold page views; both are now sync-time concerns.
-            // Logo URL + review post ID live on wp_dataflair_brands and are populated
-            // by download_brand_logo() at sync time or by `wp dataflair reconcile-reviews`.
-            //
-            // Phase 0B H7: per-card $wpdb->prepare lookups collapsed into a single
-            // batched prefetch done by the caller. We consult the map first; only if
-            // it's absent (legacy callers) do we fall back to per-card queries.
-            $brand = $item['brand'];
-            $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-            $precomputed_local_logo_url = null;
-            $precomputed_review_post_id = null;
-            $override = null;
-
-            $meta_row = null;
-            if (is_array($brand_meta_map)) {
-                $meta_row = $this->lookup_brand_meta_from_map($brand, $brand_meta_map);
-            }
-
-            if ($meta_row !== null) {
-                $precomputed_local_logo_url = $meta_row->local_logo_url ?? null;
-                $precomputed_review_post_id = !empty($meta_row->cached_review_post_id)
-                    ? intval($meta_row->cached_review_post_id)
-                    : null;
-                $override = $meta_row->review_url_override ?? null;
-            } elseif ($brand_meta_map === null) {
-                // Legacy fallback: no prefetch map supplied by the caller. Use the
-                // old per-card cascade — 2 queries for the logo/review_post row,
-                // plus up to 4 cascading queries for review_url_override.
-                if (!empty($brand['api_brand_id'])) {
-                    $precomputed_row = $wpdb->get_row($wpdb->prepare(
-                        "SELECT local_logo_url, cached_review_post_id FROM $brands_table WHERE api_brand_id = %d",
-                        intval($brand['api_brand_id'])
-                    ));
-                    if ($precomputed_row) {
-                        $precomputed_local_logo_url = $precomputed_row->local_logo_url;
-                        $precomputed_review_post_id = !empty($precomputed_row->cached_review_post_id)
-                            ? intval($precomputed_row->cached_review_post_id)
-                            : null;
-                    }
-                }
-                if (!empty($brand['api_brand_id'])) {
-                    $override = $wpdb->get_var($wpdb->prepare(
-                        "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
-                        intval($brand['api_brand_id'])
-                    ));
-                }
-                if (empty($override) && !empty($brand['id'])) {
-                    $override = $wpdb->get_var($wpdb->prepare(
-                        "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
-                        intval($brand['id'])
-                    ));
-                }
-                if (empty($override) && !empty($brand['slug'])) {
-                    $override = $wpdb->get_var($wpdb->prepare(
-                        "SELECT review_url_override FROM $brands_table WHERE slug = %s",
-                        $brand['slug']
-                    ));
-                }
-                if (empty($override) && !empty($brand['name'])) {
-                    $override = $wpdb->get_var($wpdb->prepare(
-                        "SELECT review_url_override FROM $brands_table WHERE name = %s",
-                        $brand['name']
-                    ));
-                }
-            }
-
-            if (!empty($precomputed_local_logo_url)) {
-                $brand['local_logo_url'] = $precomputed_local_logo_url;
-            }
-
-            // review_url_override resolution — either came from the prefetched map
-            // or from the legacy cascade above.
-            $review_url = null;
-            // Used by render-casino-card.php: show "Read Review" only for published CPT
-            // or explicit URL override (not draft-only / slug placeholder).
-            $dataflair_review_url_is_admin_override = false;
-            $dataflair_review_cpt_is_published = false;
-
-            if (!empty($override)) {
-                $review_url = esc_url($override);
-                $dataflair_review_url_is_admin_override = true;
-            }
-
-            // Published review CPT via precomputed cached_review_post_id — read-only.
-            if (empty($review_url)
-                && $precomputed_review_post_id
-                && get_post_status($precomputed_review_post_id) === 'publish'
-            ) {
-                $review_url = get_permalink($precomputed_review_post_id);
-                $dataflair_review_cpt_is_published = true;
-            }
-
-            if (empty($review_url)) {
-                // Fallback: /reviews/{slug}/ URL. Not guaranteed to resolve to a real
-                // page, so `Read Review` CTA stays hidden unless the CPT is published.
-                $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
-                $review_url = home_url('/reviews/' . $brand_slug . '/');
-            }
-
-            // Pass review URL to template (filter allows theme-level overrides)
-            $review_url = apply_filters('dataflair_review_url', $review_url, $brand, $item);
-            
-            // Update item with processed brand data (including local_logo)
-            $item['brand'] = $brand;
-            
-            // Use new template
-            ob_start();
-            include $template_path;
-            return ob_get_clean();
-        }
-        
-        // Fallback to original rendering (legacy support)
-        // Get customization values with defaults
-        $ribbon_bg = !empty($customizations['ribbonBgColor']) ? $customizations['ribbonBgColor'] : 'brand-600';
-        $ribbon_text_color = !empty($customizations['ribbonTextColor']) ? $customizations['ribbonTextColor'] : 'white';
-        $ribbon_text = !empty($customizations['ribbonText']) ? $customizations['ribbonText'] : 'Our Top Choice';
-        $rank_bg = !empty($customizations['rankBgColor']) ? $customizations['rankBgColor'] : 'gray-100';
-        $rank_text = !empty($customizations['rankTextColor']) ? $customizations['rankTextColor'] : 'gray-900';
-        $rank_radius = !empty($customizations['rankBorderRadius']) ? $customizations['rankBorderRadius'] : 'rounded';
-        $brand_link = !empty($customizations['brandLinkColor']) ? $customizations['brandLinkColor'] : 'brand-600';
-        $bonus_label = !empty($customizations['bonusLabelStyle']) ? $customizations['bonusLabelStyle'] : 'text-gray-600';
-        $bonus_text = !empty($customizations['bonusTextStyle']) ? $customizations['bonusTextStyle'] : 'text-gray-900 text-lg leading-6 font-semibold';
-        $feature_check_bg = !empty($customizations['featureCheckBg']) ? $customizations['featureCheckBg'] : 'green-100';
-        $feature_check_color = !empty($customizations['featureCheckColor']) ? $customizations['featureCheckColor'] : 'green-600';
-        $feature_text = !empty($customizations['featureTextColor']) ? $customizations['featureTextColor'] : 'gray-600';
-        $cta_bg = !empty($customizations['ctaBgColor']) ? $customizations['ctaBgColor'] : 'brand-600';
-        $cta_hover_bg = !empty($customizations['ctaHoverBgColor']) ? $customizations['ctaHoverBgColor'] : 'brand-700';
-        $cta_text = !empty($customizations['ctaTextColor']) ? $customizations['ctaTextColor'] : 'white';
-        $cta_radius = !empty($customizations['ctaBorderRadius']) ? $customizations['ctaBorderRadius'] : 'rounded';
-        $cta_shadow = !empty($customizations['ctaShadow']) ? $customizations['ctaShadow'] : 'shadow-md';
-        $metric_label = !empty($customizations['metricLabelStyle']) ? $customizations['metricLabelStyle'] : 'text-gray-600';
-        $metric_value = !empty($customizations['metricValueStyle']) ? $customizations['metricValueStyle'] : 'text-gray-900 font-semibold';
-        $rg_border = !empty($customizations['rgBorderColor']) ? $customizations['rgBorderColor'] : 'gray-300';
-        $rg_text = !empty($customizations['rgTextColor']) ? $customizations['rgTextColor'] : 'gray-600';
-        
-        // Helper function to build Tailwind classes
-        $build_class = function($base, $custom) {
-            if (empty($custom)) {
-                return '';
-            }
-            // If custom value contains brackets, it's already a Tailwind arbitrary value like bg-[#ff0000]
-            if (strpos($custom, '[') !== false) {
-                return $custom;
-            }
-            // If it already contains the base prefix (e.g., "bg-blue-600"), return as-is
-            if (strpos($custom, $base . '-') === 0) {
-                return $custom;
-            }
-            // If it's a full class name like "text-gray-600", return as-is
-            if (preg_match('/^(text|bg|border|hover:bg|hover:text)-/', $custom)) {
-                return $custom;
-            }
-            // Otherwise, prepend the base class prefix
-            return $base . '-' . $custom;
-        };
-        
-                            $brand = $item['brand'];
-                            $offer = $item['offer'];
-                            $position = $item['position'];
-        
-        // Get casino URL from API data
-        $casino_url = '';
-        if (!empty($offer['tracking_url'])) {
-            $casino_url = $offer['tracking_url'];
-        } elseif (!empty($offer['url'])) {
-            $casino_url = $offer['url'];
-        } elseif (!empty($offer['link'])) {
-            $casino_url = $offer['link'];
-        } elseif (!empty($brand['url'])) {
-            $casino_url = $brand['url'];
-        } elseif (!empty($brand['website'])) {
-            $casino_url = $brand['website'];
-        } elseif (!empty($item['url'])) {
-            $casino_url = $item['url'];
-        }
-        
-        // Allow filtering of URL via hook
-        $casino_url = apply_filters('dataflair_casino_url', $casino_url, $item, $brand, $offer);
-        
-        // Fallback to # if no URL found
-        if (empty($casino_url)) {
-            $casino_url = '#';
-        }
-        
-        // Extract data
-        $brand_name = esc_html($brand['name']);
-        $brand_slug = sanitize_title($brand_name);
-        $logo_url = !empty($brand['logo']) ? esc_url($brand['logo']) : '';
-        $review_url = !empty($brand['review_url']) ? esc_url($brand['review_url']) : $casino_url;
-        $offer_text = !empty($offer['offerText']) ? esc_html($offer['offerText']) : '';
-        $rating = !empty($item['rating']) ? floatval($item['rating']) : (!empty($brand['rating']) ? floatval($brand['rating']) : 0);
-        $bonus_wagering = !empty($offer['bonus_wagering_requirement']) ? esc_html($offer['bonus_wagering_requirement']) : '';
-        $min_deposit = !empty($offer['minimum_deposit']) ? esc_html($offer['minimum_deposit']) : '';
-        $payout_time = !empty($offer['payout_time']) ? esc_html($offer['payout_time']) : '';
-        $max_payout = !empty($offer['max_payout']) ? esc_html($offer['max_payout']) : 'None';
-        $licenses = !empty($brand['licenses']) ? esc_html(implode(', ', $brand['licenses'])) : '';
-        $games_count = !empty($item['games_count']) ? esc_html($item['games_count']) : '';
-        $features = !empty($item['features']) ? $item['features'] : array();
-        $payment_methods = !empty($item['payment_methods']) ? $item['payment_methods'] : array();
-        $allowed_countries = !empty($item['allowed_countries']) ? esc_attr(implode(',', $item['allowed_countries'])) : '';
-        
-        // Get default pros/cons from API
-        $api_pros = !empty($item['pros']) ? $item['pros'] : array();
-        $api_cons = !empty($item['cons']) ? $item['cons'] : array();
-        
-        // Generate unique ID for this casino card
-        $card_id = 'casino-details-' . $brand_slug . '-' . $position;
-        
-        ob_start();
-        ?>
-        <div
-            class="relative w-full mb-4 geot-element"
-            <?php if ($position === 1): ?>data-has-casino-level-highlight=""<?php endif; ?>
-            x-data="{ showDetails: false }"
-            data-entry="casino"
-            data-position="<?php echo esc_attr($position); ?>"
-            data-gtm-module="casino-toplist"
-            data-gtm-entry="casino"
-            data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-            data-gtm-position="<?php echo esc_attr($position); ?>"
-        >
-            <?php if ($position === 1): ?>
-                <div
-                    class="flex h-10 justify-center items-center text-sm leading-[22px] uppercase rounded-tl-2xl rounded-tr-2xl <?php echo esc_attr($build_class('text', $ribbon_text_color)); ?> <?php echo esc_attr($build_class('bg', $ribbon_bg)); ?>"
-                    data-gtm-element="highlight-badge"
-                >
-                    <?php echo esc_html($ribbon_text); ?>
-                </div>
-                                    <?php endif; ?>
-
-            <div
-                class="casino-row-container w-full relative shadow-[0_2px_6px_0px_rgba(71,85,105,0.1)] bg-white-50 p-4 border-solid border-2 <?php echo esc_attr($build_class('border', $ribbon_bg)); ?> rounded-bl-2xl rounded-br-2xl <?php echo $position === 1 ? '' : 'rounded-tl-2xl rounded-tr-2xl'; ?>"
-                <?php if (!empty($allowed_countries)): ?>data-allowed-countries="<?php echo $allowed_countries; ?>"<?php endif; ?>
-                x-data="{ showDetails: false }"
-                data-gtm-element="casino-card"
-            >
-                <div class="grid grid-cols-1 tablet:grid-cols-2 gap-4 tablet:gap-6 desktop:flex desktop:gap-6 justify-between relative z-10">
-                    <div class="flex desktop:w-81 flex-col tablet:flex-row gap-4">
-                        <div class="flex gap-2 items-center justify-center tablet:justify-start">
-                            <span
-                                class="toplist-position-number <?php echo esc_attr($build_class('bg', $rank_bg)); ?> <?php echo esc_attr($build_class('text', $rank_text)); ?> <?php echo esc_attr($rank_radius); ?> w-6 h-6 flex justify-center items-center text-sm font-medium"
-                                data-gtm-element="toplist-position"
-                                data-gtm-position="<?php echo esc_attr($position); ?>"
-                            >
-                                <?php echo esc_html($position); ?>
-                            </span>
-                            <?php if (!empty($logo_url)): ?>
-                                <a
-                                    href="<?php echo esc_url($review_url); ?>"
-                                    class="w-23 tablet:w-30 h-[69px] tablet:h-23 flex justify-center items-center rounded-lg"
-                                    data-gtm-element="logo-link"
-                                    data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                                >
-                                    <img
-                                        decoding="async"
-                                        loading="lazy"
-                                        class="column max-sm:h-full max-sm:object-contain w-23 tablet:w-30 h-[69px] tablet:h-23 rounded-lg"
-                                        src="<?php echo $logo_url; ?>"
-                                        alt="<?php echo $brand_name; ?>"
-                                        width="120"
-                                        height="90"
-                                    >
-                                </a>
-                            <?php endif; ?>
-                            <div class="flex flex-col gap-2 whitespace-nowrap">
-                                <a
-                                    href="<?php echo esc_url($review_url); ?>"
-                                    class="text-base font-semibold text-gray-900 no-underline"
-                                    data-field="brand-name"
-                                    data-gtm-element="brand-name-link"
-                                    data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                                >
-                                    <?php echo $brand_name; ?>
-                                </a>
-                                <?php if ($rating > 0): ?>
-                                    <div
-                                        class="flex max-w-fit rounded bg-gray-100 p-1 text-sm leading-5.5 gap-1 items-center h-8 text-gray-600"
-                                        data-gtm-element="rating-badge"
-                                        data-gtm-metric="rating"
-                                        data-gtm-value="<?php echo esc_attr($rating); ?>"
-                                    >
-                                        <span>Our rating:</span>
-                                        <span class="icon-star-full <?php echo esc_attr($build_class('text', $brand_link)); ?> text-sm"></span>
-                                        <span><?php echo esc_html($rating); ?>/5</span>
-                                </div>
-                                    <?php endif; ?>
-                                <a
-                                    href="<?php echo esc_url($review_url); ?>"
-                                    class="hidden tablet:inline text-sm font-normal <?php echo esc_attr($build_class('text', $brand_link)); ?> leading-4 underline hover:no-underline"
-                                    data-gtm-element="review-link"
-                                    data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                                >
-                                    <?php echo $brand_name; ?> Review
-                                </a>
-                            </div>
-                        </div>
-                        <a
-                            href="<?php echo esc_url($review_url); ?>"
-                            class="tablet:hidden text-center w-full text-sm font-normal <?php echo esc_attr($build_class('text', $brand_link)); ?> leading-4 underline"
-                            data-gtm-element="review-link"
-                            data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                        >
-                            <?php echo $brand_name; ?> Review
-                        </a>
-                    </div>
-
-                    <div class="flex flex-col gap-1 items-center text-center justify-center desktop:w-77">
-                        <span
-                            class="<?php echo esc_attr($bonus_label); ?> text-sm leading-5.5"
-                            data-gtm-element="bonus-label"
-                        >
-                            Welcome bonus:
-                        </span>
-                        <div>
-                            <a
-                                class="<?php echo esc_attr($bonus_text); ?> <?php echo esc_attr('hover:' . $build_class('text', $brand_link)); ?>"
-                                href="<?php echo esc_url($casino_url); ?>"
-                                target="_blank"
-                                rel="nofollow noreferrer"
-                                data-restricted-countries=""
-                                data-field="bonus-offer"
-                                data-gtm-element="bonus-offer-link"
-                                data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                            >
-                                <?php echo $offer_text; ?>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="desktop:w-77">
-                        <?php if (!empty($features)): ?>
-                            <div class="flex">
-                                <ul
-                                    class="flex flex-col gap-2"
-                                    data-gtm-element="features-list"
-                                >
-                                    <?php foreach ($features as $feature): ?>
-                                        <li
-                                            class="flex gap-2 items-center text-sm leading-[22px] <?php echo esc_attr($build_class('text', $feature_text)); ?>"
-                                            data-gtm-element="feature-item"
-                                            data-gtm-feature="<?php echo esc_attr(sanitize_title($feature)); ?>"
-                                        >
-                                            <span class="icon-check rounded-2xl flex items-center justify-center w-4 h-4 <?php echo esc_attr($build_class('text', $feature_check_color)); ?> <?php echo esc_attr($build_class('bg', $feature_check_bg)); ?>"></span>
-                                            <?php echo esc_html($feature); ?>
-                                        </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
-                                    <?php endif; ?>
-                                </div>
-
-                    <div class="flex flex-col gap-4 items-center desktop:w-45">
-                        <div class="w-full tablet:w-auto desktop:w-full">
-                            <a
-                                class="btn group btn--primary geot-element <?php echo esc_attr($build_class('bg', $cta_bg)); ?> <?php echo esc_attr('hover:' . $build_class('bg', $cta_hover_bg)); ?> <?php echo esc_attr($build_class('text', $cta_text)); ?> <?php echo esc_attr($cta_radius); ?> <?php echo esc_attr($cta_shadow); ?>"
-                                href="<?php echo esc_url($casino_url); ?>"
-                                target="_blank"
-                                rel="nofollow noreferrer"
-                                data-track-link="data-track-link"
-                                data-promo-code=""
-                                data-field="cta-link"
-                                data-gtm-element="visit-site-cta"
-                                data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                                data-gtm-position="<?php echo esc_attr($position); ?>"
-                            >
-                                <span class="whitespace-nowrap">
-                                    Visit Site
-                                </span>
-                                <span class="icon-arrow-right text-2xl"></span>
-                            </a>
-                        </div>
-
-                        <a
-                            href="#"
-                            class="view-more-button no-underline <?php echo esc_attr($build_class('text', $brand_link)); ?> text-base"
-                            x-text="showDetails ? 'Show less -' : 'Show more +'"
-                            @click.prevent="showDetails = !showDetails"
-                            data-gtm-element="details-toggle"
-                            data-gtm-brand="<?php echo esc_attr($brand_slug); ?>"
-                        >
-                            Show more +
-                        </a>
-                    </div>
-                </div>
-
-                <div
-                    style="max-height: 166px"
-                    x-ref="container1"
-                    x-bind:style="showDetails ? 'max-height: ' + $refs.container1.scrollHeight + 'px' : ''"
-                    class="relative overflow-hidden transition-all max-h-0 duration-500 z-10"
-                    id="<?php echo esc_attr($card_id); ?>"
-                    data-gtm-element="details-container"
-                >
-                    <div class="flex justify-between mt-4 gap-4 desktop:gap-12 flex-col desktop:flex-row">
-                        <?php if (!empty($payment_methods)): ?>
-                            <div class="flex tablet:gap-12 desktop:w-72">
-                                <div
-                                    class="flex flex-col w-full tablet:w-1/2 desktop:w-full desktop:flex-basis-[302px] desktop:flex-grow-0 desktop:flex-shrink-0 gap-2"
-                                    data-gtm-element="payment-methods-section"
-                                >
-                                    <span class="text-gray-600 text-base">Payment methods</span>
-                                    <div class="grid grid-cols-5 gap-2 justify-between">
-                                        <?php foreach ($payment_methods as $method): 
-                                            $method_name = is_array($method) ? ($method['name'] ?? '') : $method;
-                                            $method_logo = is_array($method) ? ($method['logo'] ?? '') : '';
-                                            $method_slug = sanitize_title($method_name);
-                                        ?>
-                                            <?php if (!empty($method_logo)): ?>
-                                                <img
-                                                    loading="lazy"
-                                                    decoding="async"
-                                                    src="<?php echo esc_url($method_logo); ?>"
-                                                    width="48"
-                                                    height="36"
-                                                    alt="<?php echo esc_attr($method_name); ?>"
-                                                    class="border border-gray-300 rounded w-12 h-9"
-                                                    data-gtm-element="payment-method"
-                                                    data-gtm-method="<?php echo esc_attr($method_slug); ?>"
-                                                >
-                                    <?php endif; ?>
-                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-
-                                <div class="hidden tablet:flex desktop:hidden tablet:flex-col tablet:gap-4 tablet:w-1/2 desktop:w-full">
-                                    <?php if (!empty($bonus_wagering)): ?>
-                                        <div
-                                            class="flex flex-col text-base <?php echo esc_attr($metric_label); ?>"
-                                            data-gtm-element="metric"
-                                            data-gtm-metric="bonus-wagering"
-                                            data-gtm-value="<?php echo esc_attr($bonus_wagering); ?>x-bonus"
-                                        >
-                                            Bonus Wagering
-                                            <div>
-                                                <span class="geot-element <?php echo esc_attr($metric_value); ?>">
-                                                    <?php echo esc_html($bonus_wagering); ?>x bonus
-                                                </span>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                    <?php if (!empty($payout_time)): ?>
-                                        <div
-                                            class="flex flex-col text-base <?php echo esc_attr($metric_label); ?>"
-                                            data-gtm-element="metric"
-                                            data-gtm-metric="payout-time"
-                                            data-gtm-value="<?php echo esc_attr($payout_time); ?>"
-                                        >
-                                            Payout Time
-                                            <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($payout_time); ?></span>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <div class="grid grid-cols-2 gap-4 tablet:gap-y-4 tablet:gap-x-12 desktop:grid-cols-3 desktop:gap-4 desktop:flex-grow">
-                            <?php if (!empty($bonus_wagering)): ?>
-                                <div
-                                    class="flex tablet:hidden desktop:flex flex-col text-base <?php echo esc_attr($metric_label); ?>"
-                                    data-gtm-element="metric"
-                                    data-gtm-metric="bonus-wagering"
-                                    data-gtm-value="<?php echo esc_attr($bonus_wagering); ?>x-bonus"
-                                >
-                                    Bonus Wagering
-                                    <div>
-                                        <span class="geot-element <?php echo esc_attr($metric_value); ?>">
-                                            <?php echo esc_html($bonus_wagering); ?>x bonus
-                                        </span>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($min_deposit)): ?>
-                                <div
-                                    class="flex flex-col text-base <?php echo esc_attr($metric_label); ?> tablet:w-1/2 desktop:w-full"
-                                    data-gtm-element="metric"
-                                    data-gtm-metric="min-deposit"
-                                    data-gtm-value="<?php echo esc_attr($min_deposit); ?>"
-                                >
-                                    Min Deposit
-                                    <div>
-                                        <span class="geot-element <?php echo esc_attr($metric_value); ?>">
-                                            <?php echo esc_html($min_deposit); ?>
-                                        </span>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($games_count)): ?>
-                                <div
-                                    class="flex flex-col tablet:w-1/2 desktop:w-full text-base <?php echo esc_attr($metric_label); ?>"
-                                    data-gtm-element="metric"
-                                    data-gtm-metric="casino-games"
-                                    data-gtm-value="<?php echo esc_attr($games_count); ?>"
-                                >
-                                    Casino Games
-                                    <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($games_count); ?></span>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($payout_time)): ?>
-                                <div class="flex tablet:hidden desktop:flex">
-                                    <div
-                                        class="flex flex-col text-base <?php echo esc_attr($metric_label); ?>"
-                                        data-gtm-element="metric"
-                                        data-gtm-metric="payout-time"
-                                        data-gtm-value="<?php echo esc_attr($payout_time); ?>"
-                                    >
-                                        Payout Time
-                                        <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($payout_time); ?></span>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($max_payout)): ?>
-                                <div
-                                    class="flex flex-col tablet:w-1/2 desktop:w-full text-base <?php echo esc_attr($metric_label); ?>"
-                                    data-gtm-element="metric"
-                                    data-gtm-metric="max-payout"
-                                    data-gtm-value="<?php echo esc_attr($max_payout); ?>"
-                                >
-                                    Max Payout
-                                    <span class="<?php echo esc_attr($metric_value); ?>"><?php echo esc_html($max_payout); ?></span>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($licenses)): ?>
-                                <div
-                                    class="flex flex-col tablet:w-1/2 text-base <?php echo esc_attr($metric_label); ?> desktop:w-full"
-                                    data-gtm-element="metric"
-                                    data-gtm-metric="licences"
-                                    data-gtm-value="<?php echo esc_attr(strtolower(str_replace(' ', '-', $licenses))); ?>"
-                                >
-                                    Licences
-                                    <span class="<?php echo esc_attr($metric_value); ?>"><?php echo $licenses; ?></span>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <?php
-                    // Get pros/cons for this casino
-                    // Start with API defaults, then override with block-level customizations (stable + legacy keys)
-                    $resolved_pros_cons = $this->resolve_pros_cons_for_table_item($item, $pros_cons_data);
-                    $pros = !empty($resolved_pros_cons['pros']) ? $resolved_pros_cons['pros'] : $api_pros;
-                    $cons = !empty($resolved_pros_cons['cons']) ? $resolved_pros_cons['cons'] : $api_cons;
-                    ?>
-                    
-                    <?php if (!empty($pros) || !empty($cons)): ?>
-                        <div class="flex flex-col gap-4 pt-4 mt-4 border-t border-solid <?php echo esc_attr($build_class('border', $rg_border)); ?>">
-                            <?php if (!empty($pros)): ?>
-                                <div data-gtm-element="pros-section">
-                                    <h4 class="text-base font-semibold <?php echo esc_attr($build_class('text', $brand_link)); ?> mb-2">Pros:</h4>
-                                    <ul class="list-disc list-inside flex flex-col gap-2">
-                                        <?php foreach ($pros as $pro): ?>
-                                            <?php if (!empty(trim($pro))): ?>
-                                                <li class="text-sm <?php echo esc_attr($build_class('text', $feature_text)); ?>"><?php echo esc_html($pro); ?></li>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($cons)): ?>
-                                <div data-gtm-element="cons-section">
-                                    <h4 class="text-base font-semibold text-red-600 mb-2">Cons:</h4>
-                                    <ul class="list-disc list-inside flex flex-col gap-2">
-                                        <?php foreach ($cons as $con): ?>
-                                            <?php if (!empty(trim($con))): ?>
-                                                <li class="text-sm <?php echo esc_attr($build_class('text', $feature_text)); ?>"><?php echo esc_html($con); ?></li>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endif; ?>
-
-                    <div
-                        class="flex gap-1 items-center text-sm leading-5.5 text-gray-600 pt-4"
-                        data-gtm-element="reviewer-section"
-                    >
-                        <span>
-                            Reviewed by
-                            <a
-                                href="#"
-                                class="underline"
-                                data-gtm-element="reviewer-link"
-                            >
-                                DataFlair
-                            </a>
-                        </span>
-                        <img
-                            loading="lazy"
-                            decoding="async"
-                            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2300a86b' d='M8 0L10.122 5.09L16 5.878L12 9.755L12.938 16L8 13.245L3.062 16L4 9.755L0 5.878L5.878 5.09L8 0Z'/%3E%3C/svg%3E"
-                            width="16"
-                            height="16"
-                            alt=""
-                            data-gtm-element="review-verified-icon"
-                        >
-                    </div>
-                </div>
-
-                <div
-                    class="desktop:flex gap-2 items-center text-sm leading-5.5 pt-4 mt-4 border-t border-solid <?php echo esc_attr($build_class('border', $rg_border)); ?> relative z-10"
-                    data-gtm-element="responsible-gambling-section"
-                >
-                    <div>
-                        <p
-                            class="geot-element <?php echo esc_attr($build_class('text', $rg_text)); ?> inline-flex"
-                            data-gtm-element="responsible-gambling-message"
-                        >
-                            21+ to wager – Please Gamble Responsibly. Gambling problem? Call 1-800-GAMBLER
-                        </p>
-                        <p
-                            class="geot-element <?php echo esc_attr($build_class('text', $rg_text)); ?> text-sm inline-flex"
-                            data-gtm-element="responsible-gambling-link"
-                            data-gtm-value="gambleaware.org"
-                        >
-                            gambleaware.org
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <?php
-        return ob_get_clean();
+        // Phase 4 — delegate to CardRenderer. Filterable via `dataflair_card_renderer`.
+        // The pre-Phase-0A legacy fallback (sideload logos + auto-create
+        // review CPTs at render time) is gone — it was unreachable once the
+        // bundled template existed on disk and violated the Phase 0A
+        // read-only contract enforced by RenderIsReadOnlyTest.
+        return $this->card_renderer()->render(
+            new \DataFlair\Toplists\Frontend\Render\ViewModels\CasinoCardVM(
+                (array) $item,
+                (int) $toplist_id,
+                (array) $customizations,
+                (array) $pros_cons_data,
+                is_array($brand_meta_map) ? $brand_meta_map : null
+            )
+        );
     }
     
     /**

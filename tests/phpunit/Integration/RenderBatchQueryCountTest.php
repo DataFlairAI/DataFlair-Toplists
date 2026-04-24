@@ -90,11 +90,26 @@ class RenderBatchQueryCountTest extends TestCase {
     }
 
     public function test_render_casino_card_consults_meta_map_before_falling_back(): void {
+        // Phase 4 — render_casino_card() in the god-class is now a 5-line
+        // delegator; the map-first lookup lives in CardRenderer. Scan that
+        // file instead so the H7 invariant is still enforced at the source
+        // level.
+        $card_renderer = (string) file_get_contents(
+            DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/CardRenderer.php'
+        );
+        $this->assertNotSame('', $card_renderer, 'CardRenderer.php must be readable.');
+        $this->assertStringContainsString(
+            '$this->lookupBrandMetaFromMap(',
+            $card_renderer,
+            'CardRenderer::render() must consult the prefetched $brand_meta_map before any per-card fallback.'
+        );
+        // Delegator should also still reference the meta map so the contract
+        // is obvious at the call site.
         $body = $this->extractMethodBody('render_casino_card');
         $this->assertStringContainsString(
-            '$this->lookup_brand_meta_from_map(',
+            '$brand_meta_map',
             $body,
-            'render_casino_card() must call lookup_brand_meta_from_map() on the prefetched $brand_meta_map.'
+            'render_casino_card() delegator must still pass $brand_meta_map into the renderer.'
         );
     }
 

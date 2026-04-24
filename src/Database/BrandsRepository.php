@@ -53,6 +53,18 @@ final class BrandsRepository implements BrandsRepositoryInterface
         return is_array($row) ? $row : null;
     }
 
+    public function findByName(string $name): ?array
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE name = %s LIMIT 1",
+                $name
+            ),
+            ARRAY_A
+        );
+        return is_array($row) ? $row : null;
+    }
+
     public function findManyByApiBrandIds(array $api_brand_ids): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $api_brand_ids))));
