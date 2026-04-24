@@ -106,9 +106,14 @@ jQuery(document).ready(function($) {
             }
         });
 
-        // Function to sync one batch of toplists
-        function syncToplistsBatch(page, totalSynced, totalErrors, skippedPages) {
+        // H13 (Phase 0B): if the server yields with partial:true (budget
+        // exhausted before the page finished), re-issue the SAME page with
+        // exponential backoff. 1s → 2s → 4s → capped at 8s. After 10
+        // consecutive partials on the same page, surface a dismissible
+        // error and stop — something is genuinely stuck upstream.
+        function syncToplistsBatch(page, totalSynced, totalErrors, skippedPages, partialCount) {
             skippedPages = skippedPages || [];
+            partialCount = partialCount || 0;
             $.ajax({
                 url: dataflairAdmin.ajaxUrl,
                 type: 'POST',
@@ -135,21 +140,39 @@ jQuery(document).ready(function($) {
                         var statusMsg = '<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists';
                         if (data.fallback) {
                             statusMsg += ' (page ' + page + ' via per-ID fallback' + (data.partial ? ', partial' : '') + ')';
+                        } else if (data.partial) {
+                            statusMsg += ' (page ' + page + ' partial — budget yielded, retrying)';
                         } else if (data.skipped) {
                             statusMsg = '<span style="color: #d98500;">⚠ Page ' + page + ' skipped (API error). Continuing';
                         }
                         statusMsg += '...</span>';
                         $message.html(statusMsg);
 
-                        // Check if there are more to process. On skipped pages we still
-                        // advance as long as the loop hasn't reached last_page — the
-                        // server hands back its best guess for last_page so we don't
-                        // stop prematurely.
-                        if (!data.is_complete && page < data.last_page) {
-                            // Sync next batch
+                        // Partial response → the server yielded before finishing
+                        // this page. Re-issue the same page with backoff.
+                        if (data.partial === true && !data.is_complete) {
+                            var nextPartialCount = partialCount + 1;
+                            if (nextPartialCount > 10) {
+                                $message.html('<span style="color: #dc3232;">✗ Page ' + page + ' stuck after 10 partial retries — aborting. Try again later. <a href="#" class="dataflair-dismiss-error">dismiss</a></span>');
+                                $button.text(originalText).prop('disabled', false);
+                                return;
+                            }
+                            // 1s → 2s → 4s → cap 8s.
+                            var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
                             setTimeout(function() {
-                                syncToplistsBatch(page + 1, totalSynced, totalErrors, skippedPages);
-                            }, 500); // Small delay between batches
+                                syncToplistsBatch(page, totalSynced, totalErrors, skippedPages, nextPartialCount);
+                            }, delayMs);
+                            return;
+                        }
+
+                        // Check if there are more pages to process. On skipped
+                        // pages we still advance as long as the loop hasn't
+                        // reached last_page — the server hands back its best
+                        // guess for last_page so we don't stop prematurely.
+                        if (!data.is_complete && page < data.last_page) {
+                            setTimeout(function() {
+                                syncToplistsBatch(page + 1, totalSynced, totalErrors, skippedPages, 0);
+                            }, 500);
                         } else {
                             // All done
                             $progressBarInner.css('width', '100%');
@@ -229,8 +252,10 @@ jQuery(document).ready(function($) {
             }
         });
         
-        // Function to sync one batch (page) of brands
-        function syncBrandsBatch(page, totalSynced) {
+        // H13 (Phase 0B): same partial-loop backoff as the toplists handler.
+        // 1s → 2s → 4s → cap 8s, cap 10 consecutive partials per page.
+        function syncBrandsBatch(page, totalSynced, partialCount) {
+            partialCount = partialCount || 0;
             $.ajax({
                 url: dataflairAdmin.ajaxUrl,
                 type: 'POST',
@@ -243,27 +268,46 @@ jQuery(document).ready(function($) {
                     if (response.success) {
                         var data = response.data;
                         totalSynced += data.synced || 0;
-                        
+
                         // Update progress
                         var progress = Math.round((page / data.last_page) * 100);
                         $progressBarInner.css('width', progress + '%');
                         $progressText.text(progress + '% - Page ' + page + ' of ' + data.last_page);
-                        
-                        $message.html('<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' brands...</span>');
-                        
+
+                        var statusMsg = '<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' brands';
+                        if (data.partial) {
+                            statusMsg += ' (page ' + page + ' partial — budget yielded, retrying)';
+                        }
+                        statusMsg += '...</span>';
+                        $message.html(statusMsg);
+
+                        // Partial response → re-issue the same page with backoff.
+                        if (data.partial === true && !data.is_complete) {
+                            var nextPartialCount = partialCount + 1;
+                            if (nextPartialCount > 10) {
+                                $message.html('<span style="color: #dc3232;">✗ Page ' + page + ' stuck after 10 partial retries — aborting. Try again later. <a href="#" class="dataflair-dismiss-error">dismiss</a></span>');
+                                $button.text(originalText).prop('disabled', false);
+                                return;
+                            }
+                            var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
+                            setTimeout(function() {
+                                syncBrandsBatch(page, totalSynced, nextPartialCount);
+                            }, delayMs);
+                            return;
+                        }
+
                         // Check if there are more pages
                         if (!data.is_complete && page < data.last_page) {
-                            // Sync next page
                             setTimeout(function() {
-                                syncBrandsBatch(page + 1, totalSynced);
-                            }, 500); // Small delay between batches
+                                syncBrandsBatch(page + 1, totalSynced, 0);
+                            }, 500);
                         } else {
                             // All done
                             $progressBarInner.css('width', '100%');
                             $progressText.text('100% Complete');
                             $message.html('<span style="color: #46b450;">✓ Successfully synced ' + totalSynced + ' brands!</span>');
                             $button.text(originalText).prop('disabled', false);
-                            
+
                             // Reload page after 2 seconds
                             setTimeout(function() {
                                 location.reload();
@@ -280,6 +324,12 @@ jQuery(document).ready(function($) {
                 }
             });
         }
+
+        // Dismissible partial-loop error handler — shared across both buttons.
+        $(document).on('click', '.dataflair-dismiss-error', function(e) {
+            e.preventDefault();
+            $(this).closest('span').fadeOut(200);
+        });
     });
     
     // Accordion toggle

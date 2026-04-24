@@ -111,4 +111,5 @@ return array(
     'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => $baseDir . '/includes/DataIntegrityChecker.php',
     'DataFlair\\Toplists\\Models\\ProductTypeLabels' => $baseDir . '/includes/ProductTypeLabels.php',
     'DataFlair\\Toplists\\Models\\Toplist' => $baseDir . '/includes/Toplist.php',
+    'DataFlair\\Toplists\\Support\\WallClockBudget' => $baseDir . '/includes/Support/WallClockBudget.php',
 );

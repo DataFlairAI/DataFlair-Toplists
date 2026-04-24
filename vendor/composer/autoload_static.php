@@ -13,6 +13,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     public static $prefixLengthsPsr4 = array (
         'D' =>
         array (
+            'DataFlair\\Toplists\\Support\\' => 27,
             'DataFlair\\Toplists\\Models\\' => 26,
             'DataFlair\\Toplists\\Cli\\' => 23,
         ),
@@ -23,6 +24,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
     );
 
     public static $prefixDirsPsr4 = array (
+        'DataFlair\\Toplists\\Support\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/includes/Support',
+        ),
         'DataFlair\\Toplists\\Models\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes',
@@ -143,6 +148,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',
         'DataFlair\\Toplists\\Models\\Toplist' => __DIR__ . '/../..' . '/includes/Toplist.php',
+        'DataFlair\\Toplists\\Support\\WallClockBudget' => __DIR__ . '/../..' . '/includes/Support/WallClockBudget.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

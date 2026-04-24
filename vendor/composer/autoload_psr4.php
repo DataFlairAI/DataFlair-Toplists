@@ -6,6 +6,7 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'DataFlair\\Toplists\\Support\\' => array($baseDir . '/includes/Support'),
     'DataFlair\\Toplists\\Models\\' => array($baseDir . '/includes'),
     'DataFlair\\Toplists\\Cli\\' => array($baseDir . '/includes/Cli'),
     'Composer\\Installers\\' => array($vendorDir . '/composer/installers/src/Composer/Installers'),

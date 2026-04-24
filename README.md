@@ -178,6 +178,12 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 1.11.0
+
+1.11.0 is the Phase 0B **safety-rails** release. It removes the WP-cron auto-sync machinery entirely — sync now runs only when an operator triggers it from the admin **Tools** page or via WP-CLI. A one-time migration clears legacy cron schedules from prior installs (gated by the persistent option `dataflair_cron_cleared_v1_11`); nothing on the operator's side to do.
+
+No database migration is required beyond the automatic `check_database_upgrade()` pass, which is now gated by the `dataflair_schema_ok_v{VERSION}` transient (12 h) so it does not re-run on every page load.
+
 ### To 1.10.8
 
 After updating the plugin files, run the reconcile CLI **once** on the target site to backfill the new `cached_review_post_id` column:
@@ -192,6 +198,20 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 1.11.0
+- **Phase 0B safety rails — defense-in-depth follow-up to 1.10.8.** Twelve latent-OOM, timeout-cap, and memory-hygiene fixes across sync, render, admin, REST, and migration paths. No behaviour change on the happy path.
+- Removed: WP-cron auto-sync machinery (H1). `dataflair_sync_cron` and `dataflair_brands_sync_cron` are gone. Sync now runs only when an operator triggers it from the admin Tools page or via WP-CLI. A one-time migration clears legacy cron schedules from prior installs, gated by the persistent option `dataflair_cron_cleared_v1_11`.
+- Added: `WallClockBudget` primitive (H13). Sync handlers take a 25 s budget with 3 s headroom; on exhaustion they return `partial: true` and the admin JS re-issues the same page with exponential backoff (1 s → 2 s → 4 s → cap 8 s, max 10 consecutive partials per page).
+- Fixed: HTTP size caps. `api_get()` streams to a temp file with a 15 MB body cap and 12 s default timeout (H2). `download_brand_logo()` caps at 3 MB with an 8 s timeout and does a `HEAD` before `GET` to short-circuit oversized downloads (H3).
+- Fixed: `unset()` + `gc_collect_cycles()` after each item inside the remaining sync batches (H4). Prevents PHP from carrying forward 200–500 MB of decoded JSON rows through an admin-triggered bulk sync.
+- Fixed: casino-card render no longer fires N per-card `$wpdb->prepare` cascades (H7). The shortcode handler prefetches every card's brand row in at most three `IN(...)` queries and passes the map into `render_casino_card()`. Review-post lookup gets the same batched treatment (H8).
+- Fixed: `brands` admin page paginates server-side at 50/page with a lean column projection and pulls data blobs only for the current slice (H5). Filter dropdowns now use `SELECT DISTINCT` on CSV columns instead of parsing every blob. `settings` page projects to a lean set of columns plus a `JSON_UNQUOTE(JSON_EXTRACT(...))` extract — the full JSON blob is never pulled into PHP (H6).
+- Fixed: `check_database_upgrade()` short-circuits on a `dataflair_schema_ok_v{VERSION}` transient (12 h TTL, busts on version bump) (H9).
+- Fixed: `clear_tracker_transients()` is now a chunked DELETE loop with `LIMIT 1000`, optionally yielding to a `WallClockBudget` (H10). Replaces the prior single unbounded DELETE.
+- Fixed: plugin no longer issues `TRUNCATE TABLE` on `wp_dataflair_*` (H11). Replaced with `delete_all_paginated()`, a binlog-safe chunked DELETE helper with a hardcoded table whitelist.
+- Fixed: REST `/toplists/{id}/casinos` now paginates (H12). `?per_page` default 20, max 100; `?page` 1-based. Default per-item shape is lean: `{id, name, rating, offer_text, logo_url}`. `?full=1` preserves the legacy verbose shape for the block editor. `X-WP-Total` / `X-WP-TotalPages` headers included.
+- Added: new tests — `CronRemovedTest`, `SyncApiSizeCapTest`, `LogoSizeCapTest`, `WallClockBudgetTest`, `RenderBatchQueryCountTest`, `ClearTransientsChunkedTest`, `RestCasinosPaginationTest`. Full suite: 234 tests, 527 assertions.
 
 ### 1.10.8
 - Fixed: critical — casino-card rendering is now fully read-only. The render chain no longer sideloads brand logos at page-view time and no longer auto-creates `review` CPT rows. These two render-time writes were the root cause of memory-exhaustion fatals on sites with a 1 GB PHP memory limit.

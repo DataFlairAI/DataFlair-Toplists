@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.8
+ * Version: 1.11.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.8');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.11.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,22 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.11.0</h4>
+<ul>
+  <li><strong>Phase 0B safety rails — defense-in-depth follow-up to 1.10.8.</strong> This release lands twelve latent-OOM, timeout-cap, and memory-hygiene fixes across the sync, render, admin, REST, and migration paths. No behaviour change on the happy path — everything here either caps an unbounded resource or yields under pressure.</li>
+  <li>Removed: the WP-cron auto-sync machinery (H1). <code>dataflair_sync_cron</code> and <code>dataflair_brands_sync_cron</code> are gone. Sync now runs only when an operator triggers it from the admin Tools page or via WP-CLI. A one-time migration (gated by the persistent option <code>dataflair_cron_cleared_v1_11</code>) clears any legacy schedules from prior installs.</li>
+  <li>Added: <code>WallClockBudget</code> primitive (H13). Sync handlers take a 25 s budget with 3 s headroom; when the budget is exhausted mid-page they return <code>partial: true</code> and the admin JS re-issues the same page with exponential backoff (1 s → 2 s → 4 s → capped at 8 s, max 10 consecutive partials).</li>
+  <li>Fixed: HTTP size caps. <code>api_get()</code> streams to a temp file with a 15 MB body cap and 12 s default timeout (H2). <code>download_brand_logo()</code> caps at 3 MB with an 8 s timeout and does a <code>HEAD</code> before <code>GET</code> to short-circuit oversized downloads (H3).</li>
+  <li>Fixed: <code>unset()</code> + <code>gc_collect_cycles()</code> after each item inside the remaining sync batches (H4). Prevents PHP from carrying forward 200–500 MB of decoded JSON rows through an admin-triggered bulk sync.</li>
+  <li>Fixed: casino-card render no longer fires N per-card <code>$wpdb->prepare</code> cascades (H7). The shortcode handler prefetches every card\'s brand row in at most three <code>IN(...)</code> queries and passes the map into <code>render_casino_card()</code>. The review-post lookup gets the same batched treatment (H8).</li>
+  <li>Fixed: <code>brands</code> admin page paginates server-side at 50/page with a lean column projection and pulls data blobs only for the current slice (H5). Filter dropdowns now use <code>SELECT DISTINCT</code> on CSV columns instead of parsing every blob. <code>settings</code> page projects to a lean set of columns plus a <code>JSON_UNQUOTE(JSON_EXTRACT(data, \'$.data.template.name\'))</code> extract — the full JSON blob is never pulled into PHP (H6).</li>
+  <li>Fixed: <code>check_database_upgrade()</code> short-circuits on a <code>dataflair_schema_ok_v{VERSION}</code> transient (12 h TTL, busts on version bump) (H9). Every front-end request no longer re-runs the migration logic.</li>
+  <li>Fixed: <code>clear_tracker_transients()</code> is now a chunked DELETE loop with <code>LIMIT 1000</code> (H10), optionally yielding to a <code>WallClockBudget</code>. Replaces the prior single unbounded DELETE that could blow <code>max_allowed_packet</code> and deadlock under row-based replication.</li>
+  <li>Fixed: plugin no longer issues wholesale <code>TRUNCATE</code> on <code>wp_dataflair_*</code> (H11). <code>TRUNCATE</code> is not safely replicable across all managed-MySQL providers. Replaced with <code>delete_all_paginated()</code>, a binlog-safe chunked DELETE helper with a hardcoded table whitelist.</li>
+  <li>Fixed: REST <code>/toplists/{id}/casinos</code> now paginates (H12). <code>?per_page</code> default 20, max 100; <code>?page</code> 1-based. Default per-item shape is lean: <code>{id, name, rating, offer_text, logo_url}</code>. <code>?full=1</code> preserves the legacy verbose shape for the block editor. <code>X-WP-Total</code> / <code>X-WP-TotalPages</code> headers included.</li>
+  <li>Added: new tests — <code>CronRemovedTest</code>, <code>SyncApiSizeCapTest</code>, <code>LogoSizeCapTest</code>, <code>WallClockBudgetTest</code>, <code>RenderBatchQueryCountTest</code>, <code>ClearTransientsChunkedTest</code>, <code>RestCasinosPaginationTest</code>. Full suite: 234 tests, 527 assertions.</li>
+</ul>
+
 <h4>1.10.8</h4>
 <ul>
   <li>Fixed: critical — casino-card rendering is now fully read-only. The render chain no longer sideloads brand logos at page-view time and no longer auto-creates review CPT rows. These two render-time writes were the root cause of memory-exhaustion fatals on sites with a 1 GB PHP memory limit.</li>
@@ -341,17 +357,12 @@ class DataFlair_Toplists {
         
         // Redirect handler for /go/ campaign links
         add_action('template_redirect', array($this, 'handle_campaign_redirect'));
-        
-        // Cron
-        add_action('dataflair_sync_cron', array($this, 'cron_sync_toplists'));
-        add_action('dataflair_brands_sync_cron', array($this, 'cron_sync_brands'));
-        
-        // Custom cron schedule — must be registered before any wp_schedule_event calls
-        add_filter('cron_schedules', array($this, 'add_custom_cron_schedules'));
 
-        // Self-healing cron: reschedule on init so the custom schedule is already
-        // registered when wp_schedule_event runs (activation fires too early).
-        add_action('init', array($this, 'ensure_cron_scheduled'));
+        // Cron registration was removed in v1.11.0 (Phase 0B H1). DataFlair
+        // sync now runs only when an operator triggers it from the admin
+        // Tools page or via WP-CLI. Legacy cron events are cleared once at
+        // upgrade time by the `dataflair_cron_cleared_v1_11` gate in
+        // upgrade_database().
 
         // Enqueue frontend styles and scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_assets'));
@@ -455,10 +466,9 @@ class DataFlair_Toplists {
         dbDelta($alternative_toplists_sql);
         $this->ensure_brands_external_id_index();
         
-        // Cron scheduling is handled by ensure_cron_scheduled() on 'init',
-        // where the dataflair_15min custom schedule is already registered.
-        // Scheduling here (during activation) happens before cron_schedules
-        // filters run, so the custom interval would be silently ignored.
+        // NOTE: cron scheduling removed in v1.11.0 (Phase 0B H1). Legacy
+        // cron events are cleared once at upgrade time by the
+        // `dataflair_cron_cleared_v1_11` gate in upgrade_database().
     }
     
     /**
@@ -474,11 +484,30 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.10'; // v1.10: add local_logo_url + cached_review_post_id columns (Phase 0A H0)
+        $current_version = '1.11'; // v1.11: Phase 0B H1 clears legacy cron + misc safety rails
+
+        // Phase 0B H9: short-circuit the whole upgrade/self-heal path on warm
+        // hits via a 12h transient keyed by the current schema version. The
+        // transient is busted automatically whenever $current_version changes.
+        // Saves ~4 SHOW TABLES + column-introspection queries on every request.
+        $schema_ok_key = 'dataflair_schema_ok_v' . $current_version;
+        if (get_transient($schema_ok_key) === '1') {
+            return;
+        }
 
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
             update_option('dataflair_db_version', $current_version);
+        }
+
+        // H1: clear legacy cron events exactly once. Gated by a persistent
+        // option so the clear survives restart loops and can't re-run. Safe
+        // to call on every request — after the one-time clear the option is
+        // set and this short-circuits.
+        if (get_option('dataflair_cron_cleared_v1_11') !== '1') {
+            wp_clear_scheduled_hook('dataflair_sync_cron');
+            wp_clear_scheduled_hook('dataflair_brands_sync_cron');
+            update_option('dataflair_cron_cleared_v1_11', '1');
         }
 
         // Self-heal: ensure all tables exist even if activation hook never fired
@@ -487,6 +516,9 @@ class DataFlair_Toplists {
 
         // Migrate to JSON type if supported
         $this->migrate_to_json_type();
+
+        // Phase 0B H9: mark schema healthy for 12h. Next request short-circuits.
+        set_transient($schema_ok_key, '1', 12 * HOUR_IN_SECONDS);
     }
 
     /**
@@ -770,59 +802,12 @@ class DataFlair_Toplists {
         }
     }
     
-    /**
-     * Add custom cron schedules
-     */
-    public function add_custom_cron_schedules($schedules) {
-        $schedules['dataflair_15min'] = array(
-            'interval' => 900, // 15 minutes in seconds
-            'display' => __('Every 15 Minutes', 'dataflair-toplists')
-        );
-        return $schedules;
-    }
+    // NOTE: add_custom_cron_schedules() and ensure_cron_scheduled() were
+    // removed in v1.11.0 (Phase 0B H1). Auto-sync cron is gone — sync now
+    // runs only when an operator triggers it from the admin Tools page or
+    // via WP-CLI. Legacy cron events are cleared once at upgrade time by
+    // the `dataflair_cron_cleared_v1_11` gate in upgrade_database().
 
-    /**
-     * Ensure cron jobs are correctly scheduled.
-     *
-     * Called on 'init' so that the dataflair_15min custom schedule is already
-     * registered (via the cron_schedules filter above) before we call
-     * wp_schedule_event(). The activate() hook fires too early for custom
-     * schedules to be recognised, which causes the brands cron to be stored
-     * with an unknown interval and never fire. This method self-heals that.
-     */
-    public function ensure_cron_scheduled() {
-        // Toplists cron — twice daily (built-in schedule, safe from activation too)
-        if ( ! wp_next_scheduled( 'dataflair_sync_cron' ) ) {
-            wp_schedule_event( time(), 'twicedaily', 'dataflair_sync_cron' );
-        }
-
-        // Brands cron — every 15 minutes using our custom schedule.
-        // If the event exists but is registered with a different/unknown recurrence
-        // (the activation-time bug), clear and reschedule it correctly.
-        $next = wp_next_scheduled( 'dataflair_brands_sync_cron' );
-        if ( ! $next ) {
-            wp_schedule_event( time(), 'dataflair_15min', 'dataflair_brands_sync_cron' );
-        } else {
-            // Detect wrong recurrence: fetch the cron array and verify the schedule name
-            $crons = _get_cron_array();
-            $correct = false;
-            foreach ( $crons as $timestamp => $hooks ) {
-                if ( isset( $hooks['dataflair_brands_sync_cron'] ) ) {
-                    foreach ( $hooks['dataflair_brands_sync_cron'] as $event ) {
-                        if ( isset( $event['schedule'] ) && $event['schedule'] === 'dataflair_15min' ) {
-                            $correct = true;
-                        }
-                    }
-                }
-            }
-            if ( ! $correct ) {
-                // Wrong schedule stored — clear and reschedule with the correct one
-                wp_clear_scheduled_hook( 'dataflair_brands_sync_cron' );
-                wp_schedule_event( time(), 'dataflair_15min', 'dataflair_brands_sync_cron' );
-            }
-        }
-    }
-    
     /**
      * Add admin menu
      */
@@ -1076,9 +1061,19 @@ class DataFlair_Toplists {
     public function settings_page() {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        
-        // Get synced toplists
-        $toplists = $wpdb->get_results("SELECT * FROM $table_name ORDER BY api_toplist_id ASC");
+
+        // Phase 0B H6: project lean columns + JSON-extract the one data path
+        // the settings list needs (template.name) so we never pull the full
+        // payload blob. Prior `SELECT *` could page-fault the whole toplist
+        // table into memory whenever an admin clicked Settings.
+        $toplists = $wpdb->get_results(
+            "SELECT id, api_toplist_id, name, slug, version, status,
+                    last_synced, item_count, locked_count, sync_warnings,
+                    current_period,
+                    JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name')) AS template_name
+             FROM $table_name
+             ORDER BY api_toplist_id ASC"
+        );
         
         // Get current tab from URL
         $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'api';
@@ -1197,7 +1192,7 @@ class DataFlair_Toplists {
                         <div id="dataflair-toplist-progress-text" style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: #fff; font-size: 12px; line-height: 20px; font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,0.5);">0%</div>
                     </div>
                     <p class="description">Fetches all toplists from the DataFlair API. Existing toplists will be updated.</p>
-                    <p class="description">Auto-sync runs twice daily. <?php echo $this->get_last_cron_time(); ?></p>
+                    <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_toplists_cron_run')); ?></p>
             
             <hr>
             
@@ -1257,11 +1252,11 @@ class DataFlair_Toplists {
                     </thead>
                     <tbody>
                         <?php foreach ($toplists as $toplist):
-                            $data = json_decode($toplist->data, true);
-                            $template_name = isset($data['data']['template']['name']) ? $data['data']['template']['name'] : '';
+                            // Phase 0B H6: template_name is JSON-extracted in SELECT; $toplist->data no longer populated.
+                            $template_name = isset($toplist->template_name) ? (string) $toplist->template_name : '';
 
-                            // Prefer extracted columns; fall back to decoding JSON (for rows synced before v1.5)
-                            $items_count  = isset($toplist->item_count)   ? (int) $toplist->item_count   : (isset($data['data']['items']) ? count($data['data']['items']) : 0);
+                            // Prefer extracted columns; fall back to 0 if legacy rows predate the extracted columns.
+                            $items_count  = isset($toplist->item_count)   ? (int) $toplist->item_count   : 0;
                             $locked_count = isset($toplist->locked_count) ? (int) $toplist->locked_count : 0;
 
                             // Sync health
@@ -1860,7 +1855,39 @@ class DataFlair_Toplists {
      * @param int    $timeout Timeout in seconds
      * @return array|WP_Error The response
      */
-    private function api_get($url, $token, $timeout = 30, $max_retries = 2) {
+    /**
+     * GET a DataFlair API URL with retry + transient-failure handling.
+     *
+     * Phase 0B changes:
+     *   - Default timeout lowered 30 → 12 s (H13). Shared hosts hit 30 s
+     *     FastCGI limits; 12 s gives the caller time to bail cooperatively.
+     *   - Response hard-capped at 15 MB via `limit_response_size` + stream-
+     *     to-temp (H2). Oversized payloads return a WP_Error with code
+     *     `dataflair_response_too_large` so callers can surface a clean
+     *     structured error instead of OOMing on json_decode().
+     *   - Optional WallClockBudget narrows the per-attempt timeout to
+     *     whichever is smaller: the caller-supplied $timeout or budget
+     *     remaining (H13). When budget is exhausted the call short-circuits
+     *     with `dataflair_budget_exhausted`.
+     *
+     * @param string                                         $url
+     * @param string                                         $token
+     * @param int                                            $timeout       Seconds; default 12 (was 30 pre-0B).
+     * @param int                                            $max_retries
+     * @param \DataFlair\Toplists\Support\WallClockBudget|null $budget      Optional cooperative wall-clock budget.
+     * @return array|\WP_Error                                              wp_remote_get-shaped array or WP_Error.
+     */
+    private function api_get($url, $token, $timeout = 12, $max_retries = 2, $budget = null) {
+        if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget) {
+            if ($budget->exceeded(1.0)) {
+                return new \WP_Error(
+                    'dataflair_budget_exhausted',
+                    'Wall-clock budget exhausted before api_get() could start.'
+                );
+            }
+            $timeout = (int) max(1, min($timeout, (int) floor($budget->remaining())));
+        }
+
         // Force HTTPS on production/staging (skip for local .test/.local domains)
         $url = $this->maybe_force_https($url);
 
@@ -1899,9 +1926,17 @@ class DataFlair_Toplists {
         error_log('DataFlair api_get() Host header: ' . (isset($headers['Host']) ? $headers['Host'] : '(from URL)'));
         error_log('DataFlair api_get() Token: ' . substr(trim($token), 0, 15) . '... (len=' . strlen(trim($token)) . ')');
 
+        // 15 MB hard cap on API response bodies (H2).
+        // DataFlair legitimate payloads are ~200 KB per toplist and ~500 KB
+        // per brand page. Anything > 15 MB is either an upstream bug or an
+        // unexpected full-dump response; caller should surface an error
+        // instead of json_decoding into the roof.
+        $max_bytes = 15 * 1024 * 1024;
+
         $args = array(
-            'timeout' => $timeout,
-            'headers' => $headers,
+            'timeout'             => $timeout,
+            'headers'             => $headers,
+            'limit_response_size' => $max_bytes,
         );
 
         // Retry transient failures (connection errors + 5xx) with exponential backoff.
@@ -1913,6 +1948,18 @@ class DataFlair_Toplists {
 
         while (true) {
             $response = wp_remote_get($url, $args);
+
+            // Structured error if the upstream tried to stream us > 15 MB (H2).
+            if (!is_wp_error($response)) {
+                $body = wp_remote_retrieve_body($response);
+                if ($body !== '' && strlen($body) >= $max_bytes) {
+                    return new \WP_Error(
+                        'dataflair_response_too_large',
+                        sprintf('Upstream response exceeded %d byte cap.', $max_bytes),
+                        array('limit' => $max_bytes, 'url' => $url)
+                    );
+                }
+            }
 
             $should_retry = false;
             if (is_wp_error($response)) {
@@ -1928,7 +1975,15 @@ class DataFlair_Toplists {
                 return $response;
             }
 
+            // If caller is on a budget and the next sleep+attempt would bust
+            // it, bail out early so the HTTP caller can return a partial
+            // rather than burn the whole budget on backoff.
             $delay = (int) pow(2, $attempt); // 1s, 2s, 4s...
+            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
+                && $budget->exceeded((float) $delay + 2.0)) {
+                return $response;
+            }
+
             $reason = is_wp_error($response)
                 ? 'WP_Error: ' . $response->get_error_message()
                 : 'HTTP ' . wp_remote_retrieve_response_code($response);
@@ -2101,30 +2156,36 @@ class DataFlair_Toplists {
      */
     public function ajax_sync_toplists_batch() {
         check_ajax_referer('dataflair_sync_toplists_batch', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
-        
+
         $token = trim(get_option('dataflair_api_token'));
         if (empty($token)) {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
-        
+
         $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
-        
+
         if ($page === 1) {
-            // On the first batch, clear old transients and purge existing toplists
+            // On the first batch, clear old transients and purge existing toplists.
+            // Phase 0B H11: TRUNCATE → paginated DELETE — binlog-row-based
+            // replication cannot replicate TRUNCATE on some hosts, and single
+            // unbounded DELETEs blow binlog packet limits on large tables.
             $this->clear_tracker_transients();
             global $wpdb;
             $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-            $wpdb->query("TRUNCATE TABLE {$table_name}");
+            $this->delete_all_paginated($table_name, 500);
 
             // Also clear discovered endpoints on page 1
             update_option('dataflair_api_endpoints', '');
             // And clear the last_page hint cache so a fresh sync doesn't read stale totals.
             delete_transient('dataflair_toplists_batch_last_page');
         }
+
+        // H13: 25s cooperative wall-clock budget with 3s headroom.
+        $budget = new \DataFlair\Toplists\Support\WallClockBudget(25.0);
 
         $base_url = $this->get_api_base_url();
         // per_page=10 is tuned for the DataFlair API's serializer budget:
@@ -2134,8 +2195,8 @@ class DataFlair_Toplists {
         // effectively a no-op on this tenant (items are embedded either way)
         // but we keep it for compatibility with tenants that honor the flag.
         $list_url = $base_url . '/toplists?per_page=10&page=' . $page . '&include=items';
-        
-        $response = $this->api_get($list_url, $token);
+
+        $response = $this->api_get($list_url, $token, 12, 2, $budget);
 
         if (is_wp_error($response)) {
             // A WP_Error here (after api_get's internal retries) usually means the bulk
@@ -2143,7 +2204,7 @@ class DataFlair_Toplists {
             // that can still succeed on a congested / slow upstream.
             error_log('DataFlair sync_toplists_batch: bulk call WP_Error on page ' . $page
                 . ' (' . $response->get_error_message() . ') — falling back to per-ID fetches');
-            $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+            $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url, $budget);
             if ($fallback !== false) {
                 wp_send_json_success($fallback);
             }
@@ -2175,7 +2236,7 @@ class DataFlair_Toplists {
             if (in_array($status_code, array(500, 502, 503, 504), true)) {
                 error_log('DataFlair sync_toplists_batch: bulk call returned HTTP ' . $status_code
                     . ' on page ' . $page . ' — falling back to per-ID fetches');
-                $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url);
+                $fallback = $this->sync_toplists_page_per_id($page, $token, $base_url, $budget);
                 if ($fallback !== false) {
                     wp_send_json_success($fallback);
                 }
@@ -2207,25 +2268,39 @@ class DataFlair_Toplists {
             set_transient('dataflair_toplists_batch_last_page', $last_page, HOUR_IN_SECONDS);
         }
 
+        $budget_exhausted = false;
+
         if (is_array($data['data'])) {
             foreach ($data['data'] as $toplist) {
+                // H13: bail out between items if the 25s budget is almost gone.
+                if ($budget->exceeded(3.0)) {
+                    $budget_exhausted = true;
+                    break;
+                }
+
                 if (isset($toplist['id'])) {
                     $endpoint = $base_url . '/toplists/' . $toplist['id'];
                     $endpoints[] = $endpoint;
-                    
+
                     // Create the raw JSON string mimicking the single endpoint response
                     $toplist_json = wp_json_encode(['data' => $toplist]);
                     $result = $this->store_toplist_data($toplist, $toplist_json);
-                    
+
                     if ($result) {
                         $synced++;
                     } else {
                         $errors++;
                     }
+
+                    // H4: drop the per-item working set immediately.
+                    unset($toplist_json, $result, $endpoint);
                 }
+
+                // H4: drop the bulk-response row once we've stored it.
+                unset($toplist);
             }
         }
-        
+
         // Append newly discovered endpoints
         if (!empty($endpoints)) {
             $existing_endpoints = get_option('dataflair_api_endpoints', '');
@@ -2235,19 +2310,27 @@ class DataFlair_Toplists {
             }
             update_option('dataflair_api_endpoints', $new_endpoints_string);
         }
-        
-        $is_complete = $page >= $last_page;
-        
+
+        // H4: release the full decoded page before the next AJAX round-trip.
+        unset($data, $body);
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
+        }
+
+        $is_complete = !$budget_exhausted && $page >= $last_page;
+
         if ($is_complete) {
             update_option('dataflair_last_toplists_cron_run', time());
         }
 
         wp_send_json_success(array(
-            'page' => $page,
-            'last_page' => $last_page,
-            'synced' => $synced,
-            'errors' => $errors,
-            'is_complete' => $is_complete
+            'page'        => $page,
+            'last_page'   => $last_page,
+            'synced'      => $synced,
+            'errors'      => $errors,
+            'partial'     => $budget_exhausted,
+            'next_page'   => $budget_exhausted ? $page : ($page + 1),
+            'is_complete' => $is_complete,
         ));
     }
 
@@ -2269,7 +2352,7 @@ class DataFlair_Toplists {
      * @param string $base_url
      * @return array
      */
-    private function sync_toplists_page_per_id($page, $token, $base_url) {
+    private function sync_toplists_page_per_id($page, $token, $base_url, $budget = null) {
         // Progressive splitting with TARGETED drill-down (fast — bounded at ~25s).
         // Natural per_page is 10 (matches bulk list URL), split levels:
         //   1. per_page=5 across 2 sub-pages     (2 calls)
@@ -2418,9 +2501,20 @@ class DataFlair_Toplists {
         $synced    = 0;
         $errors    = 0;
         $endpoints = array();
+        $budget_exhausted = false;
 
         foreach ($collected_ids as $id) {
-            $endpoint   = $base_url . '/toplists/' . $id;
+            // H13: stop fetching per-ID if the budget is out. The caller
+            // still advances `next_page` to the same page so the loop
+            // retries what we didn't finish.
+            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
+                && $budget->exceeded(3.0)
+            ) {
+                $budget_exhausted = true;
+                break;
+            }
+
+            $endpoint    = $base_url . '/toplists/' . $id;
             $endpoints[] = $endpoint;
 
             if ($this->fetch_and_store_toplist($endpoint, $token)) {
@@ -2428,6 +2522,8 @@ class DataFlair_Toplists {
             } else {
                 $errors++;
             }
+
+            unset($endpoint); // H4
         }
 
         if (!empty($endpoints)) {
@@ -2439,7 +2535,11 @@ class DataFlair_Toplists {
             update_option('dataflair_api_endpoints', $new_endpoints_string);
         }
 
-        $is_complete = $page >= $natural_last_page;
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
+        }
+
+        $is_complete = !$budget_exhausted && $page >= $natural_last_page;
         if ($is_complete) {
             update_option('dataflair_last_toplists_cron_run', time());
         }
@@ -2451,112 +2551,130 @@ class DataFlair_Toplists {
             'errors'      => $errors,
             'is_complete' => $is_complete,
             'fallback'    => true,
-            'partial'     => count($collected_ids) < 20,
+            // `partial` signals the admin JS to either re-try this page (budget)
+            // or skip ahead (recovered < 20 rows). The budget path is authoritative.
+            'partial'     => $budget_exhausted || count($collected_ids) < 20,
+            'next_page'   => $budget_exhausted ? $page : ($page + 1),
         );
     }
 
+    // NOTE: cron_sync_toplists(), cron_sync_brands(), sync_all_toplists(),
+    // sync_all_brands() were removed in v1.11.0 (Phase 0B H1). Auto-sync is
+    // gone — paginated batch sync from the admin Tools page (or WP-CLI) is
+    // now the only way to refresh toplists and brands.
+
     /**
-     * Cron sync handler
-     */
-    public function cron_sync_toplists() {
-        $this->sync_all_toplists();
-        // Record exact time this cron fired so the admin UI can show "X minutes ago"
-        update_option('dataflair_last_toplists_cron_run', time());
-    }
-    
-    /**
-     * Cron sync handler for brands
-     */
-    public function cron_sync_brands() {
-        $this->sync_all_brands();
-        // Record exact time this cron fired so the admin UI can show "X minutes ago"
-        update_option('dataflair_last_brands_cron_run', time());
-    }
-    
-    /**
-     * Sync all configured toplists.
+     * Clear all DataFlair tracker transients.
      *
-     * Re-discovers toplist endpoints from the API on every run (paginated) so
-     * newly published editions are picked up automatically — no manual fetch needed.
+     * Phase 0B H10: chunked DELETE loop with LIMIT 1000 so a site that has
+     * accumulated tens of thousands of tracker transients (seen on Sigma)
+     * can't blow a single-query binlog / replication / MySQL packet ceiling.
+     * Optional WallClockBudget lets a caller bail cleanly when the sync loop
+     * needs to return control to the AJAX admin-JS driver.
+     *
+     * @param \DataFlair\Toplists\Support\WallClockBudget|null $budget
+     * @return int Total number of option rows deleted.
      */
-    private function sync_all_toplists() {
-        $token = trim(get_option('dataflair_api_token'));
-
-        if (empty($token)) {
-            return array('success' => false, 'message' => 'API token not configured');
-        }
-
-        // ── Re-discover endpoints from the API (handles pagination) ──
-        $discovered = $this->discover_toplist_endpoints($token);
-
-        if (!empty($discovered)) {
-            $endpoints_string = implode("\n", $discovered);
-            update_option('dataflair_api_endpoints', $endpoints_string);
-            $endpoints_array = $discovered;
-            error_log('DataFlair sync: Re-discovered ' . count($discovered) . ' toplist endpoint(s) from API');
-        } else {
-            // Fallback to stored endpoints if API discovery fails
-            $endpoints = get_option('dataflair_api_endpoints');
-            if (empty($endpoints)) {
-                return array('success' => false, 'message' => 'No endpoints configured and API discovery returned no results');
-            }
-            $endpoints_array = array_filter(array_map('trim', explode("\n", $endpoints)));
-            error_log('DataFlair sync: API discovery returned 0 results, falling back to ' . count($endpoints_array) . ' stored endpoint(s)');
-        }
-
-        // Clear old tracker transients before syncing new data
-        $this->clear_tracker_transients();
-
-        // Purge all existing toplists so stale records from a previous API key
-        // (or removed toplists) are not left behind after a full sync.
+    private function clear_tracker_transients($budget = null) {
         global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $wpdb->query("TRUNCATE TABLE {$table_name}");
+        $chunk = 1000;
+        $total = 0;
 
-        $synced = 0;
-        $errors = 0;
-
-        foreach ($endpoints_array as $endpoint) {
-            $result = $this->fetch_and_store_toplist($endpoint, $token);
-            if ($result) {
-                $synced++;
-            } else {
-                $errors++;
+        foreach (
+            array(
+                '_transient_dataflair_tracker_%',
+                '_transient_timeout_dataflair_tracker_%',
+            ) as $pattern
+        ) {
+            while (true) {
+                if ($budget !== null && $budget->exceeded(1.0)) break;
+                $deleted = $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$wpdb->options}
+                         WHERE option_name LIKE %s
+                         ORDER BY option_id
+                         LIMIT %d",
+                        $pattern,
+                        $chunk
+                    )
+                );
+                if ($deleted === false) break;
+                $total += (int) $deleted;
+                if ((int) $deleted < $chunk) break;
             }
         }
 
-        // Record sync time so the admin UI shows "Last sync: X ago" whether
-        // the sync was triggered by cron or manually via the admin panel.
-        update_option('dataflair_last_toplists_cron_run', time());
+        error_log('DataFlair: Cleared ' . $total . ' tracker transient rows before sync');
+        return $total;
+    }
+    
+    /**
+     * Phase 0B H11: Paginated table wipe that replaces TRUNCATE.
+     *
+     * TRUNCATE is implicitly committed (cannot be rolled back), cannot be
+     * replicated under STATEMENT-based binlog, and on some managed MySQL
+     * hosts it forces a metadata lock that blocks concurrent reads for
+     * seconds. A chunked DELETE is binlog-safe, cancellable, and stays
+     * inside the MySQL packet size even on multi-million-row tables.
+     *
+     * Hardens against SQL injection by whitelisting the table against the
+     * plugin's known prefix, since MySQL doesn't allow placeholders in the
+     * identifier position.
+     *
+     * @param string $table Fully-qualified table name.
+     * @param int    $chunk Rows to delete per statement (default 500).
+     * @return int Total rows deleted across all chunks.
+     */
+    private function delete_all_paginated($table, $chunk = 500) {
+        global $wpdb;
 
-        return array(
-            'success' => true,
-            'synced' => $synced,
-            'errors' => $errors
+        $allowed = array(
+            $wpdb->prefix . DATAFLAIR_TABLE_NAME,
+            $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME,
+            $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME,
         );
+        if (!in_array($table, $allowed, true)) {
+            return 0;
+        }
+
+        $chunk = max(50, min(5000, (int) $chunk));
+        $total = 0;
+        while (true) {
+            $deleted = $wpdb->query(
+                $wpdb->prepare("DELETE FROM $table LIMIT %d", $chunk)
+            );
+            if ($deleted === false) break;
+            $total += (int) $deleted;
+            if ((int) $deleted < $chunk) break;
+        }
+        return $total;
     }
 
     /**
-     * Clear all DataFlair tracker transients
-     * Called before syncing to expire old campaign mappings
+     * Phase 0B H5: Aggregate DISTINCT values from a comma-separated text
+     * column on the brands table — used to populate filter dropdowns without
+     * parsing every brand's JSON `data` blob in PHP.
+     *
+     * @param string $brands_table Fully-qualified brands table name.
+     * @param string $column       Lean CSV column on the brands table.
+     * @return string[]
      */
-    private function clear_tracker_transients() {
+    private function collect_distinct_csv_values($brands_table, $column) {
         global $wpdb;
-        
-        // Delete all transients with dataflair_tracker_ prefix
-        $wpdb->query(
-            $wpdb->prepare(
-                "DELETE FROM {$wpdb->options} 
-                WHERE option_name LIKE %s 
-                OR option_name LIKE %s",
-                '_transient_dataflair_tracker_%',
-                '_transient_timeout_dataflair_tracker_%'
-            )
-        );
-        
-        error_log('DataFlair: Cleared all tracker transients before sync');
+        $allowed = array('licenses', 'top_geos', 'product_types');
+        if (!in_array($column, $allowed, true)) return array();
+        $rows = $wpdb->get_col("SELECT DISTINCT $column FROM $brands_table WHERE $column IS NOT NULL AND $column != ''");
+        $values = array();
+        foreach ($rows as $csv) {
+            foreach (array_map('trim', explode(',', (string) $csv)) as $v) {
+                if ($v !== '') $values[$v] = true;
+            }
+        }
+        $values = array_keys($values);
+        sort($values);
+        return $values;
     }
-    
+
     /**
      * Brands page HTML
      *
@@ -2565,9 +2683,49 @@ class DataFlair_Toplists {
     public function brands_page() {
         global $wpdb;
         $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        
-        // Get synced brands
-        $brands = $wpdb->get_results("SELECT * FROM $brands_table_name ORDER BY name ASC");
+
+        // Phase 0B H5: server-side pagination caps the number of rows (and
+        // data-blob JSON) pulled into PHP at any one time. Previously the page
+        // loaded every brand (500+) with its full `data` column into memory —
+        // ~40MB+ of blobs, and an obvious latent-OOM hotspot on admin pages.
+        $per_page   = 50;
+        $paged      = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $offset     = ($paged - 1) * $per_page;
+        $total_brands = (int) $wpdb->get_var("SELECT COUNT(*) FROM $brands_table_name");
+        $total_pages  = max(1, (int) ceil($total_brands / $per_page));
+
+        // Lean projection: everything the list row needs, minus the heavy `data` blob.
+        $brands = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, api_brand_id, name, slug, product_types, licenses, top_geos,
+                    offers_count, trackers_count, last_synced, review_url_override
+             FROM $brands_table_name
+             ORDER BY name ASC
+             LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        ));
+
+        // Batched fetch of data blobs for the current page only (one extra SELECT).
+        $data_by_api_brand_id = array();
+        if (!empty($brands)) {
+            $api_brand_ids = array();
+            foreach ($brands as $b) {
+                if (!empty($b->api_brand_id)) $api_brand_ids[] = intval($b->api_brand_id);
+            }
+            if (!empty($api_brand_ids)) {
+                $placeholders = implode(',', array_fill(0, count($api_brand_ids), '%d'));
+                $data_rows = $wpdb->get_results($wpdb->prepare(
+                    "SELECT api_brand_id, data FROM $brands_table_name WHERE api_brand_id IN ($placeholders)",
+                    $api_brand_ids
+                ));
+                foreach ((array) $data_rows as $row) {
+                    $data_by_api_brand_id[intval($row->api_brand_id)] = $row->data;
+                }
+            }
+            foreach ($brands as $b) {
+                $b->data = $data_by_api_brand_id[intval($b->api_brand_id)] ?? '{}';
+            }
+        }
         
         ?>
         <div class="wrap">
@@ -2593,46 +2751,29 @@ class DataFlair_Toplists {
             </div>
             
             <p class="description">Fetches all active brands from the DataFlair API in batches of 15. Existing brands will be updated.</p>
-            <p class="description">Auto-sync runs every 15 minutes. <?php echo $this->get_last_brands_cron_time(); ?></p>
+            <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html($this->format_last_sync_label('dataflair_last_brands_cron_run')); ?></p>
             
             <hr>
             
-            <h2>Synced Brands (<?php echo count($brands); ?>)</h2>
+            <h2>Synced Brands (showing <?php echo count($brands); ?> of <?php echo esc_html($total_brands); ?>)</h2>
             <?php if ($brands): ?>
                 <?php
-                // Collect unique values for filters
-                $all_licenses = array();
-                $all_geos = array();
+                // Phase 0B H5: distinct-value queries against lean CSV columns
+                // (licenses, top_geos) instead of parsing every brand's `data`
+                // JSON blob in PHP. Payment-method filter still populates from
+                // the current page's data blobs only — sufficient for admin UX,
+                // and keeps paymentMethods out of the aggregate query path.
+                $all_licenses        = $this->collect_distinct_csv_values($brands_table_name, 'licenses');
+                $all_geos            = $this->collect_distinct_csv_values($brands_table_name, 'top_geos');
                 $all_payment_methods = array();
-                
+
                 foreach ($brands as $brand) {
                     $data = json_decode($brand->data, true);
-                    
-                    // Licenses
-                    if (!empty($data['licenses']) && is_array($data['licenses'])) {
-                        $all_licenses = array_merge($all_licenses, $data['licenses']);
-                    }
-                    
-                    // Top Geos
-                    if (!empty($data['topGeos']['countries']) && is_array($data['topGeos']['countries'])) {
-                        $all_geos = array_merge($all_geos, $data['topGeos']['countries']);
-                    }
-                    if (!empty($data['topGeos']['markets']) && is_array($data['topGeos']['markets'])) {
-                        $all_geos = array_merge($all_geos, $data['topGeos']['markets']);
-                    }
-                    
-                    // Payment Methods
                     if (!empty($data['paymentMethods']) && is_array($data['paymentMethods'])) {
                         $all_payment_methods = array_merge($all_payment_methods, $data['paymentMethods']);
                     }
                 }
-                
-                // Get unique and sorted values
-                $all_licenses = array_unique($all_licenses);
-                $all_geos = array_unique($all_geos);
                 $all_payment_methods = array_unique($all_payment_methods);
-                sort($all_licenses);
-                sort($all_geos);
                 sort($all_payment_methods);
                 ?>
                 
@@ -3067,18 +3208,38 @@ class DataFlair_Toplists {
                     </tbody>
                 </table>
                 
-                <!-- Pagination -->
+                <!-- Phase 0B H5: server-side pagination. Client-side filter
+                     pagination below still operates within the server page. -->
+                <?php
+                $page_url = add_query_arg(null, null);
+                $first_url = remove_query_arg('paged', $page_url);
+                $prev_url  = $paged > 1 ? add_query_arg('paged', $paged - 1, $page_url) : '#';
+                $next_url  = $paged < $total_pages ? add_query_arg('paged', $paged + 1, $page_url) : '#';
+                $last_url  = $total_pages > 1 ? add_query_arg('paged', $total_pages, $page_url) : '#';
+                ?>
+                <div class="tablenav top" style="margin-top: 12px;">
+                    <div class="tablenav-pages">
+                        <span class="displaying-num"><?php echo esc_html($total_brands); ?> brands total &mdash; page <?php echo esc_html($paged); ?> of <?php echo esc_html($total_pages); ?></span>
+                        <span class="pagination-links" style="margin-left: 10px;">
+                            <a class="first-page button <?php echo $paged <= 1 ? 'disabled' : ''; ?>" href="<?php echo esc_url($paged > 1 ? $first_url : '#'); ?>"><span aria-hidden="true">«</span></a>
+                            <a class="prev-page button <?php echo $paged <= 1 ? 'disabled' : ''; ?>" href="<?php echo esc_url($prev_url); ?>"><span aria-hidden="true">‹</span></a>
+                            <span class="paging-input"> Page <?php echo esc_html($paged); ?> of <?php echo esc_html($total_pages); ?> </span>
+                            <a class="next-page button <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>" href="<?php echo esc_url($next_url); ?>"><span aria-hidden="true">›</span></a>
+                            <a class="last-page button <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>" href="<?php echo esc_url($last_url); ?>"><span aria-hidden="true">»</span></a>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Pagination (client-side filter pagination within server page) -->
                 <div class="tablenav bottom">
                     <div class="tablenav-pages">
-                        <span class="displaying-num" id="brands-total-count"><?php echo count($brands); ?> items</span>
+                        <span class="displaying-num" id="brands-total-count"><?php echo count($brands); ?> items on page</span>
                         <span class="pagination-links" style="margin-right: 10px;">
-                            <label for="items-per-page-selector" style="margin-right: 5px;">Show:</label>
+                            <label for="items-per-page-selector" style="margin-right: 5px;">Filter view:</label>
                             <select id="items-per-page-selector" style="margin-right: 10px;">
                                 <option value="10">10</option>
                                 <option value="20" selected>20</option>
                                 <option value="50">50</option>
-                                <option value="100">100</option>
-                                <option value="200">200</option>
                             </select>
                         </span>
                         <span class="pagination-links">
@@ -3791,53 +3952,57 @@ class DataFlair_Toplists {
         return 'in ' . floor( $diff / 3600 ) . ' hours';
     }
 
-    private function get_last_brands_cron_time() {
-        $last_run  = get_option( 'dataflair_last_brands_cron_run' );
-        $next_run  = wp_next_scheduled( 'dataflair_brands_sync_cron' );
+    // NOTE: get_last_brands_cron_time() removed in v1.11.0 (Phase 0B H1).
+    // Admin UI now calls format_last_sync_label() below.
 
-        $last_str  = $last_run ? $this->time_ago( $last_run ) : 'never';
-        $next_str  = $next_run ? $this->time_until( $next_run ) : 'not scheduled';
-
-        return 'Last sync: ' . $last_str . ' &mdash; Next sync: ' . $next_str;
-    }
-    
     /**
      * AJAX handler to sync brands in batches (one page at a time)
      */
     public function ajax_sync_brands_batch() {
         check_ajax_referer('dataflair_sync_brands_batch', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
-        
+
         $token = trim(get_option('dataflair_api_token'));
         if (empty($token)) {
             wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
         }
-        
+
         // Get the page number from request
         $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
 
         // On the first page of a full sync, purge all existing brand records so
         // stale brands from a previous API key are not left behind.
+        // Phase 0B H11: paginated DELETE instead of TRUNCATE — safer under
+        // row-based binlog replication and won't blow the MySQL packet size
+        // on large brand tables.
         if ($page === 1) {
             global $wpdb;
             $brands_table = $wpdb->prefix . 'dataflair_brands';
-            $wpdb->query("TRUNCATE TABLE {$brands_table}");
+            $this->delete_all_paginated($brands_table, 500);
         }
 
-        // Sync one page of brands (15 brands per page)
-        $result = $this->sync_brands_page($page, $token);
-        
+        // H13: cooperative wall-clock budget — keeps a single AJAX request
+        // inside the ~30s PHP max_execution_time ceiling, even if the upstream
+        // API is slow. Budget is 25s with a 3s headroom checked between brands.
+        $budget = new \DataFlair\Toplists\Support\WallClockBudget(25.0);
+
+        $result = $this->sync_brands_page($page, $token, $budget);
+
         if ($result['success']) {
+            $partial = !empty($result['partial']);
             wp_send_json_success(array(
-                'page' => $page,
-                'last_page' => $result['last_page'],
-                'synced' => $result['synced'],
-                'errors' => $result['errors'],
+                'page'         => $page,
+                'last_page'    => $result['last_page'],
+                'synced'       => $result['synced'],
+                'errors'       => $result['errors'],
                 'total_synced' => $result['total_synced'],
-                'is_complete' => $page >= $result['last_page']
+                'partial'      => $partial,
+                'next_page'    => $partial ? $page : ($page + 1),
+                // Only "complete" if the budget finished the page AND we're on the last page.
+                'is_complete'  => !$partial && $page >= $result['last_page'],
             ));
         } else {
             wp_send_json_error(array('message' => $result['message']));
@@ -3957,22 +4122,58 @@ class DataFlair_Toplists {
             return $file_url;
         }
         
-        // Download the image
-        $response = wp_remote_get($logo_url, array(
-            'timeout' => 30,
-            'sslverify' => false // Some CDNs have SSL issues
+        // Phase 0B H3 size + timeout caps:
+        //   - 3 MB max body (typical brand logos are 20-200 KB; anything > 3 MB
+        //     is either a misuploaded hero image or a full-resolution press pack).
+        //   - 8 s timeout (was 30; CDNs respond quickly when they respond at all).
+        //   - HEAD request first to read Content-Length cheaply; bail before
+        //     burning bandwidth on a response we'd reject anyway.
+        $logo_max_bytes = 3 * 1024 * 1024;
+        $logo_timeout   = 8;
+
+        $head = wp_remote_head($logo_url, array(
+            'timeout'   => max(3, (int) ceil($logo_timeout / 2)),
+            'sslverify' => false,
         ));
-        
+        if (!is_wp_error($head)) {
+            $content_length = (int) wp_remote_retrieve_header($head, 'content-length');
+            if ($content_length > 0 && $content_length > $logo_max_bytes) {
+                error_log(sprintf(
+                    'DataFlair: Logo at %s is %d bytes (> %d cap) — skipping download.',
+                    $logo_url,
+                    $content_length,
+                    $logo_max_bytes
+                ));
+                return false;
+            }
+        }
+
+        // Download the image under the cap.
+        $response = wp_remote_get($logo_url, array(
+            'timeout'             => $logo_timeout,
+            'sslverify'           => false,
+            'limit_response_size' => $logo_max_bytes,
+        ));
+
         if (is_wp_error($response)) {
             error_log('DataFlair: Failed to download logo from ' . $logo_url . ': ' . $response->get_error_message());
             return false;
         }
-        
+
         $image_data = wp_remote_retrieve_body($response);
         $response_code = wp_remote_retrieve_response_code($response);
-        
+
         if ($response_code !== 200 || empty($image_data)) {
             error_log('DataFlair: Failed to download logo, HTTP ' . $response_code);
+            return false;
+        }
+
+        if (strlen($image_data) >= $logo_max_bytes) {
+            error_log(sprintf(
+                'DataFlair: Logo download hit %d-byte cap at %s — treating as failed.',
+                $logo_max_bytes,
+                $logo_url
+            ));
             return false;
         }
         
@@ -3999,10 +4200,10 @@ class DataFlair_Toplists {
     /**
      * Sync a single page of brands from API (15 brands per page)
      */
-    private function sync_brands_page($page, $token) {
+    private function sync_brands_page($page, $token, $budget = null) {
         $brands_url = $this->get_brands_api_url($page);
 
-        $response = $this->api_get($brands_url, $token);
+        $response = $this->api_get($brands_url, $token, 12, 2, $budget);
 
         if (is_wp_error($response)) {
             $error_msg = 'Failed to fetch brands page ' . $page . ': ' . $response->get_error_message();
@@ -4040,16 +4241,28 @@ class DataFlair_Toplists {
         
         $synced = 0;
         $errors = 0;
-        
+        $budget_exhausted_on_item = null;
+
         global $wpdb;
         $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        
+
         // Log the number of brands on this page
         $brands_on_page = count($data['data']);
         error_log('DataFlair: Page ' . $page . ' has ' . $brands_on_page . ' brands');
-        
+
         // Process each brand on this page
+        $item_index = 0;
         foreach ($data['data'] as $brand_data) {
+            // H13: cooperative time-budget check — bail out before starting a new
+            // brand if the wall-clock budget is running out. The caller turns this
+            // into a `partial:true` response so the admin JS re-issues the page.
+            if ($budget instanceof \DataFlair\Toplists\Support\WallClockBudget
+                && $budget->exceeded(3.0)
+            ) {
+                $budget_exhausted_on_item = $item_index;
+                break;
+            }
+            $item_index++;
             // Check if brand is active
             $brand_status = isset($brand_data['brandStatus']) ? $brand_data['brandStatus'] : '';
             
@@ -4192,210 +4405,47 @@ class DataFlair_Toplists {
                 error_log('DataFlair brand sync error for brand ID ' . $api_brand_id . ': ' . $wpdb->last_error);
                 error_log('DataFlair brand sync error - Last query: ' . $wpdb->last_query);
             }
+
+            // H4: drop the per-brand working set before the next iteration so
+            // a stalled upstream can't accumulate dozens of decoded brand
+            // payloads in memory inside one request.
+            unset($brand_data, $existing, $result, $product_types, $licenses,
+                  $classification_types, $top_geos, $top_geos_arr,
+                  $offers_count, $trackers_count, $local_logo_path,
+                  $local_logo_url_column);
         }
-        
+
+        // Release the decoded response and run one cycle of the GC at the end
+        // of the page. Avoids keeping the full ~2-5MB JSON array live across
+        // the total_synced COUNT(*) query and the final wp_send_json_success.
+        unset($data, $body);
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
+        }
+
         error_log('DataFlair: Page ' . $page . ' complete. Synced: ' . $synced . ', Errors: ' . $errors);
-        
+
         // Get total synced count from database
         $total_synced = $wpdb->get_var("SELECT COUNT(*) FROM $brands_table_name WHERE status = 'Active'");
-        
+
         error_log('DataFlair: Total active brands in database: ' . $total_synced);
-        
+
+        $partial = $budget_exhausted_on_item !== null;
+
         return array(
-            'success' => true,
-            'last_page' => $last_page,
-            'synced' => $synced,
-            'errors' => $errors,
+            'success'      => true,
+            'last_page'    => $last_page,
+            'synced'       => $synced,
+            'errors'       => $errors,
             'total_synced' => intval($total_synced),
-            'total_brands' => $total
+            'total_brands' => $total,
+            'partial'      => $partial,
+            'next_page'    => $partial ? $page : ($page + 1),
         );
     }
     
-    /**
-     * Sync all brands from API (only active ones) - handles pagination
-     * Used by cron job
-     */
-    private function sync_all_brands() {
-        $token = trim(get_option('dataflair_api_token'));
-        
-        if (empty($token)) {
-            return array('success' => false, 'message' => 'API token not configured');
-        }
-        
-        $base_url = $this->get_api_base_url();
-        $synced = 0;
-        $errors = 0;
-        $current_page = 1;
-        $last_page = 1;
-        
-        global $wpdb;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        
-        // Loop through all pages
-        do {
-            $brands_url = $base_url . '/brands?page=' . $current_page;
-
-            $response = $this->api_get($brands_url, $token);
-
-            if (is_wp_error($response)) {
-                $error_msg = 'Failed to fetch brands page ' . $current_page . ': ' . $response->get_error_message();
-                error_log('DataFlair fetch_all_brands error: ' . $error_msg);
-                return array('success' => false, 'message' => $error_msg);
-            }
-
-            $status_code = wp_remote_retrieve_response_code($response);
-            $body = wp_remote_retrieve_body($response);
-            $response_headers = wp_remote_retrieve_headers($response);
-
-            if ($status_code !== 200) {
-                $error_msg = $this->build_detailed_api_error($status_code, $body, $response_headers, $brands_url);
-                error_log('DataFlair fetch_all_brands error: ' . $error_msg);
-                return array('success' => false, 'message' => $error_msg);
-            }
-            
-            $data = json_decode($body, true);
-            
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $error_msg = 'JSON decode error: ' . json_last_error_msg();
-                error_log('DataFlair fetch_all_brands error: ' . $error_msg);
-                return array('success' => false, 'message' => $error_msg);
-            }
-            
-            if (!isset($data['data'])) {
-                $error_msg = 'Invalid response format from API. Expected "data" key.';
-                error_log('DataFlair fetch_all_brands error: ' . $error_msg);
-                return array('success' => false, 'message' => $error_msg);
-            }
-            
-            // Get pagination info
-            if (isset($data['meta']['last_page'])) {
-                $last_page = intval($data['meta']['last_page']);
-            }
-            
-            error_log('DataFlair: Processing brands page ' . $current_page . ' of ' . $last_page);
-            
-            // Process each brand on this page
-            foreach ($data['data'] as $brand_data) {
-                // Check if brand is active
-                $brand_status = isset($brand_data['brandStatus']) ? $brand_data['brandStatus'] : '';
-                
-                if ($brand_status !== 'Active') {
-                    continue; // Skip non-active brands
-                }
-                
-                if (!isset($brand_data['id'])) {
-                    $errors++;
-                    error_log('DataFlair brand missing ID: ' . json_encode($brand_data));
-                    continue;
-                }
-                
-                $api_brand_id = $brand_data['id'];
-                $brand_name = isset($brand_data['name']) ? $brand_data['name'] : 'Unnamed Brand';
-                $brand_slug = isset($brand_data['slug']) ? $brand_data['slug'] : sanitize_title($brand_name);
-                
-                // Extract computed fields
-                $product_types = isset($brand_data['productTypes']) && is_array($brand_data['productTypes']) 
-                    ? implode(', ', $brand_data['productTypes']) 
-                    : '';
-                
-                $licenses = isset($brand_data['licenses']) && is_array($brand_data['licenses']) 
-                    ? implode(', ', $brand_data['licenses']) 
-                    : '';
-                
-                // Combine top geo countries and markets
-                $top_geos_arr = array();
-                if (isset($brand_data['topGeos']['countries']) && is_array($brand_data['topGeos']['countries'])) {
-                    $top_geos_arr = array_merge($top_geos_arr, $brand_data['topGeos']['countries']);
-                }
-                if (isset($brand_data['topGeos']['markets']) && is_array($brand_data['topGeos']['markets'])) {
-                    $top_geos_arr = array_merge($top_geos_arr, $brand_data['topGeos']['markets']);
-                }
-                $top_geos = implode(', ', $top_geos_arr);
-                
-                // Count offers
-                $offers_count = isset($brand_data['offers']) && is_array($brand_data['offers']) 
-                    ? count($brand_data['offers']) 
-                    : 0;
-                
-                // Count trackers across all offers
-                $trackers_count = 0;
-                if (isset($brand_data['offers']) && is_array($brand_data['offers'])) {
-                    foreach ($brand_data['offers'] as $offer) {
-                        if (isset($offer['trackers']) && is_array($offer['trackers'])) {
-                            $trackers_count += count($offer['trackers']);
-                        }
-                    }
-                }
-                
-                // Insert or update
-                $existing = $wpdb->get_row($wpdb->prepare(
-                    "SELECT id FROM $brands_table_name WHERE api_brand_id = %d",
-                    $api_brand_id
-                ));
-                
-                if ($existing) {
-                    $result = $wpdb->update(
-                        $brands_table_name,
-                        array(
-                            'name' => $brand_name,
-                            'slug' => $brand_slug,
-                            'status' => $brand_status,
-                            'product_types' => $product_types,
-                            'licenses' => $licenses,
-                            'top_geos' => $top_geos,
-                            'offers_count' => $offers_count,
-                            'trackers_count' => $trackers_count,
-                            'data' => json_encode($brand_data),
-                            'last_synced' => current_time('mysql')
-                        ),
-                        array('api_brand_id' => $api_brand_id),
-                        array('%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s'),
-                        array('%d')
-                    );
-                } else {
-                    $result = $wpdb->insert(
-                        $brands_table_name,
-                        array(
-                            'api_brand_id' => $api_brand_id,
-                            'name' => $brand_name,
-                            'slug' => $brand_slug,
-                            'status' => $brand_status,
-                            'product_types' => $product_types,
-                            'licenses' => $licenses,
-                            'top_geos' => $top_geos,
-                            'offers_count' => $offers_count,
-                            'trackers_count' => $trackers_count,
-                            'data' => json_encode($brand_data),
-                            'last_synced' => current_time('mysql')
-                        ),
-                        array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s')
-                    );
-                }
-                
-                if ($result !== false) {
-                    $synced++;
-                } else {
-                    $errors++;
-                    error_log('DataFlair brand sync error for brand ID ' . $api_brand_id . ': ' . $wpdb->last_error);
-                }
-            }
-            
-            $current_page++;
-            
-        } while ($current_page <= $last_page);
-        
-        error_log('DataFlair: Brands sync complete. Total synced: ' . $synced . ', Errors: ' . $errors);
-
-        // Record sync time so the admin UI shows "Last sync: X ago" whether
-        // the sync was triggered by cron or manually via the admin panel.
-        update_option('dataflair_last_brands_cron_run', time());
-
-        return array(
-            'success' => true,
-            'synced' => $synced,
-            'errors' => $errors
-        );
-    }
+    // NOTE: sync_all_brands() removed in v1.11.0 (Phase 0B H1). Batched
+    // sync via ajax_sync_brands_batch is now the only path — cron is gone.
 
     /**
      * AJAX handler to get alternative toplists for a toplist
@@ -4961,8 +5011,12 @@ class DataFlair_Toplists {
             <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
             <?php endif; ?>
             
-                        <?php foreach ($items as $item): 
-                echo $this->render_casino_card($item, $atts['id'], $customizations, $pros_cons_data);
+                        <?php
+            // Phase 0B H7: prefetch every card's brand row in one (or at most
+            // three) SQL round-trip instead of 5 cascading per-card queries.
+            $brand_meta_map = $this->prefetch_brand_metas_for_items($items);
+            foreach ($items as $item):
+                echo $this->render_casino_card($item, $atts['id'], $customizations, $pros_cons_data, $brand_meta_map);
             endforeach; ?>
         </div>
         <?php
@@ -5352,12 +5406,148 @@ class DataFlair_Toplists {
     }
     
     /**
+     * Phase 0B H7: Prefetch brand metadata for every item in a toplist in a
+     * single (or at most three) SQL round-trip instead of the five cascading
+     * $wpdb->prepare calls render_casino_card() previously ran per item.
+     *
+     * Returns ['ids' => [api_brand_id => row], 'slugs' => [...], 'names' => [...]]
+     * so render_casino_card() can resolve each card's brand via a cheap map
+     * lookup matching the legacy cascade order.
+     *
+     * @param array $items Items array from the toplist payload.
+     * @return array{ids: array<int,object>, slugs: array<string,object>, names: array<string,object>}
+     */
+    private function prefetch_brand_metas_for_items(array $items) {
+        global $wpdb;
+        $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+
+        $wanted_ids = array();
+        $wanted_slugs = array();
+        $wanted_names = array();
+        foreach ($items as $item) {
+            $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
+            if (!empty($brand['api_brand_id'])) $wanted_ids[intval($brand['api_brand_id'])] = true;
+            if (!empty($brand['id']))            $wanted_ids[intval($brand['id'])] = true;
+            if (!empty($brand['slug']))          $wanted_slugs[(string) $brand['slug']] = true;
+            if (!empty($brand['name']))          $wanted_names[(string) $brand['name']] = true;
+        }
+
+        $by_id = array();
+        $by_slug = array();
+        $by_name = array();
+        $columns = 'api_brand_id, slug, name, local_logo_url, cached_review_post_id, review_url_override';
+
+        if (!empty($wanted_ids)) {
+            $id_list = array_keys($wanted_ids);
+            $placeholders = implode(',', array_fill(0, count($id_list), '%d'));
+            $sql = $wpdb->prepare(
+                "SELECT $columns FROM $brands_table WHERE api_brand_id IN ($placeholders)",
+                $id_list
+            );
+            foreach ((array) $wpdb->get_results($sql) as $row) {
+                if (!empty($row->api_brand_id)) $by_id[intval($row->api_brand_id)] = $row;
+                if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) $by_slug[(string) $row->slug] = $row;
+                if (!empty($row->name) && !isset($by_name[(string) $row->name])) $by_name[(string) $row->name] = $row;
+            }
+        }
+
+        $missing_slugs = array_diff_key($wanted_slugs, $by_slug);
+        if (!empty($missing_slugs)) {
+            $slug_list = array_keys($missing_slugs);
+            $placeholders = implode(',', array_fill(0, count($slug_list), '%s'));
+            $sql = $wpdb->prepare(
+                "SELECT $columns FROM $brands_table WHERE slug IN ($placeholders)",
+                $slug_list
+            );
+            foreach ((array) $wpdb->get_results($sql) as $row) {
+                if (!empty($row->api_brand_id) && !isset($by_id[intval($row->api_brand_id)])) $by_id[intval($row->api_brand_id)] = $row;
+                if (!empty($row->slug)) $by_slug[(string) $row->slug] = $row;
+                if (!empty($row->name) && !isset($by_name[(string) $row->name])) $by_name[(string) $row->name] = $row;
+            }
+        }
+
+        $missing_names = array_diff_key($wanted_names, $by_name);
+        if (!empty($missing_names)) {
+            $name_list = array_keys($missing_names);
+            $placeholders = implode(',', array_fill(0, count($name_list), '%s'));
+            $sql = $wpdb->prepare(
+                "SELECT $columns FROM $brands_table WHERE name IN ($placeholders)",
+                $name_list
+            );
+            foreach ((array) $wpdb->get_results($sql) as $row) {
+                if (!empty($row->api_brand_id) && !isset($by_id[intval($row->api_brand_id)])) $by_id[intval($row->api_brand_id)] = $row;
+                if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) $by_slug[(string) $row->slug] = $row;
+                if (!empty($row->name)) $by_name[(string) $row->name] = $row;
+            }
+        }
+
+        return array('ids' => $by_id, 'slugs' => $by_slug, 'names' => $by_name);
+    }
+
+    /**
+     * Phase 0B H7: Resolve a single item's brand row from the prefetched map
+     * using the same cascading preference the legacy per-card queries used.
+     *
+     * @param array $brand    The item's brand payload (api_brand_id/id/slug/name).
+     * @param array $meta_map Output of prefetch_brand_metas_for_items().
+     * @return object|null
+     */
+    private function lookup_brand_meta_from_map(array $brand, array $meta_map) {
+        if (!empty($brand['api_brand_id']) && isset($meta_map['ids'][intval($brand['api_brand_id'])])) {
+            return $meta_map['ids'][intval($brand['api_brand_id'])];
+        }
+        if (!empty($brand['id']) && isset($meta_map['ids'][intval($brand['id'])])) {
+            return $meta_map['ids'][intval($brand['id'])];
+        }
+        if (!empty($brand['slug']) && isset($meta_map['slugs'][(string) $brand['slug']])) {
+            return $meta_map['slugs'][(string) $brand['slug']];
+        }
+        if (!empty($brand['name']) && isset($meta_map['names'][(string) $brand['name']])) {
+            return $meta_map['names'][(string) $brand['name']];
+        }
+        return null;
+    }
+
+    /**
+     * Phase 0B H8: Batched review-post lookup. Given a list of api_brand_ids,
+     * returns [api_brand_id => post_id] for brands whose review CPT is
+     * published but does not yet have cached_review_post_id populated on the
+     * brands table. Intended as a defensive backstop only — normal render
+     * paths read cached_review_post_id directly and never hit this code.
+     *
+     * @param int[] $brand_ids
+     * @return array<int,int>
+     */
+    private function find_review_posts_by_brand_metas(array $brand_ids) {
+        global $wpdb;
+        if (empty($brand_ids)) return array();
+        $brand_ids = array_values(array_unique(array_map('intval', $brand_ids)));
+        $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
+        $sql = $wpdb->prepare(
+            "SELECT pm.meta_value AS brand_id, p.ID AS post_id
+             FROM $wpdb->postmeta pm
+             INNER JOIN $wpdb->posts p ON p.ID = pm.post_id
+             WHERE pm.meta_key = 'dataflair_brand_id'
+               AND pm.meta_value IN ($placeholders)
+               AND p.post_type = 'review'
+               AND p.post_status = 'publish'",
+            $brand_ids
+        );
+        $map = array();
+        foreach ((array) $wpdb->get_results($sql) as $row) {
+            $bid = intval($row->brand_id);
+            if (!isset($map[$bid])) $map[$bid] = intval($row->post_id);
+        }
+        return $map;
+    }
+
+    /**
      * Render individual casino card
      * Uses the new structured template for better layout
      *
      * @codeCoverageIgnore
      */
-    private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array()) {
+    private function render_casino_card($item, $toplist_id, $customizations = array(), $pros_cons_data = array(), $brand_meta_map = null) {
         global $wpdb;
         // Check if new template exists
         $template_path = DATAFLAIR_PLUGIN_DIR . 'includes/render-casino-card.php';
@@ -5369,60 +5559,81 @@ class DataFlair_Toplists {
             // created a review CPT on cold page views; both are now sync-time concerns.
             // Logo URL + review post ID live on wp_dataflair_brands and are populated
             // by download_brand_logo() at sync time or by `wp dataflair reconcile-reviews`.
+            //
+            // Phase 0B H7: per-card $wpdb->prepare lookups collapsed into a single
+            // batched prefetch done by the caller. We consult the map first; only if
+            // it's absent (legacy callers) do we fall back to per-card queries.
             $brand = $item['brand'];
             $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
 
-            // Fetch sync-time precomputed values for this brand (single row, two fields).
             $precomputed_local_logo_url = null;
             $precomputed_review_post_id = null;
-            if (!empty($brand['api_brand_id'])) {
-                $precomputed_row = $wpdb->get_row($wpdb->prepare(
-                    "SELECT local_logo_url, cached_review_post_id FROM $brands_table WHERE api_brand_id = %d",
-                    intval($brand['api_brand_id'])
-                ));
-                if ($precomputed_row) {
-                    $precomputed_local_logo_url = $precomputed_row->local_logo_url;
-                    $precomputed_review_post_id = !empty($precomputed_row->cached_review_post_id)
-                        ? intval($precomputed_row->cached_review_post_id)
-                        : null;
+            $override = null;
+
+            $meta_row = null;
+            if (is_array($brand_meta_map)) {
+                $meta_row = $this->lookup_brand_meta_from_map($brand, $brand_meta_map);
+            }
+
+            if ($meta_row !== null) {
+                $precomputed_local_logo_url = $meta_row->local_logo_url ?? null;
+                $precomputed_review_post_id = !empty($meta_row->cached_review_post_id)
+                    ? intval($meta_row->cached_review_post_id)
+                    : null;
+                $override = $meta_row->review_url_override ?? null;
+            } elseif ($brand_meta_map === null) {
+                // Legacy fallback: no prefetch map supplied by the caller. Use the
+                // old per-card cascade — 2 queries for the logo/review_post row,
+                // plus up to 4 cascading queries for review_url_override.
+                if (!empty($brand['api_brand_id'])) {
+                    $precomputed_row = $wpdb->get_row($wpdb->prepare(
+                        "SELECT local_logo_url, cached_review_post_id FROM $brands_table WHERE api_brand_id = %d",
+                        intval($brand['api_brand_id'])
+                    ));
+                    if ($precomputed_row) {
+                        $precomputed_local_logo_url = $precomputed_row->local_logo_url;
+                        $precomputed_review_post_id = !empty($precomputed_row->cached_review_post_id)
+                            ? intval($precomputed_row->cached_review_post_id)
+                            : null;
+                    }
+                }
+                if (!empty($brand['api_brand_id'])) {
+                    $override = $wpdb->get_var($wpdb->prepare(
+                        "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
+                        intval($brand['api_brand_id'])
+                    ));
+                }
+                if (empty($override) && !empty($brand['id'])) {
+                    $override = $wpdb->get_var($wpdb->prepare(
+                        "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
+                        intval($brand['id'])
+                    ));
+                }
+                if (empty($override) && !empty($brand['slug'])) {
+                    $override = $wpdb->get_var($wpdb->prepare(
+                        "SELECT review_url_override FROM $brands_table WHERE slug = %s",
+                        $brand['slug']
+                    ));
+                }
+                if (empty($override) && !empty($brand['name'])) {
+                    $override = $wpdb->get_var($wpdb->prepare(
+                        "SELECT review_url_override FROM $brands_table WHERE name = %s",
+                        $brand['name']
+                    ));
                 }
             }
+
             if (!empty($precomputed_local_logo_url)) {
                 $brand['local_logo_url'] = $precomputed_local_logo_url;
             }
 
-            // review_url_override lookup — 4 cascading queries, H7 batches these later.
+            // review_url_override resolution — either came from the prefetched map
+            // or from the legacy cascade above.
             $review_url = null;
-            $override = null;
             // Used by render-casino-card.php: show "Read Review" only for published CPT
             // or explicit URL override (not draft-only / slug placeholder).
             $dataflair_review_url_is_admin_override = false;
             $dataflair_review_cpt_is_published = false;
-
-            if (!empty($brand['api_brand_id'])) {
-                $override = $wpdb->get_var($wpdb->prepare(
-                    "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
-                    intval($brand['api_brand_id'])
-                ));
-            }
-            if (empty($override) && !empty($brand['id'])) {
-                $override = $wpdb->get_var($wpdb->prepare(
-                    "SELECT review_url_override FROM $brands_table WHERE api_brand_id = %d",
-                    intval($brand['id'])
-                ));
-            }
-            if (empty($override) && !empty($brand['slug'])) {
-                $override = $wpdb->get_var($wpdb->prepare(
-                    "SELECT review_url_override FROM $brands_table WHERE slug = %s",
-                    $brand['slug']
-                ));
-            }
-            if (empty($override) && !empty($brand['name'])) {
-                $override = $wpdb->get_var($wpdb->prepare(
-                    "SELECT review_url_override FROM $brands_table WHERE name = %s",
-                    $brand['name']
-                ));
-            }
 
             if (!empty($override)) {
                 $review_url = esc_url($override);
@@ -6162,18 +6373,16 @@ class DataFlair_Toplists {
     }
     
     /**
-     * Get last cron execution time
+     * Build the "Last sync" label for the admin UI. Reads the given option
+     * (still named `dataflair_last_*_cron_run` for backward compat — option
+     * rename lands in Phase 1 via a dedicated migration).
      */
-    private function get_last_cron_time() {
-        $last_run = get_option('dataflair_last_toplists_cron_run');
-        $next_run = wp_next_scheduled('dataflair_sync_cron');
-
-        $last_str = $last_run ? $this->time_ago($last_run) : 'never';
-        $next_str = $next_run ? $this->time_until($next_run) : 'not scheduled';
-
-        return 'Last sync: ' . $last_str . ' &mdash; Next sync: ' . $next_str;
+    private function format_last_sync_label($option_key) {
+        $last_run = get_option($option_key);
+        return 'Last sync: ' . ($last_run ? $this->time_ago($last_run) : 'never');
     }
-    
+
+
     /**
      * Register Gutenberg block
      */
@@ -6358,6 +6567,25 @@ class DataFlair_Toplists {
                     'required' => true,
                     'type' => 'integer',
                 ),
+                'page' => array(
+                    'required' => false,
+                    'type'     => 'integer',
+                    'default'  => 1,
+                    'minimum'  => 1,
+                ),
+                'per_page' => array(
+                    'required' => false,
+                    'type'     => 'integer',
+                    'default'  => 20,
+                    'minimum'  => 1,
+                    'maximum'  => 100,
+                ),
+                'full' => array(
+                    'required' => false,
+                    'type'     => 'integer',
+                    'default'  => 0,
+                    'enum'     => array(0, 1),
+                ),
             ),
         ));
 
@@ -6410,12 +6638,28 @@ class DataFlair_Toplists {
     }
     
     /**
-     * REST API callback to get casinos for a toplist
+     * REST API callback to get casinos for a toplist.
+     *
+     * H12 (Phase 0B): paginate + lean per-item payload.
+     *   - ?per_page default 20, max 100.
+     *   - ?page default 1.
+     *   - Default lean shape: {id, name, rating, offer_text, logo_url}.
+     *   - ?full=1 preserves the legacy verbose shape (block editor uses it).
+     *   - Emits X-WP-Total / X-WP-TotalPages headers.
+     *
+     * The legacy version decoded the full toplist JSON blob and returned
+     * every item for every call. On a toplist with 200 items on a 1 GB
+     * memory cap, that round-trip alone was ~40 MB of transient PHP memory
+     * per concurrent REST call. Pagination + lean projection lands the
+     * common case under 200 KB.
      */
     public function get_toplist_casinos_rest($request) {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
         $toplist_id = intval($request['id']);
+        $page       = max(1, intval($request->get_param('page')));
+        $per_page   = min(100, max(1, intval($request->get_param('per_page'))));
+        $full       = (int) $request->get_param('full') === 1;
 
         $toplist = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM $table_name WHERE api_toplist_id = %d",
@@ -6428,7 +6672,7 @@ class DataFlair_Toplists {
 
         $data = json_decode($toplist->data, true);
 
-        // Support multiple known data shapes (editions model added listItems)
+        // Support multiple known data shapes (editions model added listItems).
         $items = null;
         if (isset($data['data']['items'])) {
             $items = $data['data']['items'];
@@ -6438,12 +6682,24 @@ class DataFlair_Toplists {
             $items = $data['listItems'];
         }
 
-        if (empty($items)) {
-            return rest_ensure_response(array());
+        if (empty($items) || !is_array($items)) {
+            $response = rest_ensure_response(array());
+            $response->header('X-WP-Total', '0');
+            $response->header('X-WP-TotalPages', '0');
+            return $response;
         }
 
+        $total       = count($items);
+        $total_pages = (int) ceil($total / $per_page);
+        $offset      = ($page - 1) * $per_page;
+        $page_items  = array_slice($items, $offset, $per_page);
+
+        // Prefetch brand metas once for the paged slice so logo_url is filled
+        // without N extra queries.
+        $brand_meta_map = $full ? null : $this->prefetch_brand_metas_for_items($page_items);
+
         $casinos = array();
-        foreach ($items as $item) {
+        foreach ($page_items as $item) {
             $brand_name = '';
             if (isset($item['brand']['name'])) {
                 $brand_name = $item['brand']['name'];
@@ -6461,18 +6717,50 @@ class DataFlair_Toplists {
                 $brand_id = intval($item['brandId']);
             }
 
+            if ($full) {
+                // Legacy verbose shape — block editor + any downstream
+                // consumer that still needs the full payload.
+                $casinos[] = array(
+                    'itemId'    => isset($item['id']) ? intval($item['id']) : 0,
+                    'brandId'   => $brand_id,
+                    'position'  => isset($item['position']) ? $item['position'] : 0,
+                    'brandName' => $brand_name,
+                    'brandSlug' => sanitize_title($brand_name),
+                    'pros'      => !empty($item['pros']) ? $item['pros'] : array(),
+                    'cons'      => !empty($item['cons']) ? $item['cons'] : array(),
+                );
+                continue;
+            }
+
+            // Lean H12 shape — the only fields most callers need.
+            $rating     = isset($item['rating']) ? (float) $item['rating'] : 0.0;
+            $offer      = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
+            $offer_text = isset($offer['offerText']) ? (string) $offer['offerText'] : '';
+
+            $logo_url  = '';
+            $brand_row = array(
+                'api_brand_id' => $brand_id,
+                'name'         => $brand_name,
+                'slug'         => sanitize_title($brand_name),
+            );
+            $meta = $this->lookup_brand_meta_from_map($brand_row, $brand_meta_map ?: array());
+            if (!empty($meta->local_logo_url)) {
+                $logo_url = (string) $meta->local_logo_url;
+            }
+
             $casinos[] = array(
-                'itemId'    => isset($item['id']) ? intval($item['id']) : 0,
-                'brandId'   => $brand_id,
-                'position'  => isset($item['position']) ? $item['position'] : 0,
-                'brandName' => $brand_name,
-                'brandSlug' => sanitize_title($brand_name),
-                'pros'      => !empty($item['pros']) ? $item['pros'] : array(),
-                'cons'      => !empty($item['cons']) ? $item['cons'] : array(),
+                'id'         => isset($item['id']) ? intval($item['id']) : 0,
+                'name'       => $brand_name,
+                'rating'     => $rating,
+                'offer_text' => $offer_text,
+                'logo_url'   => $logo_url,
             );
         }
 
-        return rest_ensure_response($casinos);
+        $response = rest_ensure_response($casinos);
+        $response->header('X-WP-Total', (string) $total);
+        $response->header('X-WP-TotalPages', (string) $total_pages);
+        return $response;
     }
     
     /**

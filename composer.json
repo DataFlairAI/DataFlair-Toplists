@@ -31,7 +31,8 @@
     "autoload": {
         "psr-4": {
             "DataFlair\\Toplists\\Models\\": "includes/",
-            "DataFlair\\Toplists\\Cli\\": "includes/Cli/"
+            "DataFlair\\Toplists\\Cli\\": "includes/Cli/",
+            "DataFlair\\Toplists\\Support\\": "includes/Support/"
         }
     },
     "extra": {
