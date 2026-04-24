@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.15.0
+ * Version: 1.15.1
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.15.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.15.1');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,15 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.15.1</h4>
+<ul>
+  <li><strong>Phase 7 — block registrars extracted.</strong> <code>register_block_type</code> for the <code>dataflair-toplists/toplist</code> block is now owned by <code>DataFlair\Toplists\Block\BlockRegistrar</code>. The render callback moved to <code>DataFlair\Toplists\Block\ToplistBlock</code> (closure-based DI for the shortcode renderer + option reader keeps it <code>$wpdb</code>-free). Editor CSS enqueue moved to <code>DataFlair\Toplists\Block\EditorAssets</code>. Block metadata path resolution (<code>build/block.json</code> → <code>src/block.json</code> fallback), block attributes, shortcode delegation, and <code>prosCons</code> pass-through all preserved byte-for-byte.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Block\\BlockBootstrap</code> — single wiring seam. The god-class calls <code>$this-&gt;block_bootstrap()-&gt;boot()-&gt;register()</code> from <code>init_hooks()</code>; <code>register()</code> installs both the <code>init</code> and <code>enqueue_block_editor_assets</code> hooks.</li>
+  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Block\\</code> → <code>src/Block/</code>.</li>
+  <li><strong>New tests:</strong> <code>BlockRegistrarTest</code> (4), <code>ToplistBlockTest</code> (6), <code>EditorAssetsTest</code> (1), backed by namespace-local WP function stubs in <code>BlockTestStubs.php</code>. Suite now at 392 tests / 915 assertions, all green.</li>
+  <li><strong>Internal:</strong> <code>register_block()</code>, <code>render_block($attributes)</code>, and <code>enqueue_editor_assets()</code> on the god-class are now thin delegators. No behavioural change for block editor users.</li>
+</ul>
+
 <h4>1.15.0</h4>
 <ul>
   <li><strong>Phase 6 — REST endpoints extracted.</strong> The three <code>/wp-json/dataflair/v1/*</code> routes are now owned by <code>DataFlair\Toplists\Rest\RestRouter</code>. Per-route logic lives in dedicated controllers: <code>ToplistsController</code>, <code>CasinosController</code>, and <code>HealthController</code>. The <code>dataflair/v1</code> namespace, URL shapes, response shapes, and permission contracts are preserved byte-for-byte.</li>
@@ -459,6 +468,15 @@ class DataFlair_Toplists {
      */
     private $rest_bootstrap = null;
 
+    /**
+     * Phase 7 — Block bootstrap. Wires the BlockRegistrar + ToplistBlock +
+     * EditorAssets from one seam. Lazy-instantiated on init; see
+     * src/Block/BlockBootstrap.php.
+     *
+     * @var \DataFlair\Toplists\Block\BlockBootstrap|null
+     */
+    private $block_bootstrap = null;
+
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -737,6 +755,27 @@ class DataFlair_Toplists {
         return $this->rest_bootstrap;
     }
 
+    /**
+     * Phase 7 — lazy BlockBootstrap getter. Wires the Gutenberg block
+     * registrar + render callback + editor assets from a single seam.
+     * Shortcode renderer is passed as a closure so the block stays
+     * `$wpdb`-free and the god-class shortcode method can be swapped later
+     * without touching the block.
+     */
+    private function block_bootstrap() {
+        if ($this->block_bootstrap instanceof \DataFlair\Toplists\Block\BlockBootstrap) {
+            return $this->block_bootstrap;
+        }
+        $this->block_bootstrap = new \DataFlair\Toplists\Block\BlockBootstrap(
+            \Closure::fromCallable([$this, 'toplist_shortcode']),
+            \Closure::fromCallable('get_option'),
+            DATAFLAIR_PLUGIN_DIR,
+            DATAFLAIR_PLUGIN_URL,
+            DATAFLAIR_VERSION
+        );
+        return $this->block_bootstrap;
+    }
+
     private function init_hooks() {
         // Activation/Deactivation
         register_activation_hook(__FILE__, array($this, 'activate'));
@@ -760,12 +799,15 @@ class DataFlair_Toplists {
         // Shortcode
         add_shortcode('dataflair_toplist', array($this, 'toplist_shortcode'));
         
-        // Gutenberg Block
-        add_action('init', array($this, 'register_block'));
-        
+        // Phase 7 — Gutenberg block registration + editor assets now live in
+        // DataFlair\Toplists\Block\{BlockRegistrar, ToplistBlock, EditorAssets}.
+        // BlockRegistrar::register() wires the `init` and
+        // `enqueue_block_editor_assets` hooks in one call.
+        $this->block_bootstrap()->boot()->register();
+
         // REST API for block editor
         add_action('rest_api_init', array($this, 'register_rest_routes'));
-        
+
         // Redirect handler for /go/ campaign links
         add_action('template_redirect', array($this, 'handle_campaign_redirect'));
 
@@ -777,13 +819,10 @@ class DataFlair_Toplists {
 
         // Enqueue frontend styles and scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_assets'));
-        
+
         // Phase 5 — admin asset enqueue lives in
         // DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar.
         $this->admin_bootstrap()->registerAssets();
-        
-        // Enqueue block editor assets
-        add_action('enqueue_block_editor_assets', array($this, 'enqueue_editor_assets'));
         
         // Check if shortcode/block is used and enqueue Alpine.js if needed
         add_action('wp_footer', array($this, 'maybe_enqueue_alpine'), 5);
@@ -5206,38 +5245,26 @@ class DataFlair_Toplists {
 
 
     /**
-     * Register Gutenberg block
+     * Register the Gutenberg block.
+     *
+     * Phase 7 — delegates to DataFlair\Toplists\Block\BlockRegistrar.
+     * Kept on the god-class as a public seam until Phase 8 shim birth so
+     * any external caller holding a reference to `[$this, 'register_block']`
+     * continues to work.
      */
     public function register_block() {
-        if (!function_exists('register_block_type')) {
-            return;
-        }
-        
-        // Check for built block first, then source
-        $block_json = DATAFLAIR_PLUGIN_DIR . 'build/block.json';
-        if (!file_exists($block_json)) {
-            $block_json = DATAFLAIR_PLUGIN_DIR . 'src/block.json';
-        }
-        
-        if (file_exists($block_json)) {
-            register_block_type($block_json, array(
-                'render_callback' => array($this, 'render_block'),
-                'version' => DATAFLAIR_VERSION
-            ));
-        }
+        $this->block_bootstrap()->boot()->registerBlock();
     }
-    
+
     /**
-     * Enqueue editor assets for Gutenberg block
+     * Enqueue editor assets for the Gutenberg block.
+     *
+     * Phase 7 — delegates to DataFlair\Toplists\Block\EditorAssets.
+     * Kept on the god-class as a public seam for the same reason as
+     * register_block.
      */
     public function enqueue_editor_assets() {
-        $editor_style = DATAFLAIR_PLUGIN_URL . 'assets/editor.css';
-        wp_enqueue_style(
-            'dataflair-toplist-editor',
-            $editor_style,
-            array(),
-            DATAFLAIR_VERSION
-        );
+        (new \DataFlair\Toplists\Block\EditorAssets(DATAFLAIR_PLUGIN_URL, DATAFLAIR_VERSION))->enqueue();
     }
     
     /**
@@ -5286,84 +5313,19 @@ class DataFlair_Toplists {
     }
     
     /**
-     * Render callback for the block
+     * Render callback for the Gutenberg block.
+     *
+     * Phase 7 — delegates to DataFlair\Toplists\Block\ToplistBlock. Kept on
+     * the god-class as a public seam in case any registered block metadata
+     * still points at `[$this, 'render_block']`. New code should never call
+     * this directly.
      */
     public function render_block($attributes) {
-        // Get default values from settings (if set)
-        $ribbon_bg_default = get_option('dataflair_ribbon_bg_color', 'brand-600');
-        $ribbon_text_default = get_option('dataflair_ribbon_text_color', 'white');
-        $cta_bg_default = get_option('dataflair_cta_bg_color', 'brand-600');
-        $cta_text_default = get_option('dataflair_cta_text_color', 'white');
-        
-        // Default values from block.json (with settings as fallback)
-        $defaults = array(
-            'toplistId' => '',
-            'title' => '',
-            'limit' => 0,
-            'layout' => 'cards',
-            'ribbonBgColor' => $ribbon_bg_default,
-            'ribbonTextColor' => $ribbon_text_default,
-            'ribbonText' => 'Our Top Choice',
-            'rankBgColor' => 'gray-100',
-            'rankTextColor' => 'gray-900',
-            'rankBorderRadius' => 'rounded',
-            'brandLinkColor' => 'brand-600',
-            'bonusLabelStyle' => 'text-gray-600',
-            'bonusTextStyle' => 'text-gray-900 text-lg leading-6 font-semibold',
-            'featureCheckBg' => 'green-100',
-            'featureCheckColor' => 'green-600',
-            'featureTextColor' => 'gray-600',
-            'ctaBgColor' => $cta_bg_default,
-            'ctaHoverBgColor' => 'brand-700',
-            'ctaTextColor' => $cta_text_default,
-            'ctaBorderRadius' => 'rounded',
-            'ctaShadow' => 'shadow-md',
-            'metricLabelStyle' => 'text-gray-600',
-            'metricValueStyle' => 'text-gray-900 font-semibold',
-            'rgBorderColor' => 'gray-300',
-            'rgTextColor' => 'gray-600'
+        $block = new \DataFlair\Toplists\Block\ToplistBlock(
+            \Closure::fromCallable([$this, 'toplist_shortcode']),
+            \Closure::fromCallable('get_option')
         );
-        
-        // Merge attributes with defaults (attributes take precedence)
-        $atts = wp_parse_args($attributes, $defaults);
-        
-        $toplist_id = $atts['toplistId'];
-        
-        if (empty($toplist_id)) {
-            return '<p>' . esc_html__('Please configure the toplist ID in the block settings.', 'dataflair-toplists') . '</p>';
-        }
-        
-        // Pass all attributes to shortcode (using merged values)
-        $shortcode_atts = array(
-            'id' => $toplist_id,
-            'title' => $atts['title'],
-            'limit' => intval($atts['limit']),
-            'layout' => $atts['layout'],
-            'ribbonBgColor' => $atts['ribbonBgColor'],
-            'ribbonTextColor' => $atts['ribbonTextColor'],
-            'ribbonText' => $atts['ribbonText'],
-            'rankBgColor' => $atts['rankBgColor'],
-            'rankTextColor' => $atts['rankTextColor'],
-            'rankBorderRadius' => $atts['rankBorderRadius'],
-            'brandLinkColor' => $atts['brandLinkColor'],
-            'bonusLabelStyle' => $atts['bonusLabelStyle'],
-            'bonusTextStyle' => $atts['bonusTextStyle'],
-            'featureCheckBg' => $atts['featureCheckBg'],
-            'featureCheckColor' => $atts['featureCheckColor'],
-            'featureTextColor' => $atts['featureTextColor'],
-            'ctaBgColor' => $atts['ctaBgColor'],
-            'ctaHoverBgColor' => $atts['ctaHoverBgColor'],
-            'ctaTextColor' => $atts['ctaTextColor'],
-            'ctaBorderRadius' => $atts['ctaBorderRadius'],
-            'ctaShadow' => $atts['ctaShadow'],
-            'metricLabelStyle' => $atts['metricLabelStyle'],
-            'metricValueStyle' => $atts['metricValueStyle'],
-            'rgBorderColor' => $atts['rgBorderColor'],
-            'rgTextColor' => $atts['rgTextColor'],
-            'prosCons' => isset($atts['prosCons']) ? $atts['prosCons'] : array()
-        );
-        
-        return $this->toplist_shortcode($shortcode_atts);
+        return $block->render($attributes);
     }
     
     /**

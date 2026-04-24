@@ -15,6 +15,7 @@ return array(
     'DataFlair\\Toplists\\Frontend\\' => array($baseDir . '/src/Frontend'),
     'DataFlair\\Toplists\\Database\\' => array($baseDir . '/src/Database'),
     'DataFlair\\Toplists\\Cli\\' => array($baseDir . '/includes/Cli'),
+    'DataFlair\\Toplists\\Block\\' => array($baseDir . '/src/Block'),
     'DataFlair\\Toplists\\Admin\\' => array($baseDir . '/src/Admin'),
     'Composer\\Installers\\' => array($vendorDir . '/composer/installers/src/Composer/Installers'),
 );

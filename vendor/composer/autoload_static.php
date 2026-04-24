@@ -22,6 +22,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
             'DataFlair\\Toplists\\Frontend\\' => 28,
             'DataFlair\\Toplists\\Database\\' => 28,
             'DataFlair\\Toplists\\Cli\\' => 23,
+            'DataFlair\\Toplists\\Block\\' => 25,
             'DataFlair\\Toplists\\Admin\\' => 25,
         ),
         'C' =>
@@ -66,6 +67,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Cli\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes/Cli',
+        ),
+        'DataFlair\\Toplists\\Block\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Block',
         ),
         'DataFlair\\Toplists\\Admin\\' =>
         array (
@@ -196,6 +201,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Admin\\Pages\\BrandsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/BrandsPage.php',
         'DataFlair\\Toplists\\Admin\\Pages\\PageInterface' => __DIR__ . '/../..' . '/src/Admin/Pages/PageInterface.php',
         'DataFlair\\Toplists\\Admin\\Pages\\SettingsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/SettingsPage.php',
+        'DataFlair\\Toplists\\Block\\BlockBootstrap' => __DIR__ . '/../..' . '/src/Block/BlockBootstrap.php',
+        'DataFlair\\Toplists\\Block\\BlockRegistrar' => __DIR__ . '/../..' . '/src/Block/BlockRegistrar.php',
+        'DataFlair\\Toplists\\Block\\EditorAssets' => __DIR__ . '/../..' . '/src/Block/EditorAssets.php',
+        'DataFlair\\Toplists\\Block\\ToplistBlock' => __DIR__ . '/../..' . '/src/Block/ToplistBlock.php',
         'DataFlair\\Toplists\\Cli\\LogsCommand' => __DIR__ . '/../..' . '/includes/Cli/LogsCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',

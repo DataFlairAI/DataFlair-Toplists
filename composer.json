@@ -39,7 +39,8 @@
             "DataFlair\\Toplists\\Sync\\": "src/Sync/",
             "DataFlair\\Toplists\\Frontend\\": "src/Frontend/",
             "DataFlair\\Toplists\\Admin\\": "src/Admin/",
-            "DataFlair\\Toplists\\Rest\\": "src/Rest/"
+            "DataFlair\\Toplists\\Rest\\": "src/Rest/",
+            "DataFlair\\Toplists\\Block\\": "src/Block/"
         }
     },
     "extra": {
