@@ -97,4 +97,31 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
         sort($geos);
         return $geos;
     }
+
+    public function listAllForOptions(): array
+    {
+        $rows = $this->wpdb->get_results(
+            "SELECT api_toplist_id, name, slug FROM {$this->table} ORDER BY api_toplist_id ASC",
+            ARRAY_A
+        );
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'api_toplist_id' => (int) ($row['api_toplist_id'] ?? 0),
+                'name'           => (string) ($row['name'] ?? ''),
+                'slug'           => (string) ($row['slug'] ?? ''),
+            ];
+        }
+        return $out;
+    }
+
+    public function countAll(): int
+    {
+        $count = $this->wpdb->get_var("SELECT COUNT(*) FROM {$this->table}");
+        return (int) $count;
+    }
 }

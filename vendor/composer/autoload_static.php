@@ -15,6 +15,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         array (
             'DataFlair\\Toplists\\Sync\\' => 24,
             'DataFlair\\Toplists\\Support\\' => 27,
+            'DataFlair\\Toplists\\Rest\\' => 24,
             'DataFlair\\Toplists\\Models\\' => 26,
             'DataFlair\\Toplists\\Logging\\' => 27,
             'DataFlair\\Toplists\\Http\\' => 24,
@@ -37,6 +38,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Support\\' =>
         array (
             0 => __DIR__ . '/../..' . '/includes/Support',
+        ),
+        'DataFlair\\Toplists\\Rest\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src/Rest',
         ),
         'DataFlair\\Toplists\\Models\\' =>
         array (
@@ -221,6 +226,11 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',
         'DataFlair\\Toplists\\Models\\Toplist' => __DIR__ . '/../..' . '/includes/Toplist.php',
+        'DataFlair\\Toplists\\Rest\\Controllers\\CasinosController' => __DIR__ . '/../..' . '/src/Rest/Controllers/CasinosController.php',
+        'DataFlair\\Toplists\\Rest\\Controllers\\HealthController' => __DIR__ . '/../..' . '/src/Rest/Controllers/HealthController.php',
+        'DataFlair\\Toplists\\Rest\\Controllers\\ToplistsController' => __DIR__ . '/../..' . '/src/Rest/Controllers/ToplistsController.php',
+        'DataFlair\\Toplists\\Rest\\RestBootstrap' => __DIR__ . '/../..' . '/src/Rest/RestBootstrap.php',
+        'DataFlair\\Toplists\\Rest\\RestRouter' => __DIR__ . '/../..' . '/src/Rest/RestRouter.php',
         'DataFlair\\Toplists\\Support\\WallClockBudget' => __DIR__ . '/../..' . '/includes/Support/WallClockBudget.php',
         'DataFlair\\Toplists\\Sync\\AlternativesSyncService' => __DIR__ . '/../..' . '/src/Sync/AlternativesSyncService.php',
         'DataFlair\\Toplists\\Sync\\AlternativesSyncServiceInterface' => __DIR__ . '/../..' . '/src/Sync/AlternativesSyncServiceInterface.php',
