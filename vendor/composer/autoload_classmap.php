@@ -106,6 +106,7 @@ return array(
     'Composer\\Installers\\YawikInstaller' => $vendorDir . '/composer/installers/src/Composer/Installers/YawikInstaller.php',
     'Composer\\Installers\\ZendInstaller' => $vendorDir . '/composer/installers/src/Composer/Installers/ZendInstaller.php',
     'Composer\\Installers\\ZikulaInstaller' => $vendorDir . '/composer/installers/src/Composer/Installers/ZikulaInstaller.php',
+    'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => $baseDir . '/includes/Cli/ReconcileReviewsCommand.php',
     'DataFlair\\Toplists\\Models\\Brand' => $baseDir . '/includes/Brand.php',
     'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => $baseDir . '/includes/DataIntegrityChecker.php',
     'DataFlair\\Toplists\\Models\\ProductTypeLabels' => $baseDir . '/includes/ProductTypeLabels.php',

@@ -3,7 +3,9 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.10.7
+ * Version: 1.10.8
+ * Requires at least: 6.3
+ * Requires PHP: 8.1
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
@@ -16,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.7');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.10.8');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -55,9 +57,9 @@ function dataflair_plugins_api_info($res, $action, $args) {
     $res->version = DATAFLAIR_VERSION;
     $res->author  = '<a href="https://dataflair.ai">DataFlair</a>';
     $res->homepage = 'https://dataflair.ai';
-    $res->requires = '5.8';
+    $res->requires = '6.3';
     $res->tested   = '6.9';
-    $res->requires_php = '7.4';
+    $res->requires_php = '8.1';
 
     $res->sections = [
         'description' => '
@@ -121,6 +123,16 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>1.10.8</h4>
+<ul>
+  <li>Fixed: critical — casino-card rendering is now fully read-only. The render chain no longer sideloads brand logos at page-view time and no longer auto-creates review CPT rows. These two render-time writes were the root cause of memory-exhaustion fatals on sites with a 1 GB PHP memory limit.</li>
+  <li>Added: pre-computed <code>local_logo_url</code> and <code>cached_review_post_id</code> columns on <code>wp_dataflair_brands</code>. The render template reads them directly; sync populates <code>local_logo_url</code> and the new CLI backfills <code>cached_review_post_id</code>.</li>
+  <li>Added: WP-CLI command <code>wp dataflair reconcile-reviews [--batch=500] [--dry-run]</code> to link existing brand rows to their published review posts. Run once after upgrade.</li>
+  <li>Added: <code>do_action(\'dataflair_brand_logo_stored\', $brand_id, $local_url, $remote_url)</code> hook fires when a logo is stored at sync time, so themes can react without coupling to private render internals.</li>
+  <li>Added: regression tests <code>RenderIsReadOnlyTest</code> and <code>CasinoCardUsesPrecomputedLogoTest</code> permanently enforce the read-only render invariant.</li>
+  <li>Changed: minimum PHP bumped to 8.1 and minimum WordPress to 6.3 to match the supported runtime on target sites.</li>
+</ul>
+
 <h4>1.10.7</h4>
 <ul>
   <li>Fixed: "Fetch All Toplists from API" no longer returns 500 on heavy pages. Bulk list fetch dropped from per_page=20 to per_page=10 to stay inside the DataFlair API\'s ~15s serializer budget (verified across all 18 pages / 175 toplists, heaviest page ~13.6s).</li>
@@ -462,7 +474,7 @@ class DataFlair_Toplists {
      */
     public function check_database_upgrade() {
         $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.9'; // v1.9: add external_id_virtual generated column + index
+        $current_version = '1.10'; // v1.10: add local_logo_url + cached_review_post_id columns (Phase 0A H0)
 
         if (version_compare($db_version, $current_version, '<')) {
             $this->upgrade_database();
@@ -536,6 +548,9 @@ class DataFlair_Toplists {
             offers_count int(11) DEFAULT 0,
             trackers_count int(11) DEFAULT 0,
             classification_types VARCHAR(500) NOT NULL DEFAULT '',
+            review_url_override VARCHAR(500) DEFAULT NULL,
+            local_logo_url VARCHAR(500) DEFAULT NULL,
+            cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
             data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
@@ -636,6 +651,8 @@ class DataFlair_Toplists {
                 trackers_count int(11) DEFAULT 0,
                 classification_types VARCHAR(500) NOT NULL DEFAULT '',
                 review_url_override VARCHAR(500) DEFAULT NULL,
+                local_logo_url VARCHAR(500) DEFAULT NULL,
+                cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
                 data longtext NOT NULL,
                 last_synced datetime NOT NULL,
                 PRIMARY KEY (id),
@@ -655,6 +672,24 @@ class DataFlair_Toplists {
             if (!$col_exists) {
                 $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN review_url_override VARCHAR(500) DEFAULT NULL");
                 error_log('DataFlair: Brands table upgraded to v1.8 (review_url_override column added)');
+            }
+        }
+
+        // ── Brands table: v1.10 — add local_logo_url + cached_review_post_id columns (Phase 0A H0) ──
+        // Pre-computed values populated at sync time so render_casino_card() never has to
+        // sideload a logo or look up a review CPT on a cold page view (Sigma OOM root cause).
+        $brands_table_exists_v110 = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
+        if ($brands_table_exists_v110) {
+            $local_logo_url_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'local_logo_url'");
+            if (!$local_logo_url_exists) {
+                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN local_logo_url VARCHAR(500) DEFAULT NULL");
+                error_log('DataFlair: Brands table upgraded to v1.10 (local_logo_url column added)');
+            }
+
+            $cached_review_post_id_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'cached_review_post_id'");
+            if (!$cached_review_post_id_exists) {
+                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL");
+                error_log('DataFlair: Brands table upgraded to v1.10 (cached_review_post_id column added)');
             }
         }
 
@@ -3832,9 +3867,20 @@ class DataFlair_Toplists {
     }
     
     /**
-     * Download and save brand logo locally
-     * 
-     * @param array $brand_data Brand data from API
+     * Download and save brand logo locally.
+     *
+     * Fires the `dataflair_brand_logo_stored` action on every successful return
+     * (both cached-hit and freshly-downloaded paths). Sigma theme subscribes to
+     * this hook; see Phase 0A H0 in docs/plans.
+     *
+     * Action signature:
+     *   do_action('dataflair_brand_logo_stored',
+     *       int    $brand_id,     // wp_dataflair_brands.api_brand_id
+     *       string $local_url,    // absolute URL to the stored logo
+     *       string $remote_url    // upstream URL we fetched from
+     *   );
+     *
+     * @param array  $brand_data Brand data from API
      * @param string $brand_slug Brand slug for filename
      * @return string|false Local URL to saved logo or false on failure
      */
@@ -3902,6 +3948,12 @@ class DataFlair_Toplists {
             // Return existing file URL
             $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
             error_log('DataFlair: Using cached logo for brand "' . ($brand_data['name'] ?? 'unknown') . '": ' . $file_url);
+            do_action(
+                'dataflair_brand_logo_stored',
+                isset($brand_data['id']) ? intval($brand_data['id']) : 0,
+                $file_url,
+                $logo_url
+            );
             return $file_url;
         }
         
@@ -3935,6 +3987,12 @@ class DataFlair_Toplists {
         // Return the URL to the saved file
         $file_url = DATAFLAIR_PLUGIN_URL . 'assets/logos/' . $filename;
         error_log('DataFlair: Successfully saved logo for brand "' . ($brand_data['name'] ?? 'unknown') . '" to: ' . $file_url);
+        do_action(
+            'dataflair_brand_logo_stored',
+            isset($brand_data['id']) ? intval($brand_data['id']) : 0,
+            $file_url,
+            $logo_url
+        );
         return $file_url;
     }
     
@@ -4078,6 +4136,11 @@ class DataFlair_Toplists {
                 $api_brand_id
             ));
             
+            // Phase 0A H0: persist logo URL to its own column so render never sideloads.
+            // Null means "not yet downloaded" — template falls back to legacy local_logo
+            // (in JSON blob) or external URLs.
+            $local_logo_url_column = !empty($local_logo_path) ? $local_logo_path : null;
+
             if ($existing) {
                 $result = $wpdb->update(
                     $brands_table_name,
@@ -4091,11 +4154,12 @@ class DataFlair_Toplists {
                         'top_geos' => $top_geos,
                         'offers_count' => $offers_count,
                         'trackers_count' => $trackers_count,
+                        'local_logo_url' => $local_logo_url_column,
                         'data' => json_encode($brand_data),
                         'last_synced' => current_time('mysql')
                     ),
                     array('api_brand_id' => $api_brand_id),
-                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s'),
+                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s'),
                     array('%d')
                 );
             } else {
@@ -4112,10 +4176,11 @@ class DataFlair_Toplists {
                         'top_geos' => $top_geos,
                         'offers_count' => $offers_count,
                         'trackers_count' => $trackers_count,
+                        'local_logo_url' => $local_logo_url_column,
                         'data' => json_encode($brand_data),
                         'last_synced' => current_time('mysql')
                     ),
-                    array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s')
+                    array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s')
                 );
             }
             
@@ -5299,58 +5364,38 @@ class DataFlair_Toplists {
         require_once DATAFLAIR_PLUGIN_DIR . 'includes/ProductTypeLabels.php';
 
         if (file_exists($template_path)) {
-            // Get or create review post and generate review URL
+            // ── Phase 0A H0: render_casino_card() is read-only ─────────────────────────
+            // Prior versions sideloaded the brand logo via a theme helper and auto-
+            // created a review CPT on cold page views; both are now sync-time concerns.
+            // Logo URL + review post ID live on wp_dataflair_brands and are populated
+            // by download_brand_logo() at sync time or by `wp dataflair reconcile-reviews`.
             $brand = $item['brand'];
-            
-            // Download and save logo locally if not already done
-            if (empty($brand['local_logo']) && !empty($brand['api_brand_id'])) {
-                // Extract logo URL from brand data (same logic as in render-casino-card.php)
-                $logo_url = '';
-                $logo_sources = array('logo', 'brandLogo', 'logoUrl', 'image', 'logoImage');
-                
-                foreach ($logo_sources as $key) {
-                    if (!empty($brand[$key])) {
-                        if (is_array($brand[$key])) {
-                            if (!empty($brand[$key]['rectangular'])) {
-                                $logo_url = $brand[$key]['rectangular'];
-                                break;
-                            } elseif (!empty($brand[$key]['square'])) {
-                                $logo_url = $brand[$key]['square'];
-                                break;
-                            } elseif (!empty($brand[$key]['url'])) {
-                                $logo_url = $brand[$key]['url'];
-                                break;
-                            } elseif (!empty($brand[$key]['src'])) {
-                                $logo_url = $brand[$key]['src'];
-                                break;
-                            } elseif (!empty($brand[$key][0])) {
-                                $logo_url = $brand[$key][0];
-                                break;
-                            }
-                        } else {
-                            $logo_url = $brand[$key];
-                            break;
-                        }
-                    }
-                }
-                
-                // Download and save logo using theme's function if available
-                if (!empty($logo_url) && filter_var($logo_url, FILTER_VALIDATE_URL)) {
-                    if (function_exists('strikeodds_download_and_save_logo')) {
-                        $local_logo = strikeodds_download_and_save_logo($logo_url, $brand['api_brand_id']);
-                        if ($local_logo) {
-                            $brand['local_logo'] = $local_logo;
-                        }
-                    }
+            $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+
+            // Fetch sync-time precomputed values for this brand (single row, two fields).
+            $precomputed_local_logo_url = null;
+            $precomputed_review_post_id = null;
+            if (!empty($brand['api_brand_id'])) {
+                $precomputed_row = $wpdb->get_row($wpdb->prepare(
+                    "SELECT local_logo_url, cached_review_post_id FROM $brands_table WHERE api_brand_id = %d",
+                    intval($brand['api_brand_id'])
+                ));
+                if ($precomputed_row) {
+                    $precomputed_local_logo_url = $precomputed_row->local_logo_url;
+                    $precomputed_review_post_id = !empty($precomputed_row->cached_review_post_id)
+                        ? intval($precomputed_row->cached_review_post_id)
+                        : null;
                 }
             }
-            
-            // review_url_override set in plugin admin wins everything — look it up from brands table
-            // Match by api_brand_id first, then slug, then name (toplist JSON brand IDs may differ from brands table)
+            if (!empty($precomputed_local_logo_url)) {
+                $brand['local_logo_url'] = $precomputed_local_logo_url;
+            }
+
+            // review_url_override lookup — 4 cascading queries, H7 batches these later.
             $review_url = null;
-            $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
             $override = null;
-            // Used by render-casino-card.php: show "Read Review" only for published CPT or explicit URL override (not draft-only).
+            // Used by render-casino-card.php: show "Read Review" only for published CPT
+            // or explicit URL override (not draft-only / slug placeholder).
             $dataflair_review_url_is_admin_override = false;
             $dataflair_review_cpt_is_published = false;
 
@@ -5384,20 +5429,20 @@ class DataFlair_Toplists {
                 $dataflair_review_url_is_admin_override = true;
             }
 
+            // Published review CPT via precomputed cached_review_post_id — read-only.
+            if (empty($review_url)
+                && $precomputed_review_post_id
+                && get_post_status($precomputed_review_post_id) === 'publish'
+            ) {
+                $review_url = get_permalink($precomputed_review_post_id);
+                $dataflair_review_cpt_is_published = true;
+            }
+
             if (empty($review_url)) {
-                $review_id = $this->get_or_create_review_post($brand, $item);
-
-                if ($review_id && get_post_status($review_id) === 'publish') {
-                    // Only use post permalink if the review is published
-                    $review_url = get_permalink($review_id);
-                    $dataflair_review_cpt_is_published = true;
-                }
-
-                if (empty($review_url)) {
-                    // Draft posts and missing posts both fall back to slug-based URL
-                    $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
-                    $review_url = home_url('/reviews/' . $brand_slug . '/');
-                }
+                // Fallback: /reviews/{slug}/ URL. Not guaranteed to resolve to a real
+                // page, so `Read Review` CTA stays hidden unless the CPT is published.
+                $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+                $review_url = home_url('/reviews/' . $brand_slug . '/');
             }
 
             // Pass review URL to template (filter allows theme-level overrides)
@@ -6574,3 +6619,12 @@ class DataFlair_Toplists {
 
 // Initialize plugin
 DataFlair_Toplists::get_instance();
+
+// Register WP-CLI commands (Phase 0A H0).
+if (defined('WP_CLI') && WP_CLI) {
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/ReconcileReviewsCommand.php';
+    \WP_CLI::add_command(
+        'dataflair reconcile-reviews',
+        \DataFlair\Toplists\Cli\ReconcileReviewsCommand::class
+    );
+}
