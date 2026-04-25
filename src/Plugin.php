@@ -23,6 +23,11 @@ namespace DataFlair\Toplists;
 
 use DataFlair\Toplists\Admin\PluginInfoFilter;
 use DataFlair\Toplists\Database\SchemaMigrator;
+use DataFlair\Toplists\Frontend\Assets\AlpineDeferAttribute;
+use DataFlair\Toplists\Frontend\Assets\AlpineJsEnqueuer;
+use DataFlair\Toplists\Frontend\Assets\PromoCopyScript;
+use DataFlair\Toplists\Frontend\Assets\StylesEnqueuer;
+use DataFlair\Toplists\Frontend\Assets\WidgetShortcodeDetector;
 use DataFlair\Toplists\UpdateChecker\GithubUpdateChecker;
 
 final class Plugin
@@ -123,6 +128,16 @@ final class Plugin
         (new I18n($pluginFile))->register();
         (new GithubUpdateChecker($pluginFile))->register();
         (new SchemaMigrator())->register();
+
+        // Phase 9.8 — Frontend asset registrars.
+        (new StylesEnqueuer(
+            DATAFLAIR_PLUGIN_DIR,
+            DATAFLAIR_PLUGIN_URL,
+            DATAFLAIR_VERSION
+        ))->register();
+        (new WidgetShortcodeDetector())->register();
+        (new AlpineJsEnqueuer(new AlpineDeferAttribute()))->register();
+        (new PromoCopyScript())->register();
     }
 
     private function buildContainer(): Container
