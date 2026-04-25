@@ -48,7 +48,8 @@
     $(document).on('click', '.df-run-test', function () {
         var $btn  = $(this);
         var slug  = $btn.data('slug');
-        $btn.prop('disabled', true).text('Running…');
+        var orig  = $btn.text();
+        $btn.prop('disabled', true).text('…');
 
         post('dataflair_run_test', { slug: slug }, nonces.runTest)
             .done(function (res) {
@@ -57,7 +58,7 @@
                 }
             })
             .always(function () {
-                $btn.prop('disabled', false).text('Run');
+                $btn.prop('disabled', false).text(orig);
             });
     });
 
