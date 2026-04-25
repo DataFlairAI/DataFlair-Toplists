@@ -301,7 +301,14 @@ jQuery(document).ready(function($) {
                 success: function(response) {
                     if (response.success) {
                         var data = response.data;
-                        totalSynced += data.synced || 0;
+                        // Per-page `synced` counts only Active brands upserted on
+                        // that page; many pages contain only Inactive (skipped)
+                        // brands. `total_synced` is the running DB count of
+                        // Active brands the server returns each batch — use that
+                        // for the user-facing label so it never sticks at 0.
+                        totalSynced = (typeof data.total_synced === 'number')
+                            ? data.total_synced
+                            : (totalSynced + (data.synced || 0));
 
                         // Update progress
                         var progress = Math.round((page / data.last_page) * 100);

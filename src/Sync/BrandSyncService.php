@@ -60,6 +60,7 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $page = $request->page;
 
         $batchT0 = microtime(true);
+        $this->logger->info('BrandSync.page_start page=' . $page . ' per_page=' . $request->perPage . ' budget_s=' . $request->budgetSeconds);
         do_action('dataflair_sync_batch_started', [
             'type'           => 'brands',
             'page'           => $page,
@@ -117,8 +118,17 @@ final class BrandSyncService implements BrandSyncServiceInterface
     private function syncBrandsPage(int $page, WallClockBudget $budget, int $perPage): array
     {
         $url = (string) call_user_func($this->brandsUrlBuilder, $page);
+        $this->logger->debug('BrandSync.http_request url=' . $url);
 
+        $httpT0   = microtime(true);
         $response = $this->http->get($url, $this->token, 20, 2, $budget);
+        $httpMs   = (int) round((microtime(true) - $httpT0) * 1000);
+        $this->logger->info(
+            'BrandSync.http page=' . $page
+            . ' elapsed_ms=' . $httpMs
+            . ' bytes=' . (is_wp_error($response) ? 0 : strlen((string) wp_remote_retrieve_body($response)))
+            . ' status=' . (is_wp_error($response) ? $response->get_error_code() : (int) wp_remote_retrieve_response_code($response))
+        );
 
         if (is_wp_error($response)) {
             $msg = 'Failed to fetch brands page ' . $page . ': ' . $response->get_error_message();
@@ -249,6 +259,13 @@ final class BrandSyncService implements BrandSyncServiceInterface
             $persisted = $this->brands->upsert($row);
             if ($persisted !== false) {
                 $synced++;
+                $this->logger->debug(
+                    'BrandSync.upsert id=' . $apiBrandId
+                    . ' name="' . $brandName . '"'
+                    . ' offers=' . $offersCount
+                    . ' trackers=' . $trackersCount
+                    . ' logo=' . ($localLogoUrlColumn ? 'cached' : 'remote')
+                );
             } else {
                 $errors++;
                 $this->logger->error('BrandSync: upsert failed for brand ID ' . $apiBrandId);
@@ -269,6 +286,13 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $totalSynced  = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$brandsTable} WHERE status = 'Active'");
 
         $partial = $budgetExhaustedOnItem !== null;
+
+        $this->logger->info(
+            'BrandSync.page_done page=' . $page . '/' . $lastPage
+            . ' synced=' . $synced . ' errors=' . $errors
+            . ' total_active_in_db=' . $totalSynced
+            . ' partial=' . ($partial ? '1' : '0')
+        );
 
         return [
             'success'      => true,

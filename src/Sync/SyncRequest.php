@@ -27,7 +27,7 @@ final class SyncRequest
         return new self(self::TYPE_TOPLISTS, $page, $perPage, $budgetSeconds);
     }
 
-    public static function brands(int $page, int $perPage = 5, float $budgetSeconds = 25.0): self
+    public static function brands(int $page, int $perPage = 25, float $budgetSeconds = 25.0): self
     {
         return new self(self::TYPE_BRANDS, $page, $perPage, $budgetSeconds);
     }
