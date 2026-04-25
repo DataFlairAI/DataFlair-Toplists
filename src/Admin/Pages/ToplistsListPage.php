@@ -237,17 +237,25 @@ final class ToplistsListPage implements PageInterface
                     </tbody>
                 </table>
 
-                <?php if ($total_pages > 1):
-                    $base_url = admin_url('admin.php?page=dataflair-toplists-list');
-                ?>
-                <div style="display:flex;align-items:center;gap:6px;margin-top:16px;flex-wrap:wrap;">
-                    <span style="color:#646970;margin-right:8px;"><?php echo esc_html($total); ?> toplists · page <?php echo $paged; ?> of <?php echo $total_pages; ?></span>
-                    <a href="<?php echo esc_url($base_url . '&paged=1'); ?>" class="button button-small" <?php echo $paged <= 1 ? 'disabled' : ''; ?>>«</a>
-                    <a href="<?php echo esc_url($base_url . '&paged=' . max(1, $paged - 1)); ?>" class="button button-small" <?php echo $paged <= 1 ? 'disabled' : ''; ?>>‹ Prev</a>
-                    <a href="<?php echo esc_url($base_url . '&paged=' . min($total_pages, $paged + 1)); ?>" class="button button-small" <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>Next ›</a>
-                    <a href="<?php echo esc_url($base_url . '&paged=' . $total_pages); ?>" class="button button-small" <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>»</a>
+                <div id="df-toplists-pagination" class="tablenav bottom" style="margin-top:8px;"
+                     data-base-url="<?php echo esc_attr(admin_url('admin.php?page=dataflair-toplists-list')); ?>">
+                    <div class="tablenav-pages" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span class="displaying-num" id="df-toplists-paging-label">
+                            <?php echo esc_html($total); ?> toplists — page <?php echo $paged; ?> of <?php echo $total_pages; ?>
+                        </span>
+                        <span class="pagination-links">
+                            <button type="button" class="button df-tl-page-btn" data-page="1"
+                                    <?php echo $paged <= 1 ? 'disabled' : ''; ?>>«</button>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo max(1, $paged - 1); ?>"
+                                    <?php echo $paged <= 1 ? 'disabled' : ''; ?>>‹</button>
+                            <span style="padding:0 8px;">Page <?php echo $paged; ?> of <?php echo $total_pages; ?></span>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo min($total_pages, $paged + 1); ?>"
+                                    <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>›</button>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo $total_pages; ?>"
+                                    <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>»</button>
+                        </span>
+                    </div>
                 </div>
-                <?php endif; ?>
 
             <?php else: ?>
                 <p class="df-empty-state">No toplists synced yet. Click <strong>Fetch All Toplists from API</strong> to get started.</p>
@@ -614,6 +622,13 @@ final class ToplistsListPage implements PageInterface
                     $tbody.append(row);
                     if ($acc.length) $tbody.append($acc[0]);
                 });
+            });
+
+            /* ── Toplists pagination buttons ─────────────────────── */
+            $(document).on('click', '.df-tl-page-btn:not([disabled])', function () {
+                var page    = $(this).data('page');
+                var baseUrl = $('#df-toplists-pagination').data('base-url');
+                window.location.href = baseUrl + '&paged=' + page;
             });
 
             function esc(s) {
