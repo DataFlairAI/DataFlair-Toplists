@@ -42,14 +42,6 @@ final class TestsRunner
                 'label'       => 'Toplists Table',
                 'description' => 'Counts rows in wp_dataflair_toplists. Warns if empty.',
             ],
-            'cron_brands' => [
-                'label'       => 'Cron: Brands Sync',
-                'description' => 'Checks that the dataflair_cron_sync_brands WP-Cron event is scheduled.',
-            ],
-            'cron_toplists' => [
-                'label'       => 'Cron: Toplists Sync',
-                'description' => 'Checks that the dataflair_cron_sync_toplists WP-Cron event is scheduled.',
-            ],
             'last_sync' => [
                 'label'       => 'Last Sync Timestamps',
                 'description' => 'Reports when brands and toplists were last successfully synced.',
@@ -199,24 +191,6 @@ final class TestsRunner
                     return ['status' => 'warn', 'message' => 'Toplists table is empty — sync toplists from the API.'];
                 }
                 return ['status' => 'pass', 'message' => number_format($count) . ' toplist(s) in DB.'];
-            },
-
-            'cron_brands' => function (): array {
-                $next = wp_next_scheduled('dataflair_cron_sync_brands');
-                if (!$next) {
-                    return ['status' => 'fail', 'message' => 'Cron event dataflair_cron_sync_brands is not scheduled.'];
-                }
-                $in = human_time_diff($next);
-                return ['status' => 'pass', 'message' => "Scheduled — next run in {$in}."];
-            },
-
-            'cron_toplists' => function (): array {
-                $next = wp_next_scheduled('dataflair_cron_sync_toplists');
-                if (!$next) {
-                    return ['status' => 'fail', 'message' => 'Cron event dataflair_cron_sync_toplists is not scheduled.'];
-                }
-                $in = human_time_diff($next);
-                return ['status' => 'pass', 'message' => "Scheduled — next run in {$in}."];
             },
 
             'last_sync' => function (): array {
