@@ -80,39 +80,85 @@ final class LogoDownloader implements LogoDownloaderInterface
             return $file_url;
         }
 
+        $use_persistent = PersistentCurlTransport::isAvailable()
+            && (bool) apply_filters('dataflair_use_persistent_curl', true);
+
         // HEAD first (Phase 0B H3) — bail before bandwidth burn.
-        $head = wp_remote_head($logo_url, [
-            'timeout'   => max(3, (int) ceil(self::LOGO_TIMEOUT / 2)),
-            'sslverify' => false,
-        ]);
-        if (!is_wp_error($head)) {
-            $content_length = (int) wp_remote_retrieve_header($head, 'content-length');
-            if ($content_length > 0 && $content_length > self::LOGO_MAX_BYTES) {
+        if ($use_persistent) {
+            $head_res = PersistentCurlTransport::head(
+                $logo_url,
+                max(3, (int) ceil(self::LOGO_TIMEOUT / 2)),
+                false
+            );
+            if ($head_res['ok'] && $head_res['content_length'] > 0
+                && $head_res['content_length'] > self::LOGO_MAX_BYTES) {
                 $this->logger->warning('logo.size_cap_head', [
                     'url'            => $logo_url,
-                    'content_length' => $content_length,
+                    'content_length' => $head_res['content_length'],
                     'cap'            => self::LOGO_MAX_BYTES,
                 ]);
                 return false;
             }
-        }
-
-        $response = wp_remote_get($logo_url, [
-            'timeout'             => self::LOGO_TIMEOUT,
-            'sslverify'           => false,
-            'limit_response_size' => self::LOGO_MAX_BYTES,
-        ]);
-
-        if (is_wp_error($response)) {
-            $this->logger->warning('logo.download_failed', [
-                'url'   => $logo_url,
-                'error' => $response->get_error_message(),
+        } else {
+            $head = wp_remote_head($logo_url, [
+                'timeout'   => max(3, (int) ceil(self::LOGO_TIMEOUT / 2)),
+                'sslverify' => false,
             ]);
-            return false;
+            if (!is_wp_error($head)) {
+                $content_length = (int) wp_remote_retrieve_header($head, 'content-length');
+                if ($content_length > 0 && $content_length > self::LOGO_MAX_BYTES) {
+                    $this->logger->warning('logo.size_cap_head', [
+                        'url'            => $logo_url,
+                        'content_length' => $content_length,
+                        'cap'            => self::LOGO_MAX_BYTES,
+                    ]);
+                    return false;
+                }
+            }
         }
 
-        $image_data    = wp_remote_retrieve_body($response);
-        $response_code = (int) wp_remote_retrieve_response_code($response);
+        if ($use_persistent) {
+            $get_res = PersistentCurlTransport::get(
+                $logo_url,
+                [],
+                self::LOGO_TIMEOUT,
+                self::LOGO_MAX_BYTES,
+                false
+            );
+            if (!$get_res['ok']) {
+                if (($get_res['error'] ?? '') === 'response_too_large') {
+                    $this->logger->warning('logo.size_cap_hit', [
+                        'url' => $logo_url,
+                        'cap' => self::LOGO_MAX_BYTES,
+                    ]);
+                } else {
+                    $this->logger->warning('logo.download_failed', [
+                        'url'   => $logo_url,
+                        'error' => (string) ($get_res['error'] ?? 'unknown'),
+                    ]);
+                }
+                return false;
+            }
+            $image_data    = $get_res['body'];
+            $response_code = (int) $get_res['code'];
+        } else {
+            $response = wp_remote_get($logo_url, [
+                'timeout'             => self::LOGO_TIMEOUT,
+                'sslverify'           => false,
+                'limit_response_size' => self::LOGO_MAX_BYTES,
+            ]);
+
+            if (is_wp_error($response)) {
+                $this->logger->warning('logo.download_failed', [
+                    'url'   => $logo_url,
+                    'error' => $response->get_error_message(),
+                ]);
+                return false;
+            }
+
+            $image_data    = wp_remote_retrieve_body($response);
+            $response_code = (int) wp_remote_retrieve_response_code($response);
+        }
 
         if ($response_code !== 200 || $image_data === '') {
             $this->logger->warning('logo.download_non_200', [

@@ -107,8 +107,13 @@ final class ApiClient implements HttpClientInterface
         $attempt  = 0;
         $response = null;
 
+        $use_persistent = PersistentCurlTransport::isAvailable()
+            && (bool) apply_filters('dataflair_use_persistent_curl', true);
+
         while (true) {
-            $response = wp_remote_get($url, $args);
+            $response = $use_persistent
+                ? $this->dispatchPersistent($url, $headers, $timeout)
+                : wp_remote_get($url, $args);
 
             if (!is_wp_error($response)) {
                 $body = wp_remote_retrieve_body($response);
@@ -195,6 +200,41 @@ final class ApiClient implements HttpClientInterface
             sleep($delay);
             $attempt++;
         }
+    }
+
+    /**
+     * Dispatch via persistent curl handle, returning a wp_remote_get-shaped
+     * array or \WP_Error so the caller's existing branching logic is reused.
+     */
+    private function dispatchPersistent(string $url, array $headers, int $timeout)
+    {
+        $sslVerify = !$this->isLocalUrl($url);
+        $result    = PersistentCurlTransport::get($url, $headers, $timeout, self::MAX_BYTES, $sslVerify);
+
+        if (!$result['ok']) {
+            if (($result['error'] ?? '') === 'response_too_large') {
+                return [
+                    'headers'  => [],
+                    'body'     => str_repeat('x', self::MAX_BYTES),
+                    'response' => ['code' => $result['code'] ?: 200, 'message' => ''],
+                    'cookies'  => [],
+                    'filename' => null,
+                ];
+            }
+            return new \WP_Error(
+                'dataflair_persistent_curl_error',
+                (string) ($result['error'] ?? 'curl_error'),
+                ['code' => $result['code']]
+            );
+        }
+
+        return [
+            'headers'  => [],
+            'body'     => $result['body'],
+            'response' => ['code' => $result['code'], 'message' => ''],
+            'cookies'  => [],
+            'filename' => null,
+        ];
     }
 
     private function emitHttpCall(array $payload): void
