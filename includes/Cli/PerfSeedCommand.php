@@ -113,7 +113,7 @@ class PerfSeedCommand
                 'top_geos'    => ['US', 'CA', 'UK', 'DE', 'FR'],
             ];
 
-            $wpdb->insert($table, [
+            $ok = $wpdb->insert($table, [
                 'api_brand_id'    => $api_brand_id,
                 'name'            => $name,
                 'slug'            => $slug,
@@ -121,10 +121,13 @@ class PerfSeedCommand
                 'data'            => wp_json_encode($data),
                 'licenses'        => 'MGA,UKGC',
                 'top_geos'        => 'US,CA,UK,DE,FR',
-                'payment_methods' => 'Visa,Mastercard,Skrill',
+                'product_types'   => 'casino,sportsbook',
                 'local_logo_url'  => "https://cdn.example/perf/{$slug}-rect.png",
                 'last_synced'     => current_time('mysql'),
             ]);
+            if ($ok === false) {
+                \WP_CLI::error("brand insert failed: " . $wpdb->last_error);
+            }
 
             if (!$quiet && $i % 100 === 0) {
                 \WP_CLI::log("  … {$i} brands seeded");
@@ -145,7 +148,7 @@ class PerfSeedCommand
         // Build a reusable filler string sized to hit approximately the
         // requested payload KB. Gets baked into each item to simulate the
         // verbose upstream payload shape.
-        $filler = str_repeat('x', max(0, $payload_kb * 1024 / max($items_per, 1) / 2));
+        $filler = str_repeat('x', (int) max(0, $payload_kb * 1024 / max($items_per, 1) / 2));
 
         for ($t = 1; $t <= $count; $t++) {
             $api_toplist_id = 20000 + $t;
@@ -186,14 +189,17 @@ class PerfSeedCommand
                 ],
             ];
 
-            $wpdb->insert($table, [
+            $ok = $wpdb->insert($table, [
                 'api_toplist_id' => $api_toplist_id,
                 'name'           => $name,
                 'slug'           => $slug,
-                'status'         => 'Active',
+                'item_count'     => $items_per,
                 'data'           => wp_json_encode($payload),
                 'last_synced'    => current_time('mysql'),
             ]);
+            if ($ok === false) {
+                \WP_CLI::error("toplist insert failed: " . $wpdb->last_error);
+            }
 
             if (!$quiet && $t % 50 === 0) {
                 \WP_CLI::log("  … {$t} toplists seeded");
