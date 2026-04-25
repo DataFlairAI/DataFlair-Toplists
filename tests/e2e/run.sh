@@ -113,17 +113,22 @@ run_suite() {
 }
 
 case "${SUITE}" in
-    brands)   run_suite "Brand Sync"   "test-brand-sync.php" ;;
-    toplists) run_suite "Toplist Sync" "test-toplist-sync.php" ;;
-    cron)     run_suite "Cron Jobs"    "test-cron.php" ;;
+    brands)         run_suite "Brand Sync"        "test-brand-sync.php" ;;
+    toplists)       run_suite "Toplist Sync"      "test-toplist-sync.php" ;;
+    cron)           run_suite "Cron Removal"      "test-cron.php" ;;
+    review-link)    run_suite "Review Link"       "test-read-review-link.php" ;;
+    shortcode)      run_suite "Shortcode + Block" "test-shortcode-and-block.php" ;;
     all)
-        run_suite "Brand Sync"   "test-brand-sync.php"
-        run_suite "Toplist Sync" "test-toplist-sync.php"
-        run_suite "Cron Jobs"    "test-cron.php"
+        run_suite "Brand Sync"        "test-brand-sync.php"
+        run_suite "Toplist Sync"      "test-toplist-sync.php"
+        run_suite "Cron Removal"      "test-cron.php"
+        run_suite "Review Link"       "test-read-review-link.php"
+        run_suite "Shortcode + Block" "test-shortcode-and-block.php"
         ;;
     *)
         echo "Unknown suite: ${SUITE}"
-        echo "Usage: $0 [all|brands|toplists|cron]"
+        echo "Usage: $0 [all|brands|toplists|cron|review-link|shortcode]"
+        echo "Note: 'cron' suite asserts Phase 0B removed all cron registrations."
         exit 1
         ;;
 esac

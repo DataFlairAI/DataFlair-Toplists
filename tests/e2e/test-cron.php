@@ -1,17 +1,20 @@
 <?php
 /**
- * E2E Test: Cron Jobs
+ * E2E Test: Cron Removal (Phase 0B)
  *
- * Verifies:
- *  1. Custom 'dataflair_15min' schedule is registered with correct interval
- *  2. Both cron hooks exist in the schedule
- *  3. dataflair_sync_cron uses the 'twicedaily' interval
- *  4. dataflair_brands_sync_cron uses the 'dataflair_15min' interval
- *  5. Manually firing dataflair_sync_cron updates dataflair_last_toplists_cron_run
- *  6. Manually firing dataflair_brands_sync_cron updates dataflair_last_brands_cron_run
- *  7. Cron fires gracefully without a token (no fatal error)
- *  8. wp-cron.php is reachable from the WordPress container
- *  9. Stuck cron events are auto-healed (rescheduled)
+ * Phase 0B deleted every cron registration in the plugin. These assertions
+ * therefore PASS when the cron infrastructure is confirmed gone — the
+ * "positive" signal the user wants is "the cron is no longer there."
+ *
+ * Verifies the post-Phase-0B contract:
+ *  1. Custom 'dataflair_15min' schedule is NOT registered.
+ *  2. 'dataflair_sync_cron' is NOT scheduled with WP-Cron.
+ *  3. 'dataflair_brands_sync_cron' is NOT scheduled with WP-Cron.
+ *  4. No callbacks attached to 'dataflair_sync_cron' action (zero listeners).
+ *  5. No callbacks attached to 'dataflair_brands_sync_cron' action.
+ *  6. One-time migration option 'dataflair_cron_cleared_v1_11' is set to "1".
+ *  7. Firing the now-dead action is a harmless no-op — no fatal, no row change.
+ *  8. The schedules filter chain does not introduce 'dataflair_15min'.
  *
  * Run via WP-CLI (inside Docker):
  *   wp --allow-root eval-file /var/www/html/wp-content/plugins/DataFlair-Toplists/tests/e2e/test-cron.php
@@ -21,9 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     die( 'Run via WP-CLI: wp eval-file tests/e2e/test-cron.php' . PHP_EOL );
 }
 
-global $wpdb;
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+global $wpdb, $wp_filter;
 
 $GLOBALS['e2e_pass'] = 0;
 $GLOBALS['e2e_fail'] = 0;
@@ -42,204 +43,117 @@ function e2e_assert( bool $cond, string $pass_msg, string $fail_msg ): void {
     $cond ? e2e_pass( $pass_msg ) : e2e_fail( $fail_msg );
 }
 
-echo "\n\033[1m── Cron Job E2E Tests ──\033[0m\n\n";
+echo "\n\033[1m── Cron Removal E2E (Phase 0B contract) ──\033[0m\n\n";
 
-// ── Test 1: custom schedule registered ───────────────────────────────────────
+// ── Test 1: custom schedule is NOT registered ───────────────────────────────
 
 $schedules = wp_get_schedules();
 e2e_assert(
-    isset( $schedules['dataflair_15min'] ),
-    "Custom schedule 'dataflair_15min' is registered",
-    "Custom schedule 'dataflair_15min' is NOT registered"
+    ! isset( $schedules['dataflair_15min'] ),
+    "Custom schedule 'dataflair_15min' is NOT registered (cron removed)",
+    "Custom schedule 'dataflair_15min' is STILL registered — cron filter not removed"
 );
 
-if ( isset( $schedules['dataflair_15min'] ) ) {
-    $interval = $schedules['dataflair_15min']['interval'];
-    e2e_assert(
-        $interval === 900,
-        "dataflair_15min interval is 900 seconds (15 min)",
-        "dataflair_15min interval is {$interval}s (expected 900)"
-    );
-}
+// ── Test 2: dataflair_sync_cron is NOT scheduled ─────────────────────────────
 
-// ── Test 2: both cron hooks are scheduled ─────────────────────────────────────
-
-// Auto-heal stuck/missing crons before asserting
-$now = time();
-
-$toplist_hook = wp_next_scheduled( 'dataflair_sync_cron' );
-if ( ! $toplist_hook || $toplist_hook <= $now ) {
-    // Missing or overdue — reschedule 15 min from now
-    wp_clear_scheduled_hook( 'dataflair_sync_cron' );
-    wp_schedule_event( $now + 900, 'twicedaily', 'dataflair_sync_cron' );
-    $toplist_hook = wp_next_scheduled( 'dataflair_sync_cron' );
-    echo "  [auto-heal] dataflair_sync_cron was missing/overdue — rescheduled to " . date( 'H:i:s', $toplist_hook ?: 0 ) . "\n";
-}
-
-$brands_hook = wp_next_scheduled( 'dataflair_brands_sync_cron' );
-if ( ! $brands_hook || $brands_hook <= $now ) {
-    wp_clear_scheduled_hook( 'dataflair_brands_sync_cron' );
-    wp_schedule_event( $now + 900, 'dataflair_15min', 'dataflair_brands_sync_cron' );
-    $brands_hook = wp_next_scheduled( 'dataflair_brands_sync_cron' );
-    echo "  [auto-heal] dataflair_brands_sync_cron was missing/overdue — rescheduled to " . date( 'H:i:s', $brands_hook ?: 0 ) . "\n";
-}
-
-e2e_assert( $toplist_hook !== false, 'dataflair_sync_cron is scheduled (next: ' . date( 'Y-m-d H:i:s', $toplist_hook ?: 0 ) . ')', 'dataflair_sync_cron is NOT scheduled' );
-e2e_assert( $brands_hook !== false,  'dataflair_brands_sync_cron is scheduled (next: ' . date( 'Y-m-d H:i:s', $brands_hook ?: 0 ) . ')', 'dataflair_brands_sync_cron is NOT scheduled' );
-
-// ── Test 3: next scheduled times are not in the past ─────────────────────────
-
+$toplist_next = wp_next_scheduled( 'dataflair_sync_cron' );
 e2e_assert(
-    $toplist_hook > $now,
-    'dataflair_sync_cron next run is in the future',
-    'dataflair_sync_cron next run is in the past (stuck cron not auto-healed)'
+    $toplist_next === false,
+    "'dataflair_sync_cron' has no scheduled run (cron unhooked)",
+    "'dataflair_sync_cron' is still scheduled at " . date( 'Y-m-d H:i:s', (int) $toplist_next )
 );
 
+// ── Test 3: dataflair_brands_sync_cron is NOT scheduled ──────────────────────
+
+$brands_next = wp_next_scheduled( 'dataflair_brands_sync_cron' );
 e2e_assert(
-    $brands_hook > $now,
-    'dataflair_brands_sync_cron next run is in the future',
-    'dataflair_brands_sync_cron next run is in the past (stuck cron not auto-healed)'
+    $brands_next === false,
+    "'dataflair_brands_sync_cron' has no scheduled run (cron unhooked)",
+    "'dataflair_brands_sync_cron' is still scheduled at " . date( 'Y-m-d H:i:s', (int) $brands_next )
 );
 
-// ── Test 4: cron hooks use correct schedules ──────────────────────────────────
+// ── Test 4: zero listeners attached to the legacy sync action ───────────────
 
-$cron_array = _get_cron_array();
-
-$toplist_schedule = 'unknown';
-$brands_schedule  = 'unknown';
-
-foreach ( $cron_array as $hooks ) {
-    if ( isset( $hooks['dataflair_sync_cron'] ) ) {
-        foreach ( $hooks['dataflair_sync_cron'] as $entry ) {
-            $toplist_schedule = $entry['schedule'] ?? 'unknown';
-        }
-    }
-    if ( isset( $hooks['dataflair_brands_sync_cron'] ) ) {
-        foreach ( $hooks['dataflair_brands_sync_cron'] as $entry ) {
-            $brands_schedule = $entry['schedule'] ?? 'unknown';
-        }
-    }
-}
-
+$toplist_listeners = isset( $wp_filter['dataflair_sync_cron'] )
+    ? array_sum( array_map( 'count', (array) $wp_filter['dataflair_sync_cron']->callbacks ) )
+    : 0;
 e2e_assert(
-    $toplist_schedule === 'twicedaily',
-    "dataflair_sync_cron uses 'twicedaily' schedule",
-    "dataflair_sync_cron uses '{$toplist_schedule}' schedule (expected 'twicedaily')"
+    $toplist_listeners === 0,
+    "Zero callbacks attached to 'dataflair_sync_cron' action (handler deleted)",
+    "{$toplist_listeners} callback(s) still listening on 'dataflair_sync_cron'"
 );
 
+// ── Test 5: zero listeners attached to the legacy brands action ─────────────
+
+$brands_listeners = isset( $wp_filter['dataflair_brands_sync_cron'] )
+    ? array_sum( array_map( 'count', (array) $wp_filter['dataflair_brands_sync_cron']->callbacks ) )
+    : 0;
 e2e_assert(
-    $brands_schedule === 'dataflair_15min',
-    "dataflair_brands_sync_cron uses 'dataflair_15min' schedule",
-    "dataflair_brands_sync_cron uses '{$brands_schedule}' schedule (expected 'dataflair_15min')"
+    $brands_listeners === 0,
+    "Zero callbacks attached to 'dataflair_brands_sync_cron' action (handler deleted)",
+    "{$brands_listeners} callback(s) still listening on 'dataflair_brands_sync_cron'"
 );
 
-// ── Test 5: firing toplist cron updates timestamp + DB ────────────────────────
+// ── Test 6: one-time migration flag is set ───────────────────────────────────
 
-$token = trim( get_option( 'dataflair_api_token' ) );
+$cleared = (string) get_option( 'dataflair_cron_cleared_v1_11', '' );
+e2e_assert(
+    $cleared === '1',
+    "Migration flag 'dataflair_cron_cleared_v1_11' is set (clearer ran on activation/upgrade)",
+    "Migration flag 'dataflair_cron_cleared_v1_11' is empty — wp_clear_scheduled_hook never ran"
+);
 
-if ( ! empty( $token ) ) {
-    echo "  Firing dataflair_sync_cron…\n";
-    $before_toplist = time();
-    do_action( 'dataflair_sync_cron' );
+// ── Test 7: firing the dead action is a harmless no-op ──────────────────────
 
-    $last_toplist_run = (int) get_option( 'dataflair_last_toplists_cron_run', 0 );
-    e2e_assert(
-        $last_toplist_run >= $before_toplist,
-        'dataflair_last_toplists_cron_run updated (' . date( 'Y-m-d H:i:s', $last_toplist_run ) . ')',
-        'dataflair_last_toplists_cron_run NOT updated after manual fire'
-    );
+$toplists_table   = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
+$brands_table     = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
+$toplists_before  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$toplists_table}" );
+$brands_before    = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$brands_table}" );
+$ts_before_topl   = (int) get_option( 'dataflair_last_toplists_cron_run', 0 );
+$ts_before_brands = (int) get_option( 'dataflair_last_brands_cron_run', 0 );
 
-    $toplists_table = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-    $recent         = (int) $wpdb->get_var(
-        $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$toplists_table} WHERE last_synced >= %s",
-            date( 'Y-m-d H:i:s', $before_toplist )
-        )
-    );
-    e2e_assert(
-        $recent > 0,
-        "{$recent} toplist DB row(s) had last_synced updated by cron fire",
-        'No toplist DB rows were updated by cron fire'
-    );
-} else {
-    echo "  Skipping live cron fire (no token).\n";
-}
-
-// ── Test 6: firing brands cron updates timestamp + row count ──────────────────
-
-if ( ! empty( $token ) ) {
-    echo "  Firing dataflair_brands_sync_cron…\n";
-    $before_brands = time();
-    do_action( 'dataflair_brands_sync_cron' );
-
-    $last_brands_run = (int) get_option( 'dataflair_last_brands_cron_run', 0 );
-    e2e_assert(
-        $last_brands_run >= $before_brands,
-        'dataflair_last_brands_cron_run updated (' . date( 'Y-m-d H:i:s', $last_brands_run ) . ')',
-        'dataflair_last_brands_cron_run NOT updated after manual fire'
-    );
-
-    $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-    $brand_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$brands_table}" );
-    e2e_assert(
-        $brand_count > 0,
-        "Brands table has {$brand_count} rows after cron fire",
-        'Brands table is empty after cron fire'
-    );
-}
-
-// ── Test 7: cron fires gracefully without token ───────────────────────────────
-
-$original_token = get_option( 'dataflair_api_token' );
-update_option( 'dataflair_api_token', '' );
-
-$threw = false;
+$fatal = false;
 try {
     do_action( 'dataflair_sync_cron' );
     do_action( 'dataflair_brands_sync_cron' );
 } catch ( Throwable $e ) {
-    $threw = true;
-    e2e_fail( 'Cron threw exception without token: ' . $e->getMessage() );
+    $fatal = true;
+    e2e_fail( "Firing dead cron action threw: " . $e->getMessage() );
 }
-if ( ! $threw ) {
-    e2e_pass( 'Cron fires gracefully without token (no fatal error)' );
+if ( ! $fatal ) {
+    e2e_pass( "Firing 'dataflair_sync_cron' + 'dataflair_brands_sync_cron' did not throw" );
 }
 
-update_option( 'dataflair_api_token', $original_token );
+$toplists_after  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$toplists_table}" );
+$brands_after    = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$brands_table}" );
+$ts_after_topl   = (int) get_option( 'dataflair_last_toplists_cron_run', 0 );
+$ts_after_brands = (int) get_option( 'dataflair_last_brands_cron_run', 0 );
 
-// ── Test 8: wp-cron.php is reachable ─────────────────────────────────────────
-// Inside the wp-env Docker network the WordPress container hostname is
-// 'wordpress', so we replace 'localhost:PORT' with the service name.
+e2e_assert(
+    $toplists_before === $toplists_after && $brands_before === $brands_after,
+    "Dead action did not mutate any wp_dataflair_* row counts (toplists={$toplists_after}, brands={$brands_after})",
+    "Dead action mutated row counts: toplists {$toplists_before}→{$toplists_after}, brands {$brands_before}→{$brands_after}"
+);
 
-$site_url  = get_option( 'siteurl' );
-$cron_url  = $site_url . '/wp-cron.php?doing_wp_cron';
+e2e_assert(
+    $ts_before_topl === $ts_after_topl && $ts_before_brands === $ts_after_brands,
+    "Dead action did not bump legacy cron timestamps (no listener wrote them)",
+    "Dead action bumped a legacy timestamp — a stale listener is still attached"
+);
 
-// Swap localhost for docker internal hostname when running in CLI container
-$cron_url_internal = preg_replace( '#https?://localhost(:\d+)?#', 'http://wordpress', $cron_url );
+// ── Test 8: cron_schedules filter chain does not yield dataflair_15min ──────
 
-$response  = wp_remote_get( $cron_url_internal, [ 'timeout' => 10, 'sslverify' => false ] );
-$http_code = is_wp_error( $response ) ? 0 : wp_remote_retrieve_response_code( $response );
-
-if ( $http_code === 200 ) {
-    e2e_pass( "wp-cron.php is reachable (HTTP 200) via {$cron_url_internal}" );
-} elseif ( is_wp_error( $response ) ) {
-    // Fallback — try original URL
-    $response2  = wp_remote_get( $cron_url, [ 'timeout' => 10, 'sslverify' => false ] );
-    $http_code2 = is_wp_error( $response2 ) ? 0 : wp_remote_retrieve_response_code( $response2 );
-    if ( $http_code2 === 200 ) {
-        e2e_pass( "wp-cron.php is reachable (HTTP 200) via {$cron_url}" );
-    } else {
-        // wp-cron reachability is environment-dependent in Docker; warn but don't fail
-        echo "  \033[33m⚠ wp-cron.php not reachable from CLI container (HTTP {$http_code2}) — this is expected in some Docker setups\033[0m\n";
-        e2e_pass( "wp-cron.php reachability skipped (Docker network isolation)" );
-    }
-} else {
-    e2e_fail( "wp-cron.php returned HTTP {$http_code} via {$cron_url_internal}" );
-}
+$filtered = apply_filters( 'cron_schedules', array() );
+e2e_assert(
+    is_array( $filtered ) && ! isset( $filtered['dataflair_15min'] ),
+    "cron_schedules filter does not introduce 'dataflair_15min' (filter callback removed)",
+    "cron_schedules filter still injects 'dataflair_15min' — add_filter not removed"
+);
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 $p = $GLOBALS['e2e_pass'];
 $f = $GLOBALS['e2e_fail'];
-echo "\n\033[1mCron: {$p} passed, {$f} failed\033[0m\n\n";
+echo "\n\033[1mCron Removal: {$p} passed, {$f} failed\033[0m\n";
+echo "(All assertions PASS = cron is fully removed per Phase 0B contract.)\n\n";
 exit( $f > 0 ? 1 : 0 );
