@@ -54,6 +54,16 @@ final class ToolsPage implements PageInterface
                     Logs
                 </a>
             </nav>
+            <script>
+            window.DFTools = window.DFTools || {};
+            DFTools.ajaxUrl   = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
+            DFTools.nonces    = {
+                runTest:      <?php echo json_encode(wp_create_nonce('dataflair_run_test')); ?>,
+                runAll:       <?php echo json_encode(wp_create_nonce('dataflair_run_all_tests')); ?>,
+                logsTail:     <?php echo json_encode(wp_create_nonce('dataflair_logs_tail')); ?>,
+                logsDownload: <?php echo json_encode(wp_create_nonce('dataflair_logs_download')); ?>,
+            };
+            </script>
 
             <?php if ($current_tab === 'tests'): ?>
                 <?php $this->renderTestsTab(); ?>
@@ -167,16 +177,6 @@ final class ToolsPage implements PageInterface
             </table>
 
         </div>
-        <script>
-        window.DFTools = window.DFTools || {};
-        DFTools.ajaxUrl   = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
-        DFTools.nonces    = {
-            runTest:    <?php echo json_encode(wp_create_nonce('dataflair_run_test')); ?>,
-            runAll:     <?php echo json_encode(wp_create_nonce('dataflair_run_all_tests')); ?>,
-            logsTail:   <?php echo json_encode(wp_create_nonce('dataflair_logs_tail')); ?>,
-            logsDownload: <?php echo json_encode(wp_create_nonce('dataflair_logs_download')); ?>,
-        };
-        </script>
         <?php
     }
 
@@ -258,7 +258,7 @@ final class ToolsPage implements PageInterface
                             <option value="toplists">GET /toplists (list all)</option>
                             <option value="toplists/custom">GET /toplists/{id} (single — enter ID below)</option>
                             <option value="brands">GET /brands (list all)</option>
-                            <option value="brands/custom">GET /brands/{id} (single — enter ID below)</option>
+                            <option value="brands/custom">GET /brands/{id} — V2 (single — enter ID below)</option>
                         </select>
                     </td>
                 </tr>
