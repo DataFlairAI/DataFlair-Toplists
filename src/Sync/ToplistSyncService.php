@@ -51,6 +51,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $perPage = $request->perPage;
 
         $batchT0 = microtime(true);
+        $this->logger->info('ToplistSync.page_start page=' . $page . ' per_page=' . $perPage . ' budget_s=' . $request->budgetSeconds);
         do_action('dataflair_sync_batch_started', [
             'type'           => 'toplists',
             'page'           => $page,
@@ -59,6 +60,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         ]);
 
         if ($page === 1) {
+            $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
             $this->resetSyncState();
         }
 
@@ -67,14 +69,15 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $listUrl = $this->baseUrl . '/toplists?per_page=' . $perPage
             . '&page=' . $page . '&include=items';
 
+        $this->logger->debug('ToplistSync.http_request url=' . $listUrl);
         $httpT0   = microtime(true);
         $response = $this->http->get($listUrl, $this->token, 20, 2, $budget);
         $httpMs   = (int) round((microtime(true) - $httpT0) * 1000);
+        $bytes    = is_wp_error($response) ? 0 : strlen((string) wp_remote_retrieve_body($response));
+        $status   = is_wp_error($response) ? $response->get_error_code() : (int) wp_remote_retrieve_response_code($response);
         $this->logger->info(
             'ToplistSync.http page=' . $page . ' per_page=' . $perPage
-            . ' elapsed_ms=' . $httpMs
-            . ' bytes=' . (is_wp_error($response) ? 0 : strlen((string) wp_remote_retrieve_body($response)))
-            . ' status=' . (is_wp_error($response) ? $response->get_error_code() : (int) wp_remote_retrieve_response_code($response))
+            . ' elapsed_ms=' . $httpMs . ' bytes=' . $bytes . ' status=' . $status
         );
 
         if (is_wp_error($response)) {
@@ -171,17 +174,17 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                     $endpoints[] = $endpoint;
 
                     $toplistJson = wp_json_encode(['data' => $toplist]);
+                    $jsonBytes   = strlen((string) $toplistJson);
                     $itemT0      = microtime(true);
                     $result      = $this->persister->store($toplist, (string) $toplistJson);
                     $itemMs      = (int) round((microtime(true) - $itemT0) * 1000);
-                    if ($itemMs > 250) {
-                        $this->logger->info(
-                            'ToplistSync.store_slow page=' . $page
-                            . ' id=' . (int) $toplist['id']
-                            . ' elapsed_ms=' . $itemMs
-                            . ' bytes=' . strlen((string) $toplistJson)
-                        );
-                    }
+                    $this->logger->debug(
+                        'ToplistSync.store id=' . (int) $toplist['id']
+                        . ' name="' . (string) ($toplist['name'] ?? '') . '"'
+                        . ' bytes=' . $jsonBytes
+                        . ' elapsed_ms=' . $itemMs
+                        . ' result=' . ($result ? 'ok' : 'fail')
+                    );
 
                     if ($result) {
                         $synced++;
@@ -212,6 +215,14 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         if ($isComplete) {
             $this->markSyncCompleted();
         }
+
+        $this->logger->info(
+            'ToplistSync.page_done page=' . $page . '/' . $lastPage
+            . ' synced=' . $synced . ' errors=' . $errors
+            . ' partial=' . ($budgetExhausted ? '1' : '0')
+            . ' elapsed_s=' . round(microtime(true) - $batchT0, 2)
+            . ' mem_peak_mb=' . round(memory_get_peak_usage(true) / 1048576, 1)
+        );
 
         $this->emitBatchFinished($page, $synced, $errors, $budgetExhausted, $batchT0);
 

@@ -24,7 +24,7 @@ final class LoggerFactory
             return self::$instance;
         }
 
-        $default = new ErrorLogLogger();
+        $default = new FileLogger('debug');
 
         $resolved = function_exists('apply_filters')
             ? apply_filters('dataflair_logger', $default)
