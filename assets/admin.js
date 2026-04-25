@@ -87,8 +87,9 @@ jQuery(document).ready(function($) {
             },
             success: function(response) {
                 if (response.success && response.data.start_batch) {
-                    // Start batch processing
-                    syncToplistsBatch(1, 0, 0);
+                    // Start parallel pool — fetch page 1 first to learn last_page,
+                    // then fan out the rest with concurrency=3.
+                    runToplistsPool(3);
                 } else {
                     $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error starting sync') + '</span>');
                     $button.text(originalText).prop('disabled', false);
@@ -106,13 +107,14 @@ jQuery(document).ready(function($) {
             }
         });
 
-        // H13 (Phase 0B): if the server yields with partial:true (budget
-        // exhausted before the page finished), re-issue the SAME page with
-        // exponential backoff. 1s → 2s → 4s → capped at 8s. After 10
-        // consecutive partials on the same page, surface a dismissible
-        // error and stop — something is genuinely stuck upstream.
-        function syncToplistsBatch(page, totalSynced, totalErrors, skippedPages, partialCount) {
-            skippedPages = skippedPages || [];
+        // Parallel toplists sync pool.
+        // - Fetch page 1 sequentially to learn last_page.
+        // - Fan out pages 2..last_page with up to `concurrency` in flight.
+        // - Each page handles its own partial-retry backoff independently
+        //   (H13 Phase 0B: 1s → 2s → 4s → cap 8s, max 10 retries per page).
+        // - Inter-page pause was 500ms; now 0 — the upstream isn't rate-
+        //   limiting itself by client cadence, only by latency.
+        function fetchToplistPage(page, partialCount, onDone) {
             partialCount = partialCount || 0;
             $.ajax({
                 url: dataflairAdmin.ajaxUrl,
@@ -123,86 +125,117 @@ jQuery(document).ready(function($) {
                     page: page
                 },
                 success: function(response) {
-                    if (response.success) {
-                        var data = response.data;
-                        totalSynced += data.synced || 0;
-                        totalErrors += data.errors || 0;
-                        if (data.skipped) {
-                            skippedPages.push(page);
-                        }
-
-                        // Update progress
-                        var progress = Math.round((page / data.last_page) * 100);
-                        if (progress > 100) progress = 100;
-                        $progressBarInner.css('width', progress + '%');
-                        $progressText.text(progress + '% - Page ' + page + ' of ' + data.last_page);
-
-                        var statusMsg = '<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists';
-                        if (data.fallback) {
-                            statusMsg += ' (page ' + page + ' via per-ID fallback' + (data.partial ? ', partial' : '') + ')';
-                        } else if (data.partial) {
-                            statusMsg += ' (page ' + page + ' partial — budget yielded, retrying)';
-                        } else if (data.skipped) {
-                            statusMsg = '<span style="color: #d98500;">⚠ Page ' + page + ' skipped (API error). Continuing';
-                        }
-                        statusMsg += '...</span>';
-                        $message.html(statusMsg);
-
-                        // Partial response → the server yielded before finishing
-                        // this page. Re-issue the same page with backoff.
-                        if (data.partial === true && !data.is_complete) {
-                            var nextPartialCount = partialCount + 1;
-                            if (nextPartialCount > 10) {
-                                $message.html('<span style="color: #dc3232;">✗ Page ' + page + ' stuck after 10 partial retries — aborting. Try again later. <a href="#" class="dataflair-dismiss-error">dismiss</a></span>');
-                                $button.text(originalText).prop('disabled', false);
-                                return;
-                            }
-                            // 1s → 2s → 4s → cap 8s.
-                            var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
-                            setTimeout(function() {
-                                syncToplistsBatch(page, totalSynced, totalErrors, skippedPages, nextPartialCount);
-                            }, delayMs);
+                    if (!response.success) {
+                        onDone({page: page, ok: false, message: (response.data && response.data.message) || 'Unknown error'});
+                        return;
+                    }
+                    var data = response.data;
+                    if (data.partial === true && !data.is_complete) {
+                        var nextPartialCount = partialCount + 1;
+                        if (nextPartialCount > 10) {
+                            onDone({page: page, ok: false, message: 'stuck after 10 partial retries'});
                             return;
                         }
-
-                        // Check if there are more pages to process. On skipped
-                        // pages we still advance as long as the loop hasn't
-                        // reached last_page — the server hands back its best
-                        // guess for last_page so we don't stop prematurely.
-                        if (!data.is_complete && page < data.last_page) {
-                            setTimeout(function() {
-                                syncToplistsBatch(page + 1, totalSynced, totalErrors, skippedPages, 0);
-                            }, 500);
-                        } else {
-                            // All done
-                            $progressBarInner.css('width', '100%');
-                            $progressText.text('100% Complete');
-
-                            var finalMsg = '<span style="color: #46b450;">✓ Successfully synced ' + totalSynced + ' toplists!</span>';
-                            if (totalErrors > 0) {
-                                finalMsg += ' <span style="color: #dc3232;">(' + totalErrors + ' errors - check debug.log)</span>';
-                            }
-                            if (skippedPages.length > 0) {
-                                finalMsg += ' <span style="color: #d98500;">(skipped page' + (skippedPages.length > 1 ? 's' : '') + ' ' + skippedPages.join(', ') + ' due to API errors — will retry on next sync)</span>';
-                            }
-                            $message.html(finalMsg);
-                            $button.text(originalText).prop('disabled', false);
-
-                            // Reload page after 2 seconds
-                            setTimeout(function() {
-                                location.reload();
-                            }, 2000);
-                        }
-                    } else {
-                        $message.html('<span style="color: #dc3232;">✗ Error on page ' + page + ': ' + (response.data.message || 'Unknown error') + '</span>');
-                        $button.text(originalText).prop('disabled', false);
+                        var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
+                        setTimeout(function() { fetchToplistPage(page, nextPartialCount, onDone); }, delayMs);
+                        return;
                     }
+                    onDone({
+                        page:      page,
+                        ok:        true,
+                        synced:    data.synced || 0,
+                        errors:    data.errors || 0,
+                        skipped:   !!data.skipped,
+                        last_page: data.last_page,
+                        is_complete: !!data.is_complete
+                    });
                 },
-                error: function(xhr, status, error) {
-                    $message.html('<span style="color: #dc3232;">✗ Error syncing page ' + page + '</span>');
-                    $button.text(originalText).prop('disabled', false);
+                error: function() {
+                    onDone({page: page, ok: false, message: 'network error'});
                 }
             });
+        }
+
+        function runToplistsPool(concurrency) {
+            var totalSynced = 0;
+            var totalErrors = 0;
+            var skippedPages = [];
+            var fatal = false;
+
+            // Step 1: page 1 alone, to learn last_page.
+            fetchToplistPage(1, 0, function(r1) {
+                if (!r1.ok) {
+                    $message.html('<span style="color: #dc3232;">✗ Error on page 1: ' + (r1.message || 'unknown') + '</span>');
+                    $button.text(originalText).prop('disabled', false);
+                    return;
+                }
+                totalSynced  += r1.synced;
+                totalErrors  += r1.errors;
+                if (r1.skipped) skippedPages.push(1);
+
+                var lastPage   = r1.last_page || 1;
+                var queue      = [];
+                for (var p = 2; p <= lastPage; p++) queue.push(p);
+                var inFlight   = 0;
+                var pagesDone  = 1;
+                var totalPages = lastPage;
+
+                $progressBarInner.css('width', Math.round((pagesDone / totalPages) * 100) + '%');
+                $progressText.text(Math.round((pagesDone / totalPages) * 100) + '% - Page ' + pagesDone + ' of ' + totalPages);
+                $message.html('<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists...</span>');
+
+                if (queue.length === 0 || r1.is_complete) {
+                    finishToplistsSync(totalSynced, totalErrors, skippedPages);
+                    return;
+                }
+
+                function pump() {
+                    if (fatal) return;
+                    while (inFlight < concurrency && queue.length > 0) {
+                        var p = queue.shift();
+                        inFlight++;
+                        fetchToplistPage(p, 0, function(res) {
+                            inFlight--;
+                            if (!res.ok) {
+                                totalErrors++;
+                                skippedPages.push(res.page);
+                            } else {
+                                totalSynced += res.synced;
+                                totalErrors += res.errors;
+                                if (res.skipped) skippedPages.push(res.page);
+                            }
+                            pagesDone++;
+                            var pct = Math.min(100, Math.round((pagesDone / totalPages) * 100));
+                            $progressBarInner.css('width', pct + '%');
+                            $progressText.text(pct + '% - Page ' + pagesDone + ' of ' + totalPages);
+                            $message.html('<span style="color: #0073aa;">⏳ Synced ' + totalSynced + ' toplists...</span>');
+
+                            if (queue.length === 0 && inFlight === 0) {
+                                finishToplistsSync(totalSynced, totalErrors, skippedPages);
+                            } else {
+                                pump();
+                            }
+                        });
+                    }
+                }
+                pump();
+            });
+        }
+
+        function finishToplistsSync(totalSynced, totalErrors, skippedPages) {
+            $progressBarInner.css('width', '100%');
+            $progressText.text('100% Complete');
+            var finalMsg = '<span style="color: #46b450;">✓ Successfully synced ' + totalSynced + ' toplists!</span>';
+            if (totalErrors > 0) {
+                finalMsg += ' <span style="color: #dc3232;">(' + totalErrors + ' errors - check debug.log)</span>';
+            }
+            if (skippedPages.length > 0) {
+                skippedPages.sort(function(a, b) { return a - b; });
+                finalMsg += ' <span style="color: #d98500;">(skipped page' + (skippedPages.length > 1 ? 's' : '') + ' ' + skippedPages.join(', ') + ' — will retry on next sync)</span>';
+            }
+            $message.html(finalMsg);
+            $button.text(originalText).prop('disabled', false);
+            setTimeout(function() { location.reload(); }, 2000);
         }
     });
     
@@ -298,9 +331,9 @@ jQuery(document).ready(function($) {
 
                         // Check if there are more pages
                         if (!data.is_complete && page < data.last_page) {
-                            setTimeout(function() {
-                                syncBrandsBatch(page + 1, totalSynced, 0);
-                            }, 500);
+                            // No artificial pause — upstream latency already
+                            // gates request cadence.
+                            syncBrandsBatch(page + 1, totalSynced, 0);
                         } else {
                             // All done
                             $progressBarInner.css('width', '100%');

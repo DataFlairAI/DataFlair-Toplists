@@ -22,7 +22,7 @@ final class SyncRequest
         public readonly float $budgetSeconds
     ) {}
 
-    public static function toplists(int $page, int $perPage = 10, float $budgetSeconds = 25.0): self
+    public static function toplists(int $page, int $perPage = 25, float $budgetSeconds = 25.0): self
     {
         return new self(self::TYPE_TOPLISTS, $page, $perPage, $budgetSeconds);
     }
