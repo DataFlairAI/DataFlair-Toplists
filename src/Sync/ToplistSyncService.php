@@ -64,14 +64,18 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
 
         $budget = new WallClockBudget($request->budgetSeconds);
 
+        // Cheap bulk call: list IDs only, no ?include=items. The heavy
+        // include=items endpoint consistently times out on sigma at 0 bytes
+        // received because it forces a deep join per row. We harvest IDs
+        // here (light query) then fetch each toplist by ID below.
         $listUrl = $this->baseUrl . '/toplists?per_page=' . $perPage
-            . '&page=' . $page . '&include=items';
+            . '&page=' . $page;
 
         $httpT0   = microtime(true);
         $response = $this->http->get($listUrl, $this->token, 20, 2, $budget);
         $httpMs   = (int) round((microtime(true) - $httpT0) * 1000);
         $this->logger->info(
-            'ToplistSync.http page=' . $page . ' per_page=' . $perPage
+            'ToplistSync.http_list page=' . $page . ' per_page=' . $perPage
             . ' elapsed_ms=' . $httpMs
             . ' bytes=' . (is_wp_error($response) ? 0 : strlen((string) wp_remote_retrieve_body($response)))
             . ' status=' . (is_wp_error($response) ? $response->get_error_code() : (int) wp_remote_retrieve_response_code($response))
@@ -79,8 +83,8 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
 
         if (is_wp_error($response)) {
             $this->logger->warning(
-                'ToplistSync: bulk call WP_Error on page ' . $page
-                . ' (' . $response->get_error_message() . ') — falling back to per-ID fetches'
+                'ToplistSync: list call WP_Error on page ' . $page
+                . ' (' . $response->get_error_message() . ') — trying split fallback'
             );
             $fallback = $this->syncPagePerId($page, $budget);
             if ($fallback->success) {
@@ -112,8 +116,8 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         if ($statusCode !== 200) {
             if (in_array($statusCode, [500, 502, 503, 504], true)) {
                 $this->logger->warning(
-                    'ToplistSync: bulk HTTP ' . $statusCode
-                    . ' on page ' . $page . ' — falling back to per-ID fetches'
+                    'ToplistSync: list HTTP ' . $statusCode
+                    . ' on page ' . $page . ' — trying split fallback'
                 );
                 $fallback = $this->syncPagePerId($page, $budget);
                 if ($fallback->success) {
@@ -140,58 +144,59 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         if (json_last_error() !== JSON_ERROR_NONE) {
             return SyncResult::failure($page, 'JSON decode error: ' . json_last_error_msg());
         }
-        if (!isset($data['data'])) {
+        if (!isset($data['data']) || !is_array($data['data'])) {
             return SyncResult::failure(
                 $page,
-                'Invalid response format from API. Expected "data" key in response.'
+                'Invalid response format from API. Expected "data" array in response.'
             );
         }
 
-        $synced    = 0;
-        $errors    = 0;
-        $lastPage  = 1;
-        $endpoints = [];
-
+        $lastPage = 1;
         if (isset($data['meta']['last_page'])) {
             $lastPage = (int) $data['meta']['last_page'];
             set_transient('dataflair_toplists_batch_last_page', $lastPage, HOUR_IN_SECONDS);
         }
 
+        $ids = [];
+        foreach ($data['data'] as $toplist) {
+            if (isset($toplist['id'])) {
+                $ids[] = (int) $toplist['id'];
+            }
+        }
+        unset($data, $body);
+
+        $synced          = 0;
+        $errors          = 0;
+        $endpoints       = [];
         $budgetExhausted = false;
 
-        if (is_array($data['data'])) {
-            foreach ($data['data'] as $toplist) {
-                if ($budget->exceeded(3.0)) {
-                    $budgetExhausted = true;
-                    break;
-                }
-
-                if (isset($toplist['id'])) {
-                    $endpoint    = $this->baseUrl . '/toplists/' . $toplist['id'];
-                    $endpoints[] = $endpoint;
-
-                    $toplistJson = wp_json_encode(['data' => $toplist]);
-                    $itemT0      = microtime(true);
-                    $result      = $this->persister->store($toplist, (string) $toplistJson);
-                    $itemMs      = (int) round((microtime(true) - $itemT0) * 1000);
-                    if ($itemMs > 250) {
-                        $this->logger->info(
-                            'ToplistSync.store_slow page=' . $page
-                            . ' id=' . (int) $toplist['id']
-                            . ' elapsed_ms=' . $itemMs
-                            . ' bytes=' . strlen((string) $toplistJson)
-                        );
-                    }
-
-                    if ($result) {
-                        $synced++;
-                    } else {
-                        $errors++;
-                    }
-                    unset($toplistJson, $result, $endpoint);
-                }
-                unset($toplist);
+        foreach ($ids as $id) {
+            if ($budget->exceeded(3.0)) {
+                $budgetExhausted = true;
+                break;
             }
+
+            $endpoint    = $this->baseUrl . '/toplists/' . $id;
+            $endpoints[] = $endpoint;
+
+            $itemT0 = microtime(true);
+            $ok     = $this->persister->fetchAndStore($endpoint, $this->token);
+            $itemMs = (int) round((microtime(true) - $itemT0) * 1000);
+            if ($itemMs > 500) {
+                $this->logger->info(
+                    'ToplistSync.item_slow page=' . $page
+                    . ' id=' . $id
+                    . ' elapsed_ms=' . $itemMs
+                    . ' ok=' . ($ok ? '1' : '0')
+                );
+            }
+
+            if ($ok) {
+                $synced++;
+            } else {
+                $errors++;
+            }
+            unset($endpoint, $ok);
         }
 
         if (!empty($endpoints)) {
@@ -203,7 +208,6 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             update_option('dataflair_api_endpoints', $joined);
         }
 
-        unset($data, $body);
         if (function_exists('gc_collect_cycles')) {
             gc_collect_cycles();
         }
