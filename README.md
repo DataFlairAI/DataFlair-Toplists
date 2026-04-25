@@ -178,6 +178,20 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.2
+
+2.1.2 is the Phase 9.6 **admin UI extraction** release. The two largest remaining inline page bodies — `settings_page()` (~705 LOC) and `brands_page()` (~1,237 LOC) — leave the god-class for dedicated owners under `src/Admin/Pages/`. Three more admin-side registrars come along for the ride. No operator action required, no DB migration, no config change — every admin URL, AJAX action, settings option name, capability check, nonce, page slug, and submenu position is preserved byte-for-byte.
+
+What moved out of `dataflair-toplists.php` into `src/`:
+
+- `\DataFlair\Toplists\Admin\Pages\SettingsPage` — replaces inline `settings_page()`. Constructor takes typed `\Closure` dependencies (`apiBaseUrlResolver`, `lastSyncLabelFormatter`) so the still-private god-class helpers are reachable without exposing a wider class surface.
+- `\DataFlair\Toplists\Admin\Pages\BrandsPage` — replaces inline `brands_page()`. Same closure-injection pattern (`distinctCsvValuesCollector`, `lastSyncLabelFormatter`). Markup, jQuery wiring, AJAX endpoints, pagination shape, and filter-dropdown shape preserved byte-for-byte.
+- `\DataFlair\Toplists\Admin\MenuRegistrar` — owns `add_menu_page` + the two `add_submenu_page` calls. Top-level menu icon (`dashicons-list-view`) and position (30) unchanged.
+- `\DataFlair\Toplists\Admin\SettingsRegistrar` — owns the nine `register_setting` calls under the `dataflair_settings` group. The duplicate `dataflair_api_base_url` registration in v2.1.1 is preserved here for byte parity.
+- `\DataFlair\Toplists\Admin\Notices\PermalinkNotice` — owns the plain-permalinks admin warning that prompts the operator to flip permalink mode in WP settings.
+
+`Plugin::registerHooks()` now wires all five new admin classes through the lazy `Container`. Strangler-fig contract on `DataFlair_Toplists::get_instance()` is untouched. Suite at **434 tests, 1,028 assertions, all green**.
+
 ### To 2.1.1
 
 2.1.1 is the Phase 9.5 **WPPB-style bootstrap decoupling** release. The 5,600-line god-class gave up five single-responsibility chunks to their own dedicated classes under `src/`, following the WordPress Plugin Boilerplate layout. No operator action required, no DB migration, no config change — every hook, shortcode, block, REST route, AJAX action, and option is preserved byte-for-byte.
@@ -298,6 +312,18 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.2
+- **Phase 9.6 — admin UI extraction.** `dataflair-toplists.php` shrank by ~2,082 lines (43%) as the two largest inline admin page bodies and three admin-side registrars extracted into dedicated classes under `src/Admin/`. The main plugin file dropped from 4,855 → ~2,773 LOC — the largest single phase by LOC of the v2.1.x continuation arc.
+- Added: `\DataFlair\Toplists\Admin\Pages\SettingsPage` — replaces inline `settings_page()` (~705 LOC of HTML, jQuery, AJAX wiring, fetch-all progress block). Constructor accepts two typed `\Closure` dependencies (`apiBaseUrlResolver`, `lastSyncLabelFormatter`) so the page can call back into still-private god-class helpers without inheriting the singleton. `render()` returns void; class is final.
+- Added: `\DataFlair\Toplists\Admin\Pages\BrandsPage` — replaces inline `brands_page()` (~1,237 LOC of brand-table rendering, pagination, filter-dropdown collection, AJAX endpoints). Constructor accepts `distinctCsvValuesCollector` + `lastSyncLabelFormatter` closures. Markup, jQuery wiring, and pagination shape preserved byte-for-byte.
+- Added: `\DataFlair\Toplists\Admin\MenuRegistrar` — owns `add_menu_page` + the two `add_submenu_page` calls. Top-level menu icon (`dashicons-list-view`) and position (30) unchanged. Top-level slug routes to `[$settings, 'render']`; brands submenu routes to `BrandsPage::render`; toplists submenu retained.
+- Added: `\DataFlair\Toplists\Admin\SettingsRegistrar` — owns the nine `register_setting` calls under the `dataflair_settings` group: `dataflair_api_token`, `dataflair_api_base_url` (registered twice for byte parity), `dataflair_api_endpoints`, `dataflair_http_auth_user`, `dataflair_http_auth_pass`, `dataflair_ribbon_bg_color`, `dataflair_ribbon_text_color`, `dataflair_cta_bg_color`, `dataflair_cta_text_color`. Hooked on `admin_init`.
+- Added: `\DataFlair\Toplists\Admin\Notices\PermalinkNotice` — owns the plain-permalinks admin warning. Renders the `notice notice-error` markup pointing at `options-permalink.php` only when `permalink_structure` is empty. Hooked on `admin_notices`.
+- Changed: `Plugin::registerHooks()` now wires all five new admin classes through the lazy `Container`. The god-class `init_hooks()` no longer calls `add_admin_menu`, `register_settings`, `enqueue_admin_scripts`, or `maybe_notice_plain_permalinks` directly — those registrations moved to the new owners.
+- Changed: the god-class `settings_page()`, `brands_page()`, `add_admin_menu()`, `register_settings()`, `enqueue_admin_scripts()`, and `maybe_notice_plain_permalinks()` methods are deleted. Closure injection means the page classes still reach the helpers they need without re-introducing public surface area on the deprecated singleton.
+- Added: 22 new tests across `SettingsPageTest`, `BrandsPageTest`, `MenuRegistrarTest`, `SettingsRegistrarTest`, `PermalinkNoticeTest`. Reflection-based contract tests pin constructor signatures, interface conformance, render-method shape, and class finality without re-rendering the 1,200+ LOC HTML bodies inside PHPUnit (cheaper and tighter than full integration tests for two pages already covered by manual smoke). Full suite: **434 tests, 1,028 assertions, all green**.
+- Why a patch bump (2.1.1 → 2.1.2): zero behavioural change for end users. Every admin URL, AJAX action, settings option name, capability check, nonce, page slug, and submenu position is preserved byte-for-byte. The new classes are strangler-fig delegates; the `DataFlair_Toplists::get_instance()` strict-deprecation contract from 2.1.0 is untouched.
 
 ### 2.1.1
 - **Phase 9.5 — WPPB-style bootstrap decoupling.** `dataflair-toplists.php` shrank by ~860 lines (15%) as five responsibilities extracted into dedicated classes under `src/`, following the WordPress Plugin Boilerplate layout. The main plugin file now owns only the bootstrap constants, `composer` autoload, WPPB `register_activation_hook` / `register_deactivation_hook`, and `\DataFlair\Toplists\Plugin::boot(__FILE__)`.
@@ -550,4 +576,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

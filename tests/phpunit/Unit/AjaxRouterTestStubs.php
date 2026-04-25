@@ -75,8 +75,19 @@ namespace DataFlair\Toplists\Admin {
         function add_action($hook, $callback, $priority = 10, $accepted_args = 1)
         {
             // Router registers closures via add_action but dispatch() is
-            // what the tests exercise; no-op keeps the registration path
-            // callable without booting WordPress.
+            // what AjaxRouterTest exercises directly. Phase 9.6 added admin
+            // registrar tests that DO want to inspect hook wiring, so we
+            // mirror into AdminStubs::$actions when that capture container
+            // is loaded — keeps both test suites pointed at one source of
+            // truth without forcing every Admin\* test to re-declare the
+            // namespace stub.
+            if (class_exists(\DataFlair\Toplists\Tests\Admin\AdminStubs::class, false)) {
+                \DataFlair\Toplists\Tests\Admin\AdminStubs::$actions[] = [
+                    'hook'     => $hook,
+                    'callback' => $callback,
+                    'priority' => $priority,
+                ];
+            }
             return true;
         }
     }

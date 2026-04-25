@@ -27,6 +27,12 @@ if (!class_exists('DataFlair_Toplists', false)) {
      * Minimal test fake standing in for the god-class. Plugin::__construct()
      * only calls get_instance() and stores the result in a typed property, so
      * a class with the right name and a static factory is enough.
+     *
+     * Phase 9.6 added MenuRegistrar which type-hints `\DataFlair_Toplists` and
+     * calls `tests_page()` on the instance. Co-loaded with
+     * `MenuRegistrarTestStubs.php` (also declares `DataFlair_Toplists`
+     * conditionally) — whichever wins the load race must still expose every
+     * method either suite expects, so we keep this stub a superset.
      */
     final class DataFlair_Toplists
     {
@@ -39,6 +45,11 @@ if (!class_exists('DataFlair_Toplists', false)) {
                 self::$instance = new self();
             }
             return self::$instance;
+        }
+
+        public function tests_page(): void
+        {
+            // No-op — MenuRegistrar wires this as a callable reference only.
         }
     }
 }
