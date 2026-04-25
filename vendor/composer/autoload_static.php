@@ -24,6 +24,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
             'DataFlair\\Toplists\\Cli\\' => 23,
             'DataFlair\\Toplists\\Block\\' => 25,
             'DataFlair\\Toplists\\Admin\\' => 25,
+            'DataFlair\\Toplists\\' => 19,
         ),
         'C' =>
         array (
@@ -75,6 +76,10 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Admin\\' =>
         array (
             0 => __DIR__ . '/../..' . '/src/Admin',
+        ),
+        'DataFlair\\Toplists\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src',
         ),
         'Composer\\Installers\\' =>
         array (
@@ -209,6 +214,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Cli\\PerfRunCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfRunCommand.php',
         'DataFlair\\Toplists\\Cli\\PerfSeedCommand' => __DIR__ . '/../..' . '/includes/Cli/PerfSeedCommand.php',
         'DataFlair\\Toplists\\Cli\\ReconcileReviewsCommand' => __DIR__ . '/../..' . '/includes/Cli/ReconcileReviewsCommand.php',
+        'DataFlair\\Toplists\\Container' => __DIR__ . '/../..' . '/src/Container.php',
         'DataFlair\\Toplists\\Database\\AlternativesRepository' => __DIR__ . '/../..' . '/src/Database/AlternativesRepository.php',
         'DataFlair\\Toplists\\Database\\AlternativesRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/AlternativesRepositoryInterface.php',
         'DataFlair\\Toplists\\Database\\BrandsRepository' => __DIR__ . '/../..' . '/src/Database/BrandsRepository.php',
@@ -235,6 +241,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Models\\DataIntegrityChecker' => __DIR__ . '/../..' . '/includes/DataIntegrityChecker.php',
         'DataFlair\\Toplists\\Models\\ProductTypeLabels' => __DIR__ . '/../..' . '/includes/ProductTypeLabels.php',
         'DataFlair\\Toplists\\Models\\Toplist' => __DIR__ . '/../..' . '/includes/Toplist.php',
+        'DataFlair\\Toplists\\Plugin' => __DIR__ . '/../..' . '/src/Plugin.php',
         'DataFlair\\Toplists\\Rest\\Controllers\\CasinosController' => __DIR__ . '/../..' . '/src/Rest/Controllers/CasinosController.php',
         'DataFlair\\Toplists\\Rest\\Controllers\\HealthController' => __DIR__ . '/../..' . '/src/Rest/Controllers/HealthController.php',
         'DataFlair\\Toplists\\Rest\\Controllers\\ToplistsController' => __DIR__ . '/../..' . '/src/Rest/Controllers/ToplistsController.php',

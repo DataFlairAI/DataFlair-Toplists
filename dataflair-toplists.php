@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 1.15.1
+ * Version: 2.0.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '1.15.1');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.0.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -123,6 +123,17 @@ function dataflair_plugins_api_info($res, $action, $args) {
         ',
 
         'changelog' => '
+<h4>2.0.0</h4>
+<ul>
+  <li><strong>Phase 8 — canonical bootstrap seam.</strong> <code>DataFlair\\Toplists\\Plugin::boot()</code> is now the canonical entry point for the plugin. The plugin file calls <code>Plugin::boot()</code> directly; the boot routine is idempotent and internally still calls <code>DataFlair_Toplists::get_instance()</code> to preserve every existing hook registration.</li>
+  <li>Added: <code>DataFlair\\Toplists\\Container</code> — hand-written lazy service container (<code>register</code> / <code>set</code> / <code>get</code> / <code>has</code>, zero external dependencies). Services are resolved on first <code>get()</code> and memoised. Currently wires the <code>logger</code> service; downstream integrators can call <code>Plugin::boot()-&gt;container()-&gt;set(\'logger\', new MySentryLogger())</code> to override before any sync or render.</li>
+  <li>Added: <code>Plugin::resetForTests()</code> — test-only seam for PHPUnit tear-down; no production code should call it.</li>
+  <li><strong>Deprecation — not removal yet.</strong> <code>DataFlair_Toplists</code> is marked <code>@deprecated 2.0.0</code>; <code>DataFlair_Toplists::get_instance()</code> continues to work through the v2.0.x line. Strict-mode notices are opt-in: <code>add_filter(\'dataflair_strict_deprecation\', \'__return_true\')</code> to enable <code>E_USER_DEPRECATED</code> emission. Removal tracked for v2.1.0.</li>
+  <li><strong>Migration guide:</strong> see <code>UPGRADING.md</code>. Strangler-fig preserved — the god-class still owns hook registrations and every existing call site keeps working byte-for-byte.</li>
+  <li><strong>New tests:</strong> <code>ContainerTest</code> (lazy resolution, memoisation, factory re-registration invalidation), <code>PluginBootTest</code> (idempotent <code>boot()</code>, legacy singleton preserved, container accessor).</li>
+  <li><strong>Why a major bump:</strong> new canonical public API (<code>Plugin::boot()</code>), formal deprecation window opens, downstream integrators should migrate within the v2.0.x line.</li>
+</ul>
+
 <h4>1.15.1</h4>
 <ul>
   <li><strong>Phase 7 — block registrars extracted.</strong> <code>register_block_type</code> for the <code>dataflair-toplists/toplist</code> block is now owned by <code>DataFlair\Toplists\Block\BlockRegistrar</code>. The render callback moved to <code>DataFlair\Toplists\Block\ToplistBlock</code> (closure-based DI for the shortcode renderer + option reader keeps it <code>$wpdb</code>-free). Editor CSS enqueue moved to <code>DataFlair\Toplists\Block\EditorAssets</code>. Block metadata path resolution (<code>build/block.json</code> → <code>src/block.json</code> fallback), block attributes, shortcode delegation, and <code>prosCons</code> pass-through all preserved byte-for-byte.</li>
@@ -400,7 +411,32 @@ function dataflair_plugins_api_info($res, $action, $args) {
 // @codeCoverageIgnoreEnd
 
 /**
- * Main DataFlair Plugin Class
+ * Main DataFlair Plugin Class.
+ *
+ * @deprecated 2.0.0 Use {@see \DataFlair\Toplists\Plugin::boot()} as the
+ *   canonical bootstrap entry point. This god-class continues to function
+ *   through the v2.0.x line as a strangler-fig shim — it still owns the
+ *   WordPress hook registrations and still delegates to the extracted
+ *   collaborators in `src/`. Scheduled for removal: v2.1.0, at which point
+ *   `DataFlair_Toplists::get_instance()` will throw `BadMethodCallException`
+ *   with a pointer to the migration guide.
+ *
+ * Migration path for downstream consumers:
+ *
+ *   // Legacy (still works in 2.0.x, emits E_USER_DEPRECATED in strict mode):
+ *   $legacy = DataFlair_Toplists::get_instance();
+ *
+ *   // Canonical (v2.0.0+):
+ *   $plugin = \DataFlair\Toplists\Plugin::boot();
+ *   $logger = $plugin->container()->get('logger');
+ *
+ * Strict-mode deprecation notices are opt-in via
+ * `add_filter('dataflair_strict_deprecation', '__return_true');` — off by
+ * default to avoid spamming `error_log` on sites that haven't migrated yet.
+ *
+ * @see \DataFlair\Toplists\Plugin
+ * @see \DataFlair\Toplists\Container
+ * @see UPGRADING.md
  */
 class DataFlair_Toplists {
 
@@ -477,9 +513,28 @@ class DataFlair_Toplists {
      */
     private $block_bootstrap = null;
 
+    /**
+     * Legacy singleton accessor. Preserved through v2.0.x for backward
+     * compatibility; emits `E_USER_DEPRECATED` when strict-deprecation mode
+     * is on (`add_filter('dataflair_strict_deprecation', '__return_true')`).
+     *
+     * @deprecated 2.0.0 Use `\DataFlair\Toplists\Plugin::boot()` instead.
+     */
     public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
+        }
+        // Strict-mode-only deprecation signal. Off by default — enabling it on
+        // sites that haven't migrated yet would drown error_log because every
+        // legacy caller, including internal hook handlers, routes through here.
+        if (function_exists('apply_filters') && apply_filters('dataflair_strict_deprecation', false)) {
+            if (function_exists('_deprecated_function')) {
+                _deprecated_function(
+                    'DataFlair_Toplists::get_instance',
+                    '2.0.0',
+                    '\\DataFlair\\Toplists\\Plugin::boot()'
+                );
+            }
         }
         return self::$instance;
     }
@@ -5513,8 +5568,10 @@ class DataFlair_Toplists {
     }
 }
 
-// Initialize plugin
-DataFlair_Toplists::get_instance();
+// Initialize plugin — canonical entry is Plugin::boot(). The call is idempotent
+// and internally calls DataFlair_Toplists::get_instance() so the legacy
+// strangler-fig shim continues to own hook registrations through v2.0.x.
+\DataFlair\Toplists\Plugin::boot();
 
 // Register WP-CLI commands (Phase 0A H0 + Phase 0.5 perf rig).
 if (defined('WP_CLI') && WP_CLI) {

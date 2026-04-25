@@ -40,7 +40,8 @@
             "DataFlair\\Toplists\\Frontend\\": "src/Frontend/",
             "DataFlair\\Toplists\\Admin\\": "src/Admin/",
             "DataFlair\\Toplists\\Rest\\": "src/Rest/",
-            "DataFlair\\Toplists\\Block\\": "src/Block/"
+            "DataFlair\\Toplists\\Block\\": "src/Block/",
+            "DataFlair\\Toplists\\": "src/"
         }
     },
     "extra": {

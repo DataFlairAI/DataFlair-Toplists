@@ -178,6 +178,27 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.0.0
+
+2.0.0 is the Phase 8 **canonical bootstrap seam** release. The plugin gains a new entry point, `\DataFlair\Toplists\Plugin::boot()`, backed by a hand-written lazy service container (`\DataFlair\Toplists\Container`). The legacy `DataFlair_Toplists::get_instance()` entry point is **deprecated but fully functional** through the entire v2.0.x line — the god-class continues to own WordPress hook registrations as a strangler-fig shim. **Scheduled removal: v2.1.0.**
+
+- No operator action required for day-to-day use. Every hook, option, table, shortcode, block, REST route, and AJAX action is preserved byte-for-byte.
+- **Downstream integrators** calling `DataFlair_Toplists::get_instance()` from a theme, child plugin, or mu-plugin have the entire v2.0.x line to migrate. See [UPGRADING.md](UPGRADING.md) for the full migration guide.
+
+Recommended pattern:
+
+```php
+// Legacy (v1.x → v2.0.x, works but deprecated)
+$legacy = DataFlair_Toplists::get_instance();
+
+// Canonical (v2.0.0+)
+$plugin    = \DataFlair\Toplists\Plugin::boot();
+$container = $plugin->container();
+$logger    = $container->get('logger');
+```
+
+Strict-mode deprecation notices (`E_USER_DEPRECATED`) are **opt-in** via `add_filter('dataflair_strict_deprecation', '__return_true');` — off by default so sites that haven't migrated yet aren't flooded with notices on every internal hook dispatch.
+
 ### To 1.15.1
 
 1.15.1 is the Phase 7 **block registrars** release. No operator action required, no DB migration, no config change. The public Gutenberg block contract is preserved byte-for-byte:
@@ -251,6 +272,16 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.0.0
+- **Phase 8 — canonical bootstrap seam.** `\DataFlair\Toplists\Plugin::boot()` is now the canonical entry point for the plugin. The plugin file calls `Plugin::boot()` directly; the boot routine is idempotent and internally still calls `DataFlair_Toplists::get_instance()` to preserve every existing hook registration.
+- Added: `\DataFlair\Toplists\Container` — hand-written lazy service container (`register` / `set` / `get` / `has`, zero external dependencies, no Symfony, no Pimple, no PSR-Container). Services are resolved on first `get()` and memoised. `register()` invalidates a prior memoised instance so test harnesses can swap factories mid-request. Factories receive the container itself so they can pull sub-dependencies.
+- Added: `\DataFlair\Toplists\Plugin` — final class with static `boot()` / `instance()` / `resetForTests()` seams. The container is built once per request and currently wires the `logger` service. Downstream integrators override services with `Plugin::boot()->container()->set('logger', new MySentryLogger())`.
+- Deprecation — **not removal yet**: `DataFlair_Toplists` is marked `@deprecated 2.0.0`; `DataFlair_Toplists::get_instance()` continues to work through the v2.0.x line. Strict-mode notices are opt-in via `add_filter('dataflair_strict_deprecation', '__return_true')`. Removal tracked for v2.1.0.
+- Added: `UPGRADING.md` — full migration guide covering the recommended `Plugin::boot()` pattern, strict-mode notices, and container overrides.
+- Added: PSR-4 autoload catch-all entry for `DataFlair\Toplists\` → `src/` (specific sub-namespaces retain their own entries for longest-prefix match).
+- Added: **14 new tests** — `ContainerTest` (7 tests: lazy resolution, memoisation, set override, re-register invalidation, has reporting, unknown-id throws, factory receives container for sub-deps), `PluginBootTest` (7 tests: boot returns Plugin instance, idempotent, instance null before boot, instance returns booted singleton, resetForTests clears, container exposes logger, downstream can override a container service). Full suite: **406 tests, 938 assertions, all green**.
+- Why a major bump: new canonical public API (`Plugin::boot()`), formal deprecation window opens on `DataFlair_Toplists`, downstream integrators should migrate within the v2.0.x line. No runtime behaviour changed for end users.
 
 ### 1.15.1
 - **Phase 7 — block registrars extracted.** `register_block_type` for the `dataflair-toplists/toplist` block is now owned by `DataFlair\Toplists\Block\BlockRegistrar`. The render callback moved to `DataFlair\Toplists\Block\ToplistBlock` (closure-based DI for the shortcode renderer + option reader keeps it `$wpdb`-free). Editor CSS enqueue moved to `DataFlair\Toplists\Block\EditorAssets`. Block metadata path resolution (`build/block.json` → `src/block.json` fallback), block attributes, shortcode delegation, and `prosCons` pass-through all preserved byte-for-byte.
@@ -471,4 +502,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 1.15.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.0.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
