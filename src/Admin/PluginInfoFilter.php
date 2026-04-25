@@ -153,6 +153,16 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.1.5</h4>
+<ul>
+  <li><strong>Phase 9.9 — review post manager + brand-meta extraction.</strong> Seven helper methods leave the god-class for dedicated single-responsibility classes under <code>DataFlair\\Toplists\\Frontend\\Content\\</code> and <code>DataFlair\\Toplists\\Frontend\\Render\\</code>. The on-demand review-CPT manager, brand-meta prefetcher (H7), batched review-post finder (H8), and the relative-time admin label all become testable, single-purpose units.</li>
+  <li><strong>Six new classes.</strong> <code>ReviewPostFinder</code> owns the slug-tolerant direct-SQL lookup. <code>ReviewPostManager</code> owns the get-or-create flow, including the eight <code>_review_*</code> meta writes. <code>ReviewPostBatchFinder</code> wraps the H8 batched lookup. <code>BrandMetaPrefetcher</code> owns the H7 prefetch pipeline (one IN(…) batch via <code>BrandsRepository::findManyByApiBrandIds</code>, plus inline IN(…) for slug + name fallbacks). <code>BrandMetaLookup</code> owns the cascading per-card resolution from the prefetched map. <code>SyncLabelFormatter</code> owns the legacy/new option-name fallback for the "Last sync: …" admin labels.</li>
+  <li><strong>Main file trim.</strong> <code>dataflair-toplists.php</code> drops by ~200 LOC in this phase. Six god-class methods become one-line delegators wired through lazy <code>Container</code> getters; <code>resolve_pros_cons_for_table_item()</code> deleted outright (the trait-based <code>ProsConsResolver</code> was already authoritative).</li>
+  <li><strong>Render-time read-only invariant preserved.</strong> <code>ReviewPostManager</code> remains never-called from the casino-card render path — only from sync, WP-CLI reconcile, and admin paths. <code>RenderIsReadOnlyTest</code> continues to enforce this.</li>
+  <li><strong>New tests.</strong> 26 new tests pin the contracts: <code>BrandMetaLookupTest</code>, <code>BrandMetaPrefetcherTest</code>, <code>SyncLabelFormatterTest</code>, <code>ReviewPostFinderTest</code>, <code>ReviewPostBatchFinderTest</code>, <code>ReviewPostManagerTest</code>. Tests pin cascade order, repo delegation, option-name fallback, slug-tolerant SQL, draft-vs-published preference, and meta-write fidelity. Full suite: <strong>478 tests, 1,111 assertions, all green</strong>.</li>
+  <li><strong>No public contract change.</strong> The H7/H8 SQL batch shape, the brand-meta map structure, the auto-create draft flow, and every <code>_review_*</code> meta key remain identical to v2.1.4.</li>
+</ul>
+
 <h4>2.1.4</h4>
 <ul>
   <li><strong>Phase 9.8 — frontend assets + Alpine.js extraction.</strong> The five frontend asset methods leave the god-class for dedicated single-responsibility classes under <code>DataFlair\\Toplists\\Frontend\\Assets\\</code>. Each registers its own WordPress hook via <code>register()</code>; <code>Plugin::registerHooks()</code> wires them.</li>

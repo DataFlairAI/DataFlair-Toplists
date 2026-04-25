@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.4
+ * Version: 2.1.5
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.4');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.5');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -171,6 +171,28 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Admin\Pages\BrandsPage|null */
     private $brands_page_obj = null;
+
+    /**
+     * Phase 9.9 — extracted review-CPT and brand-meta helpers. Lazy.
+     *
+     * @var \DataFlair\Toplists\Frontend\Content\ReviewPostFinder|null
+     */
+    private $review_post_finder = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Content\ReviewPostManager|null */
+    private $review_post_manager = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Content\ReviewPostBatchFinder|null */
+    private $review_post_batch_finder = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Render\BrandMetaPrefetcher|null */
+    private $brand_meta_prefetcher = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Render\BrandMetaLookup|null */
+    private $brand_meta_lookup = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Render\SyncLabelFormatter|null */
+    private $sync_label_formatter = null;
 
     /**
      * Legacy singleton accessor. Continues to function as a strangler-fig
@@ -572,6 +594,66 @@ class DataFlair_Toplists {
             \Closure::fromCallable([$this, 'format_last_sync_label'])
         );
         return $this->brands_page_obj;
+    }
+
+    /**
+     * Phase 9.9 — lazy getters for the extracted review-CPT and
+     * brand-meta helpers. The legacy private god-class methods become
+     * one-line delegators to these instances.
+     */
+    private function review_post_finder() {
+        if ($this->review_post_finder instanceof \DataFlair\Toplists\Frontend\Content\ReviewPostFinder) {
+            return $this->review_post_finder;
+        }
+        $this->review_post_finder = new \DataFlair\Toplists\Frontend\Content\ReviewPostFinder();
+        return $this->review_post_finder;
+    }
+
+    private function review_post_manager() {
+        if ($this->review_post_manager instanceof \DataFlair\Toplists\Frontend\Content\ReviewPostManager) {
+            return $this->review_post_manager;
+        }
+        $this->review_post_manager = new \DataFlair\Toplists\Frontend\Content\ReviewPostManager(
+            $this->review_post_finder(),
+            \DataFlair\Toplists\Logging\LoggerFactory::get()
+        );
+        return $this->review_post_manager;
+    }
+
+    private function review_post_batch_finder() {
+        if ($this->review_post_batch_finder instanceof \DataFlair\Toplists\Frontend\Content\ReviewPostBatchFinder) {
+            return $this->review_post_batch_finder;
+        }
+        $this->review_post_batch_finder = new \DataFlair\Toplists\Frontend\Content\ReviewPostBatchFinder(
+            $this->brands_repo()
+        );
+        return $this->review_post_batch_finder;
+    }
+
+    private function brand_meta_prefetcher() {
+        if ($this->brand_meta_prefetcher instanceof \DataFlair\Toplists\Frontend\Render\BrandMetaPrefetcher) {
+            return $this->brand_meta_prefetcher;
+        }
+        $this->brand_meta_prefetcher = new \DataFlair\Toplists\Frontend\Render\BrandMetaPrefetcher(
+            $this->brands_repo()
+        );
+        return $this->brand_meta_prefetcher;
+    }
+
+    private function brand_meta_lookup() {
+        if ($this->brand_meta_lookup instanceof \DataFlair\Toplists\Frontend\Render\BrandMetaLookup) {
+            return $this->brand_meta_lookup;
+        }
+        $this->brand_meta_lookup = new \DataFlair\Toplists\Frontend\Render\BrandMetaLookup();
+        return $this->brand_meta_lookup;
+    }
+
+    private function sync_label_formatter() {
+        if ($this->sync_label_formatter instanceof \DataFlair\Toplists\Frontend\Render\SyncLabelFormatter) {
+            return $this->sync_label_formatter;
+        }
+        $this->sync_label_formatter = new \DataFlair\Toplists\Frontend\Render\SyncLabelFormatter();
+        return $this->sync_label_formatter;
     }
 
     private function init_hooks() {
@@ -1562,355 +1644,61 @@ class DataFlair_Toplists {
         );
     }
 
+    // Phase 9.9 — `resolve_pros_cons_for_table_item()` removed. Logic
+    // lives in the `DataFlair\Toplists\Frontend\Render\ProsConsResolver`
+    // trait used by both CardRenderer and TableRenderer.
+
+
     /**
-     * Resolve pros/cons for the table row, honoring block-level overrides first.
-     *
-     * @param array $item
-     * @param array $pros_cons_data
-     * @return array{pros:array,cons:array}
-     */
-    private function resolve_pros_cons_for_table_item($item, $pros_cons_data) {
-        $fallback = array(
-            'pros' => array(),
-            'cons' => array(),
-        );
-
-        if (!empty($item['pros']) && is_array($item['pros'])) {
-            $fallback['pros'] = array_values(array_filter(array_map('trim', $item['pros']), function($value) {
-                return $value !== '';
-            }));
-        }
-        if (!empty($item['cons']) && is_array($item['cons'])) {
-            $fallback['cons'] = array_values(array_filter(array_map('trim', $item['cons']), function($value) {
-                return $value !== '';
-            }));
-        }
-
-        if (empty($pros_cons_data) || !is_array($pros_cons_data)) {
-            return $fallback;
-        }
-
-        $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
-        $brand_name = isset($brand['name']) ? (string) $brand['name'] : '';
-        $brand_slug = sanitize_title($brand_name);
-        $position = isset($item['position']) ? (int) $item['position'] : 0;
-        $item_id = isset($item['id']) ? (int) $item['id'] : 0;
-        $brand_id = 0;
-
-        if (!empty($brand['id'])) {
-            $brand_id = (int) $brand['id'];
-        } elseif (!empty($brand['api_brand_id'])) {
-            $brand_id = (int) $brand['api_brand_id'];
-        } elseif (!empty($item['brandId'])) {
-            $brand_id = (int) $item['brandId'];
-        }
-
-        $candidate_keys = array();
-        if ($brand_id > 0) {
-            $candidate_keys[] = 'casino-brand-' . $brand_id;
-        }
-        if ($item_id > 0) {
-            $candidate_keys[] = 'casino-item-' . $item_id;
-        }
-        if (!empty($brand_slug)) {
-            $candidate_keys[] = 'casino-slug-' . $brand_slug;
-            $candidate_keys[] = 'casino-' . $position . '-' . $brand_slug;
-        }
-
-        foreach ($candidate_keys as $candidate_key) {
-            if (empty($pros_cons_data[$candidate_key]) || !is_array($pros_cons_data[$candidate_key])) {
-                continue;
-            }
-
-            $override = $pros_cons_data[$candidate_key];
-            return array(
-                'pros' => !empty($override['pros']) && is_array($override['pros']) ? array_values(array_filter(array_map('trim', $override['pros']), function($value) {
-                    return $value !== '';
-                })) : $fallback['pros'],
-                'cons' => !empty($override['cons']) && is_array($override['cons']) ? array_values(array_filter(array_map('trim', $override['cons']), function($value) {
-                    return $value !== '';
-                })) : $fallback['cons'],
-            );
-        }
-
-        return $fallback;
-    }
-    
-    /**
-     * Find an existing review CPT when the post slug differs from the API brand slug
-     * (e.g. live URL /reviews/1xbet-sportsbook-india/ vs brand slug 1xbet-sportsbook).
-     * Matches _review_brand_id to api_brand_id / id — same idea as render-casino-card pros fallback.
+     * Phase 9.9 — delegates to `Frontend\Content\ReviewPostFinder`.
      *
      * @return WP_Post|null
      */
     private function find_review_post_by_brand_meta(array $brand) {
-        global $wpdb;
-
-        $ids = array();
-        foreach (array('api_brand_id', 'id') as $key) {
-            if (! empty($brand[ $key ])) {
-                $v = intval($brand[ $key ]);
-                if ($v > 0) {
-                    $ids[ $v ] = true;
-                }
-            }
-        }
-        if (empty($ids)) {
-            return null;
-        }
-
-        $bid_list = array_keys( $ids );
-        // Direct SQL avoids third-party pre_get_posts / meta_query quirks; match string or numeric meta_value.
-        $in_placeholders = implode( ',', array_fill( 0, count( $bid_list ), '%s' ) );
-        $sql               = "SELECT p.ID, p.post_status FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_review_brand_id'
-            WHERE p.post_type = 'review'
-            AND p.post_status IN ('publish','draft','pending','future','private')
-            AND pm.meta_value IN ($in_placeholders)
-            ORDER BY p.post_modified DESC";
-
-        $rows = $wpdb->get_results( $wpdb->prepare( $sql, ...array_map( 'strval', $bid_list ) ) );
-
-        if ( empty( $rows ) && count( $bid_list ) === 1 ) {
-            // Some sites store _review_brand_id as integer-ish without strict string match.
-            $one = (int) $bid_list[0];
-            $sql2 = "SELECT p.ID, p.post_status FROM {$wpdb->posts} p
-                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_review_brand_id'
-                WHERE p.post_type = 'review'
-                AND p.post_status IN ('publish','draft','pending','future','private')
-                AND CAST(pm.meta_value AS UNSIGNED) = %d
-                ORDER BY p.post_modified DESC";
-            $rows = $wpdb->get_results( $wpdb->prepare( $sql2, $one ) );
-        }
-
-        if (empty($rows)) {
-            return null;
-        }
-
-        foreach ($rows as $row) {
-            if ('publish' === $row->post_status) {
-                return get_post( (int) $row->ID );
-            }
-        }
-
-        return get_post( (int) $rows[0]->ID );
+        return $this->review_post_finder()->findByBrandMeta($brand);
     }
 
     /**
-     * Get or create review post for a casino brand
-     * Auto-creates draft review if it doesn't exist
+     * Phase 9.9 — delegates to `Frontend\Content\ReviewPostManager`.
      *
-     * @param array $brand Brand data from API
-     * @param array $item Full toplist item data
-     * @return int|false Post ID of review, or false on failure
+     * @param array $brand Brand data from API.
+     * @param array $item  Full toplist item data.
+     * @return int|false Post ID of the review, or false on failure.
      */
     private function get_or_create_review_post($brand, $item) {
-        // Check if review post type exists
-        if (!post_type_exists('review')) {
-            error_log('DataFlair: Review post type not registered');
-            return false;
-        }
-        
-        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
-        $brand_name = !empty($brand['name']) ? $brand['name'] : 'Unknown Casino';
-        
-        // Exact slug match: only trust it if published. Otherwise a plugin-created draft at
-        // {slug} blocks discovery of the live review at {slug}-india (same _review_brand_id).
-        $existing_review = get_page_by_path($brand_slug, OBJECT, 'review');
-        if ($existing_review instanceof WP_Post && 'publish' === $existing_review->post_status) {
-            return $existing_review->ID;
-        }
-
-        // Published review may use a different slug (e.g. 1xbet-sportsbook-india vs API 1xbet-sportsbook)
-        $by_meta = $this->find_review_post_by_brand_meta($brand);
-        if ($by_meta instanceof WP_Post && 'publish' === $by_meta->post_status) {
-            return $by_meta->ID;
-        }
-
-        if ($existing_review instanceof WP_Post) {
-            return $existing_review->ID;
-        }
-
-        if ($by_meta instanceof WP_Post) {
-            return $by_meta->ID;
-        }
-        
-        // Auto-create draft review post
-        $review_data = array(
-            'post_title'   => $brand_name . ' Review',
-            'post_name'    => $brand_slug,
-            'post_content' => '',
-            'post_status'  => 'draft',
-            'post_type'    => 'review',
-            'post_author'  => get_current_user_id() ?: 1,
-        );
-        
-        $review_id = wp_insert_post($review_data);
-        
-        if (is_wp_error($review_id)) {
-            error_log('DataFlair: Failed to create review post: ' . $review_id->get_error_message());
-            return false;
-        }
-        
-        // Populate meta fields with brand data (prefer id; else api_brand_id so _review_brand_id matches toplist JSON)
-        $brand_id_for_meta = ! empty( $brand['id'] ) ? intval( $brand['id'] ) : ( ! empty( $brand['api_brand_id'] ) ? intval( $brand['api_brand_id'] ) : 0 );
-        if ( $brand_id_for_meta > 0 ) {
-            update_post_meta( $review_id, '_review_brand_id', $brand_id_for_meta );
-        }
-        
-        // Extract and save logo URL
-        $logo_url = '';
-        if (!empty($brand['logo'])) {
-            if (is_array($brand['logo'])) {
-                $logo_url = $brand['logo']['rectangular'] ?? $brand['logo']['square'] ?? $brand['logo']['url'] ?? '';
-            } else {
-                $logo_url = $brand['logo'];
-            }
-        }
-        
-        // Save all review meta fields
-        update_post_meta($review_id, '_review_brand_name', $brand_name);
-        update_post_meta($review_id, '_review_logo', $logo_url);
-        update_post_meta($review_id, '_review_url', !empty($item['offer']['tracking_url']) ? $item['offer']['tracking_url'] : '');
-        update_post_meta($review_id, '_review_rating', !empty($item['rating']) ? $item['rating'] : (!empty($brand['rating']) ? $brand['rating'] : ''));
-        update_post_meta($review_id, '_review_bonus', !empty($item['offer']['offerText']) ? $item['offer']['offerText'] : '');
-        
-        // Save payment methods
-        $payments = array();
-        if (!empty($item['paymentMethods'])) {
-            $payments = is_array($item['paymentMethods']) ? $item['paymentMethods'] : explode(',', $item['paymentMethods']);
-        } elseif (!empty($brand['paymentMethods'])) {
-            $payments = is_array($brand['paymentMethods']) ? $brand['paymentMethods'] : explode(',', $brand['paymentMethods']);
-        }
-        update_post_meta($review_id, '_review_payments', implode(', ', $payments));
-        
-        // Save licenses
-        $licenses = array();
-        if (!empty($brand['licenses'])) {
-            $licenses = is_array($brand['licenses']) ? $brand['licenses'] : explode(',', $brand['licenses']);
-        }
-        update_post_meta($review_id, '_review_licenses', implode(', ', $licenses));
-        
-        error_log('DataFlair: Auto-created draft review post #' . $review_id . ' for ' . $brand_name);
-        
-        return $review_id;
+        return $this->review_post_manager()->getOrCreate((array) $brand, (array) $item);
     }
-    
+
+
     /**
-     * Phase 0B H7: Prefetch brand metadata for every item in a toplist in a
-     * single (or at most three) SQL round-trip instead of the five cascading
-     * $wpdb->prepare calls render_casino_card() previously ran per item.
-     *
-     * Returns ['ids' => [api_brand_id => row], 'slugs' => [...], 'names' => [...]]
-     * so render_casino_card() can resolve each card's brand via a cheap map
-     * lookup matching the legacy cascade order.
+     * Phase 9.9 — delegates to `Frontend\Render\BrandMetaPrefetcher`.
      *
      * @param array $items Items array from the toplist payload.
      * @return array{ids: array<int,object>, slugs: array<string,object>, names: array<string,object>}
      */
     private function prefetch_brand_metas_for_items(array $items) {
-        global $wpdb;
-        $brands_table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-        $wanted_ids = array();
-        $wanted_slugs = array();
-        $wanted_names = array();
-        foreach ($items as $item) {
-            $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
-            if (!empty($brand['api_brand_id'])) $wanted_ids[intval($brand['api_brand_id'])] = true;
-            if (!empty($brand['id']))            $wanted_ids[intval($brand['id'])] = true;
-            if (!empty($brand['slug']))          $wanted_slugs[(string) $brand['slug']] = true;
-            if (!empty($brand['name']))          $wanted_names[(string) $brand['name']] = true;
-        }
-
-        $by_id = array();
-        $by_slug = array();
-        $by_name = array();
-        $columns = 'api_brand_id, slug, name, local_logo_url, cached_review_post_id, review_url_override';
-
-        if (!empty($wanted_ids)) {
-            // Phase 2 — H7 api_brand_id IN (...) batched fetch delegates to BrandsRepository.
-            // Repository returns ARRAY_A keyed by api_brand_id; recast to objects to keep
-            // downstream callers (render_casino_card, lookup_brand_meta_from_map) byte-compatible.
-            $id_list = array_keys($wanted_ids);
-            foreach ($this->brands_repo()->findManyByApiBrandIds($id_list) as $api_id => $row_array) {
-                $row = (object) $row_array;
-                $by_id[(int) $api_id] = $row;
-                if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) $by_slug[(string) $row->slug] = $row;
-                if (!empty($row->name) && !isset($by_name[(string) $row->name])) $by_name[(string) $row->name] = $row;
-            }
-        }
-
-        $missing_slugs = array_diff_key($wanted_slugs, $by_slug);
-        if (!empty($missing_slugs)) {
-            $slug_list = array_keys($missing_slugs);
-            $placeholders = implode(',', array_fill(0, count($slug_list), '%s'));
-            $sql = $wpdb->prepare(
-                "SELECT $columns FROM $brands_table WHERE slug IN ($placeholders)",
-                $slug_list
-            );
-            foreach ((array) $wpdb->get_results($sql) as $row) {
-                if (!empty($row->api_brand_id) && !isset($by_id[intval($row->api_brand_id)])) $by_id[intval($row->api_brand_id)] = $row;
-                if (!empty($row->slug)) $by_slug[(string) $row->slug] = $row;
-                if (!empty($row->name) && !isset($by_name[(string) $row->name])) $by_name[(string) $row->name] = $row;
-            }
-        }
-
-        $missing_names = array_diff_key($wanted_names, $by_name);
-        if (!empty($missing_names)) {
-            $name_list = array_keys($missing_names);
-            $placeholders = implode(',', array_fill(0, count($name_list), '%s'));
-            $sql = $wpdb->prepare(
-                "SELECT $columns FROM $brands_table WHERE name IN ($placeholders)",
-                $name_list
-            );
-            foreach ((array) $wpdb->get_results($sql) as $row) {
-                if (!empty($row->api_brand_id) && !isset($by_id[intval($row->api_brand_id)])) $by_id[intval($row->api_brand_id)] = $row;
-                if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) $by_slug[(string) $row->slug] = $row;
-                if (!empty($row->name)) $by_name[(string) $row->name] = $row;
-            }
-        }
-
-        return array('ids' => $by_id, 'slugs' => $by_slug, 'names' => $by_name);
+        return $this->brand_meta_prefetcher()->prefetch($items);
     }
 
     /**
-     * Phase 0B H7: Resolve a single item's brand row from the prefetched map
-     * using the same cascading preference the legacy per-card queries used.
+     * Phase 9.9 — delegates to `Frontend\Render\BrandMetaLookup`.
      *
      * @param array $brand    The item's brand payload (api_brand_id/id/slug/name).
      * @param array $meta_map Output of prefetch_brand_metas_for_items().
      * @return object|null
      */
     private function lookup_brand_meta_from_map(array $brand, array $meta_map) {
-        if (!empty($brand['api_brand_id']) && isset($meta_map['ids'][intval($brand['api_brand_id'])])) {
-            return $meta_map['ids'][intval($brand['api_brand_id'])];
-        }
-        if (!empty($brand['id']) && isset($meta_map['ids'][intval($brand['id'])])) {
-            return $meta_map['ids'][intval($brand['id'])];
-        }
-        if (!empty($brand['slug']) && isset($meta_map['slugs'][(string) $brand['slug']])) {
-            return $meta_map['slugs'][(string) $brand['slug']];
-        }
-        if (!empty($brand['name']) && isset($meta_map['names'][(string) $brand['name']])) {
-            return $meta_map['names'][(string) $brand['name']];
-        }
-        return null;
+        return $this->brand_meta_lookup()->lookup($brand, $meta_map);
     }
 
     /**
-     * Phase 0B H8: Batched review-post lookup. Given a list of api_brand_ids,
-     * returns [api_brand_id => post_id] for brands whose review CPT is
-     * published but does not yet have cached_review_post_id populated on the
-     * brands table. Intended as a defensive backstop only — normal render
-     * paths read cached_review_post_id directly and never hit this code.
+     * Phase 9.9 — delegates to `Frontend\Content\ReviewPostBatchFinder`.
      *
      * @param int[] $brand_ids
      * @return array<int,int>
      */
     private function find_review_posts_by_brand_metas(array $brand_ids) {
-        // Phase 2 — delegate to BrandsRepository. H8 INNER JOIN logic preserved.
-        return $this->brands_repo()->findReviewPostsByApiBrandIds($brand_ids);
+        return $this->review_post_batch_finder()->findByApiBrandIds($brand_ids);
     }
 
     /**
@@ -1960,21 +1748,7 @@ class DataFlair_Toplists {
      *   3. the legacy-name twin (if caller passed new)
      */
     private function format_last_sync_label($option_key) {
-        $last_run = get_option($option_key);
-
-        if (!$last_run) {
-            $alt = null;
-            if (strpos($option_key, '_cron_run') !== false) {
-                $alt = str_replace('_cron_run', '_sync', $option_key);
-            } elseif (strpos($option_key, '_sync') !== false) {
-                $alt = str_replace('_sync', '_cron_run', $option_key);
-            }
-            if ($alt) {
-                $last_run = get_option($alt);
-            }
-        }
-
-        return 'Last sync: ' . ($last_run ? $this->time_ago($last_run) : 'never');
+        return $this->sync_label_formatter()->format((string) $option_key);
     }
 
 

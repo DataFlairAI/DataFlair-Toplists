@@ -116,12 +116,17 @@ class RenderBatchQueryCountTest extends TestCase {
     // ── Prefetch helper uses a single IN (...) query per key dimension ──
 
     public function test_prefetch_helper_uses_single_in_query_per_key(): void {
-        $body = $this->extractMethodBody('prefetch_brand_metas_for_items');
-        $this->assertNotEmpty($body, 'prefetch_brand_metas_for_items() body must be present in plugin file.');
+        // Phase 9.9 — prefetch logic moved into BrandMetaPrefetcher. The
+        // god-class method is a one-line delegator; scan the new class
+        // source so the H7 invariant is still enforced at the source level.
+        $body = (string) file_get_contents(
+            DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/BrandMetaPrefetcher.php'
+        );
+        $this->assertNotSame('', $body, 'BrandMetaPrefetcher.php must be readable.');
 
         // Phase 2 — the api_brand_id IN (…) query has moved into
         // BrandsRepository::findManyByApiBrandIds(). The slug + name IN
-        // queries remain inline until the renderer is extracted in Phase 4.
+        // queries remain inline.
         $inline_in_matches = preg_match_all(
             '/WHERE\s+\w+\s+IN\s*\(\s*\$placeholders\s*\)/i',
             $body
@@ -129,17 +134,20 @@ class RenderBatchQueryCountTest extends TestCase {
         $this->assertGreaterThanOrEqual(
             2,
             $inline_in_matches,
-            'prefetch_brand_metas_for_items() must run inline IN (...) batches for slug + name.'
+            'BrandMetaPrefetcher::prefetch() must run inline IN (...) batches for slug + name.'
         );
         $this->assertStringContainsString(
-            '$this->brands_repo()->findManyByApiBrandIds(',
+            '$this->brandsRepo->findManyByApiBrandIds(',
             $body,
             'The api_brand_id IN (...) batch must be delegated to BrandsRepository::findManyByApiBrandIds().'
         );
     }
 
     public function test_prefetch_helper_selects_all_required_columns(): void {
-        $body = $this->extractMethodBody('prefetch_brand_metas_for_items');
+        // Phase 9.9 — read BrandMetaPrefetcher source for the column list.
+        $body = (string) file_get_contents(
+            DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/BrandMetaPrefetcher.php'
+        );
         foreach (['local_logo_url', 'cached_review_post_id', 'review_url_override'] as $col) {
             $this->assertStringContainsString(
                 $col,

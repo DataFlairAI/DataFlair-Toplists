@@ -178,6 +178,23 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.5
+
+2.1.5 is the Phase 9.9 **review post manager + brand-meta extraction** release. Seven helper methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Frontend/Content/` and `src/Frontend/Render/`. No operator action required, no DB migration, no config change.
+
+What moved out of `dataflair-toplists.php`:
+
+- `ReviewPostFinder` (`src/Frontend/Content/`) — replaces inline `find_review_post_by_brand_meta()`. Owns the slug-tolerant direct-SQL join lookup that finds an existing review CPT when the post slug differs from the API brand slug.
+- `ReviewPostManager` (`src/Frontend/Content/`) — replaces inline `get_or_create_review_post()`. Owns the get-or-create flow: slug match → brand-meta finder → auto-create draft, plus the eight `_review_*` meta writes.
+- `ReviewPostBatchFinder` (`src/Frontend/Content/`) — replaces inline `find_review_posts_by_brand_metas()`. Wraps the H8 batched lookup, delegating to `BrandsRepository::findReviewPostsByApiBrandIds`.
+- `BrandMetaPrefetcher` (`src/Frontend/Render/`) — replaces inline `prefetch_brand_metas_for_items()`. Owns the H7 prefetch pipeline: a single IN(…) batch via `BrandsRepository::findManyByApiBrandIds` plus inline IN(…) for slug + name fallbacks.
+- `BrandMetaLookup` (`src/Frontend/Render/`) — replaces inline `lookup_brand_meta_from_map()`. Pure helper. Owns the cascading per-card resolution from the prefetched map (`api_brand_id` → `id` → `slug` → `name`).
+- `SyncLabelFormatter` (`src/Frontend/Render/`) — replaces inline `format_last_sync_label()`. Owns the legacy/new option-name fallback and the relative-time math behind the "Last sync: …" admin labels.
+
+Render-time read-only invariant preserved: `ReviewPostManager` is **not** called from the casino-card render path — only from sync, WP-CLI reconcile, and admin paths. `RenderIsReadOnlyTest` continues to enforce this.
+
+`dataflair-toplists.php` drops by ~200 LOC in this phase. The seven god-class methods become one-line delegators wired through lazy `Container` getters. `resolve_pros_cons_for_table_item()` deleted outright (the trait-based `ProsConsResolver` was already authoritative). Test suite: **478 tests, 1,111 assertions, all green** (+26 new tests).
+
 ### To 2.1.4
 
 2.1.4 is the Phase 9.8 **frontend assets + Alpine.js extraction** release. The five frontend asset methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Frontend/Assets/`. No operator action required, no DB migration, no config change.
@@ -343,6 +360,15 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.5
+- **Phase 9.9 — review post manager + brand-meta extraction.** Seven helper methods leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Frontend\Content\` and `DataFlair\Toplists\Frontend\Render\`. The on-demand review-CPT manager, brand-meta prefetcher (H7), batched review-post finder (H8), and the relative-time admin label all become testable, single-purpose units.
+- Added: `ReviewPostFinder`, `ReviewPostManager`, `ReviewPostBatchFinder` (all under `src/Frontend/Content/`). `BrandMetaPrefetcher`, `BrandMetaLookup`, `SyncLabelFormatter` (all under `src/Frontend/Render/`).
+- Removed: `find_review_post_by_brand_meta()`, `get_or_create_review_post()`, `find_review_posts_by_brand_metas()`, `prefetch_brand_metas_for_items()`, `lookup_brand_meta_from_map()`, `format_last_sync_label()`, `resolve_pros_cons_for_table_item()` from the god-class. Six become one-line delegators wired through lazy `Container` getters; `resolve_pros_cons_for_table_item()` deleted outright (the trait-based `ProsConsResolver` was already authoritative).
+- Render-time read-only invariant preserved: `ReviewPostManager` is **not** called from the casino-card render path — only from sync, WP-CLI reconcile, and admin paths. `RenderIsReadOnlyTest` continues to enforce this.
+- No public contract change. The H7/H8 SQL batch shape, the brand-meta map structure, the auto-create draft flow, and every `_review_*` meta key remain identical to v2.1.4.
+- Main file size: `dataflair-toplists.php` drops by ~200 LOC.
+- Tests: 26 new tests; full suite **478 tests, 1,111 assertions, all green**.
 
 ### 2.1.4
 - **Phase 9.8 — frontend assets + Alpine.js extraction.** The five frontend asset methods leave the god-class for dedicated classes under `DataFlair\Toplists\Frontend\Assets\`. Each registers its own WordPress hook via `register()`; `Plugin::registerHooks()` wires them.
@@ -624,4 +650,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.4 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.5 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
