@@ -183,9 +183,10 @@ final class SettingsPage implements PageInterface
                 // Collect unique template names for the filter dropdown
                 $all_templates = array();
                 foreach ($toplists as $tl) {
-                    $tl_data = json_decode($tl->data, true);
-                    $tname = isset($tl_data['data']['template']['name']) ? $tl_data['data']['template']['name'] : '';
-                    if ($tname) $all_templates[] = $tname;
+                    // Phase 9.6: template name is JSON-extracted in the SELECT;
+                    // $tl->data is no longer projected.
+                    $tname = isset($tl->template_name) ? (string) $tl->template_name : '';
+                    if ($tname !== '') $all_templates[] = $tname;
                 }
                 $all_templates = array_values(array_unique($all_templates));
                 sort($all_templates);
