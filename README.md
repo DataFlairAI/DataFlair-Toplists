@@ -178,6 +178,20 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.1
+
+2.1.1 is the Phase 9.5 **WPPB-style bootstrap decoupling** release. The 5,600-line god-class gave up five single-responsibility chunks to their own dedicated classes under `src/`, following the WordPress Plugin Boilerplate layout. No operator action required, no DB migration, no config change — every hook, shortcode, block, REST route, AJAX action, and option is preserved byte-for-byte.
+
+What moved out of `dataflair-toplists.php` into `src/`:
+
+- `\DataFlair\Toplists\Admin\PluginInfoFilter` — the `plugins_api` "View details" popup (description, changelog, banners).
+- `\DataFlair\Toplists\UpdateChecker\GithubUpdateChecker` — the YahnisElsts PUC v5 bootstrap + `enableReleaseAssets()` wiring.
+- `\DataFlair\Toplists\I18n` — `load_plugin_textdomain` on `init` (previously the textdomain was declared but never actually loaded).
+- `\DataFlair\Toplists\Lifecycle\{Activator, Deactivator}` — `register_activation_hook` / `register_deactivation_hook` targets. The god-class `activate()` / `deactivate()` methods are now thin delegators.
+- `\DataFlair\Toplists\Database\SchemaMigrator` — `check_database_upgrade()`, `ensure_tables_exist()`, `ensure_brands_external_id_index()`, `ensure_alternative_toplists_table()`, `supports_json_type()`, `migrate_to_json_type()`. All god-class method signatures remain as delegators for backwards compat with any downstream caller.
+
+`Plugin::boot()` now owns the one-per-request wiring of all four registrars (`PluginInfoFilter`, `I18n`, `GithubUpdateChecker`, `SchemaMigrator`). The strangler-fig contract on `DataFlair_Toplists::get_instance()` is untouched — every deprecated path still resolves.
+
 ### To 2.1.0
 
 2.1.0 closes the v2.0.x migration window on `DataFlair_Toplists::get_instance()`. Strict-deprecation warnings are now **default-on**: any call to `get_instance()` from outside `DATAFLAIR_PLUGIN_DIR` emits `E_USER_DEPRECATED` once per unique caller file/line per request, pointing to `\DataFlair\Toplists\Plugin::boot()`. Internal callers (the god-class's own hook-dispatch re-entry, extracted delegators under `src/`) are filtered out so `error_log` sees signal, not noise.
@@ -284,6 +298,19 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.1
+- **Phase 9.5 — WPPB-style bootstrap decoupling.** `dataflair-toplists.php` shrank by ~860 lines (15%) as five responsibilities extracted into dedicated classes under `src/`, following the WordPress Plugin Boilerplate layout. The main plugin file now owns only the bootstrap constants, `composer` autoload, WPPB `register_activation_hook` / `register_deactivation_hook`, and `\DataFlair\Toplists\Plugin::boot(__FILE__)`.
+- Added: `\DataFlair\Toplists\Admin\PluginInfoFilter` — `plugins_api` "View details" popup (description, full changelog, banners). Registers on `plugins_api` with priority 10, 3 args.
+- Added: `\DataFlair\Toplists\UpdateChecker\GithubUpdateChecker` — YahnisElsts PUC v5 bootstrap. Constructor takes `$pluginFile, $repoUrl, $slug` with repo/slug defaults. `register()` short-circuits when PucFactory is absent (e.g. unit tests without vendor tree) or when `WP_PLUGIN_DIR` is undefined. Calls `buildUpdateChecker()` + `enableReleaseAssets()` — contract preserved byte-for-byte.
+- Added: `\DataFlair\Toplists\I18n` — `load_plugin_textdomain('dataflair-toplists', false, …/languages)` on `init`. Fixes a latent bug where the textdomain header was declared but never actually loaded, so translations would have silently failed.
+- Added: `\DataFlair\Toplists\Lifecycle\Activator` + `Deactivator` — WPPB-style static `::activate()` / `::deactivate()` hooked via `register_activation_hook(__FILE__, …)` / `register_deactivation_hook(__FILE__, …)` in the main plugin file. Activator runs the schema migrator; Deactivator clears legacy `dataflair_sync_cron` and `dataflair_brands_sync_cron` hooks (idempotent — they were removed in v1.11.0).
+- Added: `\DataFlair\Toplists\Database\SchemaMigrator` — owns `checkDatabaseUpgrade()`, `createTables()`, `ensureTablesExist()`, `ensureBrandsExternalIdIndex()`, `ensureAlternativeToplistsTable()`, `supportsJsonType()`, `migrateToJsonType()`. Preserves the H9 schema-ok-v transient short-circuit and the H1 legacy-cron clear gate (`dataflair_cron_cleared_v1_11`). Registers on `plugins_loaded` @ priority 5 to run before the god-class's other hooks.
+- Changed: `Plugin::boot(?string $pluginFile = null)` — now accepts the plugin file path at boot time and exposes it via `Plugin::pluginFile()` so extracted registrars can wire hooks like `plugin_basename($pluginFile)` without hand-computing paths. Fallback reads `DATAFLAIR_PLUGIN_DIR . 'dataflair-toplists.php'` for legacy bootstraps.
+- Changed: the god-class methods `activate()`, `deactivate()`, `check_database_upgrade()`, `ensure_alternative_toplists_table()`, `supports_json_type()`, `migrate_to_json_type()` are now thin delegators to the extracted classes. Method signatures and public visibility preserved so any downstream caller continues to resolve.
+- Fixed: `GithubUpdateChecker::register()` guards against `WP_PLUGIN_DIR` being undefined (PUC reads it unconditionally), so unit-test harnesses that don't load WordPress don't fatal.
+- Updated: `AutoUpdateTest` now searches `src/UpdateChecker/GithubUpdateChecker.php` for the PUC bootstrap substrings (`PucFactory::buildUpdateChecker`, repo URL, `enableReleaseAssets`) since they migrated out of the main plugin file. `ClearTransientsChunkedTest::test_check_database_upgrade_uses_schema_ok_transient` now extracts the method body from `SchemaMigrator::checkDatabaseUpgrade()` instead of the main file. `CronRemovedTest` appends `SchemaMigrator` source to its scan so the legacy-cron clear assertions still hit. Full suite: **412 tests, 946 assertions, all green**.
+- Why a patch bump (2.1.0 → 2.1.1): zero behavioural change for end users. Every hook, option, table, shortcode, block, REST route, and AJAX action is preserved byte-for-byte. The new classes are strangler-fig delegates; the `DataFlair_Toplists::get_instance()` strict-deprecation contract from 2.1.0 is untouched.
 
 ### 2.1.0
 - **Phase 9 — strict deprecation default-on.** The v2.0.x migration window on `DataFlair_Toplists::get_instance()` closes. Downstream calls from outside `DATAFLAIR_PLUGIN_DIR` now emit `E_USER_DEPRECATED` once per unique caller file/line per request, pointing to `\DataFlair\Toplists\Plugin::boot()`.

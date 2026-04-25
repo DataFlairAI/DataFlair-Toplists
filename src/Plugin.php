@@ -1,26 +1,29 @@
 <?php
 /**
- * Phase 8 — Plugin bootstrap seam.
+ * Phase 8 / 9.5 — Canonical plugin bootstrap.
  *
- * Replaces the `DataFlair_Toplists::get_instance()` entry point as the
- * canonical bootstrap for the plugin. Through v2.0.x the legacy singleton
- * continues to work (strangler-fig), but the public contract is:
+ * `DataFlair\Toplists\Plugin::boot()` is the public entry point. It is
+ * idempotent: repeat calls return the same `Plugin` instance and do not
+ * re-register hooks.
  *
- *     DataFlair\Toplists\Plugin::boot();   // canonical
- *     DataFlair_Toplists::get_instance();  // deprecated, still functional
+ * Phase 8 (v2.0.0) established this seam; Phase 9.5 (v2.1.1) wired in
+ * the WPPB-style decoupled registrars so the entry point now owns the
+ * plugin-info filter, GitHub auto-updates, i18n, and schema-migration
+ * hooks. The legacy `DataFlair_Toplists` god-class continues to own the
+ * remaining runtime hook registrations until v3.0.0 when it is removed
+ * entirely.
  *
- * `boot()` is idempotent: repeat calls return the same `Plugin` instance
- * and do not re-register hooks.
- *
- * Services are resolved through {@see Container}; see ::buildContainer()
- * for the wiring. The container is intentionally narrow — only services
- * that need to be shared across hook call sites live there. One-off
- * helpers stay as `new Foo()` inside the legacy code paths until Phase 9.
+ * Services are resolved through {@see Container}; see `buildContainer()`
+ * for the wiring.
  */
 
 declare(strict_types=1);
 
 namespace DataFlair\Toplists;
+
+use DataFlair\Toplists\Admin\PluginInfoFilter;
+use DataFlair\Toplists\Database\SchemaMigrator;
+use DataFlair\Toplists\UpdateChecker\GithubUpdateChecker;
 
 final class Plugin
 {
@@ -32,8 +35,18 @@ final class Plugin
 
     private \DataFlair_Toplists $legacy;
 
-    public static function boot(): self
+    /**
+     * Absolute path to the plugin's main file. Injected at boot so
+     * nothing inside `src/` needs to compute it from `dirname(__FILE__)`
+     * and hope the directory layout never changes.
+     */
+    private static ?string $pluginFile = null;
+
+    public static function boot(?string $pluginFile = null): self
     {
+        if ($pluginFile !== null) {
+            self::$pluginFile = $pluginFile;
+        }
         if (self::$instance === null) {
             self::$instance = new self();
         }
@@ -47,20 +60,33 @@ final class Plugin
     }
 
     /**
-     * Reset the static singleton. Test-only seam — do not call from
-     * production code. Lets PHPUnit tear down between suites.
+     * Reset the static singleton. Test-only seam.
      */
     public static function resetForTests(): void
     {
-        self::$instance = null;
+        self::$instance   = null;
+        self::$pluginFile = null;
+    }
+
+    public static function pluginFile(): string
+    {
+        if (self::$pluginFile !== null) {
+            return self::$pluginFile;
+        }
+        // Fallback for legacy bootstraps that skipped the $pluginFile
+        // argument — compute from DATAFLAIR_PLUGIN_DIR.
+        if (defined('DATAFLAIR_PLUGIN_DIR')) {
+            return DATAFLAIR_PLUGIN_DIR . 'dataflair-toplists.php';
+        }
+        return '';
     }
 
     private function __construct()
     {
         $this->container = $this->buildContainer();
-        // Until the god-class is fully dissolved (Phase 9), the legacy
-        // singleton still owns the hook registrations. Plugin::boot() keeps
-        // bootstrapping it so all existing behaviour stays intact.
+        // The god-class still owns runtime hook dispatch (shortcode,
+        // REST, block, admin). Plugin::boot() bootstraps it so existing
+        // behaviour is byte-identical to v2.1.0.
         $this->legacy = \DataFlair_Toplists::get_instance();
     }
 
@@ -70,21 +96,33 @@ final class Plugin
     }
 
     /**
-     * Idempotent hook registration. The legacy `DataFlair_Toplists::
-     * __construct()` already calls `init_hooks()`; this guard prevents a
-     * double-register if `boot()` fires more than once in one request.
+     * Register the hooks owned by Plugin::boot(). Phase 9.5 moved four
+     * responsibilities out of the god-class and into dedicated
+     * registrars:
+     *
+     *   - Plugin-info filter (View details popup)
+     *   - Text-domain loading
+     *   - GitHub auto-update checker
+     *   - Schema migration on plugins_loaded
+     *
+     * Each registrar hooks into WordPress on its own schedule; calling
+     * `register()` on each one wires them once per request. The
+     * `$booted` guard prevents double-registration if `boot()` fires
+     * more than once.
      */
     private function registerHooks(): void
     {
         if ($this->booted) {
             return;
         }
-        // All hooks already registered by DataFlair_Toplists::__construct().
-        // Plugin::boot() is currently a provenance marker — it signals that
-        // the canonical bootstrap path is the Plugin container, not the
-        // singleton. In Phase 9 the hook registrations move here and the
-        // legacy class is deleted.
         $this->booted = true;
+
+        $pluginFile = self::pluginFile();
+
+        (new PluginInfoFilter())->register();
+        (new I18n($pluginFile))->register();
+        (new GithubUpdateChecker($pluginFile))->register();
+        (new SchemaMigrator())->register();
     }
 
     private function buildContainer(): Container

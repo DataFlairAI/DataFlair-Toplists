@@ -21,12 +21,21 @@ use PHPUnit\Framework\TestCase;
 class ClearTransientsChunkedTest extends TestCase {
 
     private string $source = '';
+    private string $migrator_source = '';
 
     protected function setUp(): void {
         parent::setUp();
         $path = DATAFLAIR_PLUGIN_DIR . 'dataflair-toplists.php';
         $this->source = (string) file_get_contents($path);
         $this->assertNotSame('', $this->source, "Plugin file must be readable at {$path}.");
+
+        // Phase 9.5 (v2.1.1): the schema-upgrade code moved out of the
+        // god-class and into SchemaMigrator. The H9 schema-ok transient
+        // gate now lives there — read its source for those assertions.
+        $migrator = DATAFLAIR_PLUGIN_DIR . 'src/Database/SchemaMigrator.php';
+        $this->migrator_source = is_readable($migrator)
+            ? (string) file_get_contents($migrator)
+            : '';
     }
 
     // ── H10: clear_tracker_transients is chunked ──────────────────────────
@@ -99,46 +108,62 @@ class ClearTransientsChunkedTest extends TestCase {
     // ── H9: schema version transient gate ─────────────────────────────────
 
     public function test_check_database_upgrade_uses_schema_ok_transient(): void {
-        $body = $this->extractMethodBody('check_database_upgrade');
+        // Phase 9.5: the schema-upgrade body now lives in
+        // SchemaMigrator::checkDatabaseUpgrade(). The god-class keeps a
+        // thin delegator under its old name for backwards compat.
+        $this->assertNotSame(
+            '',
+            $this->migrator_source,
+            'SchemaMigrator source must be readable — Phase 9.5 extracted the schema-upgrade logic into it.'
+        );
+        $body = $this->extractMethodBodyIn($this->migrator_source, 'checkDatabaseUpgrade');
+        $this->assertNotEmpty(
+            $body,
+            'SchemaMigrator::checkDatabaseUpgrade() body must be present.'
+        );
         $this->assertStringContainsString(
             'dataflair_schema_ok_v',
             $body,
-            'check_database_upgrade() must consult the dataflair_schema_ok_v{version} transient (H9).'
+            'SchemaMigrator::checkDatabaseUpgrade() must consult the dataflair_schema_ok_v{version} transient (H9).'
         );
         $this->assertMatchesRegularExpression(
             '/get_transient\s*\(\s*\$schema_ok_key\s*\)/',
             $body,
-            'check_database_upgrade() must short-circuit when the schema-ok transient is set.'
+            'SchemaMigrator::checkDatabaseUpgrade() must short-circuit when the schema-ok transient is set.'
         );
         $this->assertMatchesRegularExpression(
             '/set_transient\s*\(\s*\$schema_ok_key\s*,/',
             $body,
-            'check_database_upgrade() must set the schema-ok transient after a successful pass.'
+            'SchemaMigrator::checkDatabaseUpgrade() must set the schema-ok transient after a successful pass.'
         );
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private function extractMethodBody(string $methodName): string {
+        return $this->extractMethodBodyIn($this->source, $methodName);
+    }
+
+    private function extractMethodBodyIn(string $source, string $methodName): string {
         $signaturePattern = '/function\s+' . preg_quote($methodName, '/') . '\s*\(/';
-        if (!preg_match($signaturePattern, $this->source, $m, PREG_OFFSET_CAPTURE)) {
+        if (!preg_match($signaturePattern, $source, $m, PREG_OFFSET_CAPTURE)) {
             return '';
         }
 
         $start = $m[0][1];
-        $openBrace = strpos($this->source, '{', $start);
+        $openBrace = strpos($source, '{', $start);
         if ($openBrace === false) return '';
 
         $depth = 1;
         $i     = $openBrace + 1;
-        $len   = strlen($this->source);
+        $len   = strlen($source);
         while ($i < $len && $depth > 0) {
-            $ch = $this->source[$i];
+            $ch = $source[$i];
             if ($ch === '{') $depth++;
             elseif ($ch === '}') {
                 $depth--;
                 if ($depth === 0) {
-                    return substr($this->source, $openBrace + 1, $i - $openBrace - 1);
+                    return substr($source, $openBrace + 1, $i - $openBrace - 1);
                 }
             }
             $i++;

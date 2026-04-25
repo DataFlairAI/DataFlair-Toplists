@@ -22,11 +22,18 @@ class AutoUpdateTest extends TestCase {
     private string $plugin_root;
     private string $main_file;
     private string $main_source;
+    private string $puc_registrar_source;
 
     protected function setUp(): void {
         $this->plugin_root  = dirname(__DIR__, 3);
         $this->main_file    = $this->plugin_root . '/dataflair-toplists.php';
         $this->main_source  = file_get_contents($this->main_file);
+        // Phase 9.5 (v2.1.1): the PUC bootstrap was extracted from the
+        // main plugin file into a dedicated registrar class. Tests that
+        // search for PUC-specific substrings now look there.
+        $this->puc_registrar_source = file_get_contents(
+            $this->plugin_root . '/src/UpdateChecker/GithubUpdateChecker.php'
+        );
     }
 
     /** 1. vendor/autoload.php must exist */
@@ -46,12 +53,12 @@ class AutoUpdateTest extends TestCase {
         );
     }
 
-    /** 3. Bootstrap block must be present in the main plugin file */
+    /** 3. Bootstrap block must be present in the GithubUpdateChecker registrar */
     public function test_update_checker_bootstrap_present(): void {
         $this->assertStringContainsString(
             'PucFactory::buildUpdateChecker',
-            $this->main_source,
-            'PucFactory::buildUpdateChecker not found in main plugin file'
+            $this->puc_registrar_source,
+            'PucFactory::buildUpdateChecker not found in GithubUpdateChecker registrar'
         );
     }
 
@@ -59,8 +66,8 @@ class AutoUpdateTest extends TestCase {
     public function test_github_repo_url_correct(): void {
         $this->assertStringContainsString(
             'https://github.com/DataFlairAI/DataFlair-Toplists/',
-            $this->main_source,
-            'GitHub repo URL is wrong or missing in update checker bootstrap'
+            $this->puc_registrar_source,
+            'GitHub repo URL is wrong or missing in GithubUpdateChecker registrar'
         );
     }
 
@@ -68,12 +75,12 @@ class AutoUpdateTest extends TestCase {
     public function test_release_assets_enabled(): void {
         $this->assertStringContainsString(
             'enableReleaseAssets',
-            $this->main_source,
+            $this->puc_registrar_source,
             'enableReleaseAssets() not called — updates will pull from branch zip, not releases'
         );
         $this->assertStringNotContainsString(
             'setBranch',
-            $this->main_source,
+            $this->puc_registrar_source,
             'setBranch() found — should use release assets instead'
         );
     }
