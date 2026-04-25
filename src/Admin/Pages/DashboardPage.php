@@ -239,7 +239,18 @@ final class DashboardPage implements PageInterface
                         $.post(ajaxUrl, { action: syncAction, _ajax_nonce: syncNonce, page: page }, function (r) {
                             var pageMs     = Date.now() - tPage;
                             var data       = (r && r.data) ? r.data : {};
+
+                            /* Server-side failure — surface the message and stop */
+                            if (!r || !r.success) {
+                                var errMsg = (data.message) ? data.message : 'Server error on page ' + page;
+                                logLine('Error on page ' + page + ': ' + errMsg, 'error');
+                                $stats.text('Stopped on page ' + page + ' — ' + errMsg);
+                                $btn.prop('disabled', false).text('Sync ' + label);
+                                return;
+                            }
+
                             var synced     = data.synced     || 0;
+                            var errors     = data.errors     || 0;
                             var isComplete = data.is_complete || false;
                             var lastPage   = data.last_page  || page;
                             var nextPageNo = data.next_page  || (page + 1);
@@ -253,8 +264,12 @@ final class DashboardPage implements PageInterface
                             }
 
                             setProgress(page, totalPages);
-                            var lineType = (r && r.success) ? 'success' : 'error';
-                            logLine('Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced  ·  ' + pageMs + 'ms', lineType);
+                            var lineType = (errors > 0) ? 'error' : 'success';
+                            var lineMsg  = 'Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced';
+                            if (errors > 0) lineMsg += '  ·  ⚠ ' + errors + ' errors';
+                            if (synced === 0 && errors === 0) lineMsg += '  ·  (skipped — check API format)';
+                            lineMsg += '  ·  ' + pageMs + 'ms';
+                            logLine(lineMsg, lineType);
 
                             /* ETA */
                             var elapsed    = Date.now() - tStart;

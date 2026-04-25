@@ -337,6 +337,19 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
         }
 
+        // Budget may already be spent by the bulk HTTP retry attempts.
+        // Advance instead of re-queuing the same page forever.
+        if ($budget->exceeded(3.0)) {
+            $isComplete = $page >= $naturalLastPage;
+            if ($isComplete) {
+                $this->markSyncCompleted();
+            }
+            return SyncResult::success(
+                $page, $naturalLastPage, 0, 0, true, $isComplete,
+                ['fallback' => true, 'budget_skip' => true, 'next_page' => $page + 1]
+            );
+        }
+
         $synced           = 0;
         $errors           = 0;
         $endpoints        = [];
