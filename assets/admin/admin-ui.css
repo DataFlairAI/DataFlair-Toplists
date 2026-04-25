@@ -371,3 +371,4 @@
 }
 .df-bulk-bar[data-active="1"] { display: flex; }
 .df-bulk-bar__count { font-weight: 500; }
+.widefat .check-column { padding: 0.3rem; }
