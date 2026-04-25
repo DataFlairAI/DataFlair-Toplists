@@ -125,7 +125,7 @@ final class ShimForwardingTest extends TestCase
 
         $plugin_dir = defined('DATAFLAIR_PLUGIN_DIR') ? DATAFLAIR_PLUGIN_DIR : '/tmp/plugin/';
         \DataFlair_Toplists_Phase9_Shim::callFromDownstreamFileLine($plugin_dir . 'dataflair-toplists.php', 100);
-        \DataFlair_Toplists_Phase9_Shim::callFromDownstreamFileLine($plugin_dir . 'src/Admin/Handlers/Foo.php', 50);
+        \DataFlair_Toplists_Phase9_Shim::callFromDownstreamFileLine($plugin_dir . 'src/Admin/Ajax/Foo.php', 50);
 
         $this->addToAssertionCount(1);
     }

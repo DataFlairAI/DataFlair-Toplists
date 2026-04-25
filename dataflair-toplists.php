@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.2
+ * Version: 2.1.3
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.2');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.3');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -755,72 +755,9 @@ class DataFlair_Toplists {
         <?php
     }
     
-    /**
-     * AJAX save settings handler
-     */
-    public function ajax_save_settings() {
-        check_ajax_referer('dataflair_save_settings', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        // Save API settings
-        if (isset($_POST['dataflair_api_token'])) {
-            // Trim whitespace and preserve token value - don't use sanitize_text_field as it may modify special characters
-            $token = trim($_POST['dataflair_api_token']);
-            update_option('dataflair_api_token', $token);
-        }
-        
-        // Save API base URL if manually set
-        if (isset($_POST['dataflair_api_base_url'])) {
-            $base_url = trim($_POST['dataflair_api_base_url']);
-            if (!empty($base_url)) {
-                // Clean the URL: remove trailing slashes, sanitize
-                $base_url = rtrim(esc_url_raw($base_url), '/');
-                // Strip any path segments after /api/v1 (e.g. /api/v1/toplists → /api/v1)
-                $base_url = preg_replace('#(/api/v\d+)/.*$#', '$1', $base_url);
-                update_option('dataflair_api_base_url', $base_url);
-            } else {
-                // Empty = clear the stored value so auto-detect kicks in
-                delete_option('dataflair_api_base_url');
-            }
-        }
+    // NOTE: ajax_save_settings() moved to DataFlair\Toplists\Admin\Handlers\SaveSettingsHandler
+    // in v2.1.3 (Phase 9.7). The handler is registered with AjaxRouter via AdminBootstrap.
 
-        // Save HTTP Basic Auth credentials (for staging environments)
-        if (isset($_POST['dataflair_http_auth_user'])) {
-            update_option('dataflair_http_auth_user', sanitize_text_field($_POST['dataflair_http_auth_user']));
-        }
-        if (isset($_POST['dataflair_http_auth_pass'])) {
-            // Don't sanitize password — it may contain special characters
-            update_option('dataflair_http_auth_pass', trim($_POST['dataflair_http_auth_pass']));
-        }
-
-        // Save Brands API version (v1 or v2 only — default v1 for safety)
-        $version = isset($_POST['dataflair_brands_api_version'])
-            && $_POST['dataflair_brands_api_version'] === 'v2' ? 'v2' : 'v1';
-        update_option('dataflair_brands_api_version', $version);
-
-        // Save customization settings
-        if (isset($_POST['dataflair_ribbon_bg_color'])) {
-            update_option('dataflair_ribbon_bg_color', sanitize_text_field($_POST['dataflair_ribbon_bg_color']));
-        }
-        
-        if (isset($_POST['dataflair_ribbon_text_color'])) {
-            update_option('dataflair_ribbon_text_color', sanitize_text_field($_POST['dataflair_ribbon_text_color']));
-        }
-        
-        if (isset($_POST['dataflair_cta_bg_color'])) {
-            update_option('dataflair_cta_bg_color', sanitize_text_field($_POST['dataflair_cta_bg_color']));
-        }
-        
-        if (isset($_POST['dataflair_cta_text_color'])) {
-            update_option('dataflair_cta_text_color', sanitize_text_field($_POST['dataflair_cta_text_color']));
-        }
-        
-        wp_send_json_success(array('message' => 'Settings saved successfully.'));
-    }
-    
     /**
      * Check if a URL points to a local development domain (no SSL).
      *
@@ -1077,55 +1014,8 @@ class DataFlair_Toplists {
         }
     }
 
-    /**
-     * AJAX handler to fetch all toplists from API and sync them
-     */
-    public function ajax_fetch_all_toplists() {
-        check_ajax_referer('dataflair_fetch_all_toplists', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        $token = trim(get_option('dataflair_api_token'));
-        if (empty($token)) {
-            wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
-        }
-        
-        // Return initial response - JavaScript will handle batch processing
-        wp_send_json_success(array(
-            'message' => 'Starting batch sync...',
-            'start_batch' => true
-        ));
-    }
-    
-    /**
-     * AJAX handler to sync toplists in batches
-     */
-    public function ajax_sync_toplists_batch() {
-        // Phase 3 — thin delegator. Nonce + capability + token precheck stay
-        // at the AJAX gate. Everything below moves into ToplistSyncService,
-        // which preserves every Phase 0B / Phase 1 invariant byte-for-byte.
-        check_ajax_referer('dataflair_sync_toplists_batch', 'nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-
-        $token = trim(get_option('dataflair_api_token'));
-        if (empty($token)) {
-            wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
-        }
-
-        $page    = isset($_POST['page']) ? intval($_POST['page']) : 1;
-        $request = \DataFlair\Toplists\Sync\SyncRequest::toplists($page);
-        $result  = $this->toplist_sync_service()->syncPage($request);
-
-        if ($result->success) {
-            wp_send_json_success($result->toArray());
-        }
-        wp_send_json_error(array('message' => $result->message));
-    }
+    // NOTE: ajax_fetch_all_toplists() moved to DataFlair\Toplists\Admin\Handlers\FetchAllToplistsHandler
+    // and ajax_sync_toplists_batch() moved to SyncToplistsBatchHandler in v2.1.3 (Phase 9.7).
 
     // NOTE: sync_toplists_page_per_id() moved to DataFlair\Toplists\Sync\ToplistSyncService
     // in v1.12.1 (Phase 3). The progressive-split fallback logic lives there now.
@@ -1283,60 +1173,9 @@ class DataFlair_Toplists {
     // NOTE: get_last_brands_cron_time() removed in v1.11.0 (Phase 0B H1).
     // Admin UI now calls format_last_sync_label() below.
 
-    /**
-     * AJAX handler to sync brands in batches (one page at a time)
-     */
-    public function ajax_sync_brands_batch() {
-        // Phase 3 — thin delegator. Nonce + capability + token precheck stay
-        // at the AJAX gate. Everything below moves into BrandSyncService, which
-        // preserves every Phase 0B / Phase 1 / Phase 0A invariant byte-for-byte
-        // (15 MB/12 s HTTP cap, 3 MB/8 s logo cap, 25 s budget with 3 s
-        // headroom, H4 memory cleanup, paginated page-1 DELETE,
-        // dataflair_brand_logo_stored hook, dataflair_sync_batch_*/
-        // dataflair_sync_item_failed telemetry).
-        check_ajax_referer('dataflair_sync_brands_batch', 'nonce');
+    // NOTE: ajax_sync_brands_batch() moved to DataFlair\Toplists\Admin\Handlers\SyncBrandsBatchHandler
+    // and ajax_fetch_all_brands() moved to FetchAllBrandsHandler in v2.1.3 (Phase 9.7).
 
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-
-        $token = trim(get_option('dataflair_api_token'));
-        if (empty($token)) {
-            wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
-        }
-
-        $page    = isset($_POST['page']) ? intval($_POST['page']) : 1;
-        $request = \DataFlair\Toplists\Sync\SyncRequest::brands($page);
-        $result  = $this->brand_sync_service()->syncPage($request);
-
-        if ($result->success) {
-            wp_send_json_success($result->toArray());
-        }
-        wp_send_json_error(array('message' => $result->message));
-    }
-    
-    /**
-     * AJAX handler to fetch all brands (kept for backward compatibility, now triggers batch sync)
-     */
-    public function ajax_fetch_all_brands() {
-        check_ajax_referer('dataflair_fetch_all_brands', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        $token = trim(get_option('dataflair_api_token'));
-        if (empty($token)) {
-            wp_send_json_error(array('message' => 'API token not configured. Please set your API token first.'));
-        }
-        
-        // Return initial response - JavaScript will handle batch processing
-        wp_send_json_success(array(
-            'message' => 'Starting batch sync...',
-            'start_batch' => true
-        ));
-    }
-    
     /**
      * Download and save brand logo locally.
      *
@@ -1369,275 +1208,10 @@ class DataFlair_Toplists {
     // NOTE: sync_all_brands() removed in v1.11.0 (Phase 0B H1). Batched
     // sync via ajax_sync_brands_batch is now the only path — cron is gone.
 
-    /**
-     * AJAX handler to get alternative toplists for a toplist
-     */
-    public function ajax_get_alternative_toplists() {
-        check_ajax_referer('dataflair_save_settings', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        $toplist_id = isset($_POST['toplist_id']) ? intval($_POST['toplist_id']) : 0;
-        
-        if (!$toplist_id) {
-            wp_send_json_error(array('message' => 'Invalid toplist ID'));
-        }
-        
-        global $wpdb;
-        $alt_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        
-        // Ensure table exists
-        $this->ensure_alternative_toplists_table();
-        
-        $alternatives = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $alt_table WHERE toplist_id = %d ORDER BY geo ASC",
-            $toplist_id
-        ), ARRAY_A);
-        
-        wp_send_json_success(array('alternatives' => $alternatives));
-    }
-    
-    /**
-     * AJAX handler to save an alternative toplist mapping
-     */
-    public function ajax_save_alternative_toplist() {
-        check_ajax_referer('dataflair_save_settings', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        $toplist_id = isset($_POST['toplist_id']) ? intval($_POST['toplist_id']) : 0;
-        $geo = isset($_POST['geo']) ? sanitize_text_field($_POST['geo']) : '';
-        $alternative_toplist_id = isset($_POST['alternative_toplist_id']) ? intval($_POST['alternative_toplist_id']) : 0;
-        
-        error_log('DataFlair: Save alternative toplist - toplist_id: ' . $toplist_id . ', geo: ' . $geo . ', alt_toplist_id: ' . $alternative_toplist_id);
-        
-        if (!$toplist_id || !$geo || !$alternative_toplist_id) {
-            wp_send_json_error(array('message' => 'Missing required parameters'));
-        }
-        
-        global $wpdb;
-        $alt_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        
-        // Ensure table exists
-        $this->ensure_alternative_toplists_table();
-        
-        // Check if mapping already exists
-        $existing = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $alt_table WHERE toplist_id = %d AND geo = %s",
-            $toplist_id,
-            $geo
-        ));
-        
-        if ($existing) {
-            // Update existing mapping
-            $result = $wpdb->update(
-                $alt_table,
-                array(
-                    'alternative_toplist_id' => $alternative_toplist_id,
-                    'updated_at' => current_time('mysql')
-                ),
-                array('id' => $existing->id),
-                array('%d', '%s'),
-                array('%d')
-            );
-            error_log('DataFlair: Update result: ' . ($result !== false ? 'success' : 'failed') . ' - ' . $wpdb->last_error);
-        } else {
-            // Insert new mapping
-            $result = $wpdb->insert(
-                $alt_table,
-                array(
-                    'toplist_id' => $toplist_id,
-                    'geo' => $geo,
-                    'alternative_toplist_id' => $alternative_toplist_id,
-                    'created_at' => current_time('mysql'),
-                    'updated_at' => current_time('mysql')
-                ),
-                array('%d', '%s', '%d', '%s', '%s')
-            );
-            error_log('DataFlair: Insert result: ' . ($result !== false ? 'success' : 'failed') . ' - ' . $wpdb->last_error);
-        }
-        
-        if ($result !== false) {
-            wp_send_json_success(array('message' => 'Alternative toplist saved successfully'));
-        } else {
-            wp_send_json_error(array('message' => 'Failed to save alternative toplist: ' . $wpdb->last_error));
-        }
-    }
-    
-    /**
-     * AJAX handler to delete an alternative toplist mapping
-     */
-    public function ajax_delete_alternative_toplist() {
-        check_ajax_referer('dataflair_save_settings', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
-        
-        if (!$id) {
-            wp_send_json_error(array('message' => 'Invalid ID'));
-        }
-        
-        global $wpdb;
-        $alt_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        
-        // Ensure table exists
-        $this->ensure_alternative_toplists_table();
-        
-        $result = $wpdb->delete($alt_table, array('id' => $id), array('%d'));
-        
-        if ($result !== false) {
-            wp_send_json_success(array('message' => 'Alternative toplist deleted successfully'));
-        } else {
-            wp_send_json_error(array('message' => 'Failed to delete alternative toplist'));
-        }
-    }
-    
-    /**
-     * AJAX handler to get available geos from toplists data
-     */
-    public function ajax_get_available_geos() {
-        check_ajax_referer('dataflair_save_settings', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-        
-        global $wpdb;
-        $toplists_table = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        
-        // Ensure table exists
-        $this->ensure_alternative_toplists_table();
-        
-        // Get all toplists and extract unique geos from their data
-        $toplists = $wpdb->get_results("SELECT data FROM $toplists_table", ARRAY_A);
-        
-        $all_geos = array();
-        
-        foreach ($toplists as $toplist) {
-            if (!empty($toplist['data'])) {
-                $toplist_data = json_decode($toplist['data'], true);
-                
-                // Get geo name from toplist data
-                // Format: "geo": { "geo_type": "country", "name": "United Kingdom" }
-                if (isset($toplist_data['data']['geo']['name'])) {
-                    $geo_name = $toplist_data['data']['geo']['name'];
-                    if (!in_array($geo_name, $all_geos)) {
-                        $all_geos[] = $geo_name;
-                    }
-                }
-            }
-        }
-        
-        sort($all_geos);
-        
-        wp_send_json_success(array('geos' => $all_geos));
-    }
-
-    /**
-     * AJAX: Fetch a live API response for the admin preview tab.
-     * Uses the stored token and base URL — no credentials are returned to the browser.
-     */
-    public function ajax_api_preview() {
-        check_ajax_referer('dataflair_api_preview', '_ajax_nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Unauthorized');
-        }
-
-        $token = trim(get_option('dataflair_api_token', ''));
-        if (empty($token)) {
-            wp_send_json_error('No API token configured.');
-        }
-
-        $endpoint_key = isset($_POST['endpoint']) ? sanitize_text_field($_POST['endpoint']) : '';
-        $resource_id  = isset($_POST['resource_id']) ? absint($_POST['resource_id']) : 0;
-
-        $base_url = rtrim($this->get_api_base_url(), '/');
-        $start = microtime(true);
-
-        switch ($endpoint_key) {
-            case 'toplists':
-                $url = $base_url . '/toplists';
-                break;
-            case 'toplists/custom':
-                if (!$resource_id) {
-                    wp_send_json_error('Resource ID required for single toplist.');
-                }
-                $url = $base_url . '/toplists/' . $resource_id;
-                break;
-            case 'brands':
-                $url = $base_url . '/brands';
-                break;
-            case 'brands/custom':
-                if (!$resource_id) {
-                    wp_send_json_error('Resource ID required for single brand.');
-                }
-                $url = $base_url . '/brands/' . $resource_id;
-                break;
-            case 'brands_v2':
-                $v2_base = preg_replace('#/api/v\d+$#', '/api/v2', $base_url);
-                $url = rtrim($v2_base, '/') . '/brands';
-                break;
-            default:
-                wp_send_json_error('Unknown endpoint.');
-        }
-
-        $response = $this->api_get($url, $token);
-
-        if (is_wp_error($response)) {
-            wp_send_json_error($response->get_error_message());
-        }
-
-        $status_code = wp_remote_retrieve_response_code($response);
-        $raw_body    = wp_remote_retrieve_body($response);
-
-        // Pretty-print JSON if possible
-        $decoded = json_decode($raw_body, true);
-        $pretty  = ($decoded !== null) ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $raw_body;
-
-        $elapsed = round((microtime(true) - $start) * 1000) . 'ms';
-
-        wp_send_json_success(array(
-            'url'     => $url,
-            'status'  => $status_code . ' ' . get_status_header_desc($status_code),
-            'body'    => $pretty,
-            'elapsed' => $elapsed,
-        ));
-    }
-
-    /**
-     * Save a per-brand review URL override via AJAX.
-     *
-     * @return void
-     */
-    public function ajax_save_review_url(): void {
-        check_ajax_referer('dataflair_save_review_url', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Unauthorized');
-        }
-        global $wpdb;
-        $brand_id   = intval($_POST['brand_id'] ?? 0);
-        $review_url = sanitize_text_field($_POST['review_url'] ?? '');
-        if (!$brand_id) {
-            wp_send_json_error('Invalid brand ID');
-        }
-        $table = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        $wpdb->update(
-            $table,
-            ['review_url_override' => $review_url ?: null],
-            ['api_brand_id' => $brand_id],
-            ['%s'],
-            ['%d']
-        );
-        wp_send_json_success();
-    }
+    // NOTE: ajax_get_alternative_toplists(), ajax_save_alternative_toplist(),
+    // ajax_delete_alternative_toplist(), ajax_get_available_geos(),
+    // ajax_api_preview(), and ajax_save_review_url() moved to dedicated handler
+    // classes under DataFlair\Toplists\Admin\Ajax\ in v2.1.3 (Phase 9.7).
 
     /**
      * Discover all toplist endpoints by paginating through the /toplists index.
