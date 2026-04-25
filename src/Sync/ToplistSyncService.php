@@ -66,8 +66,11 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
 
         $budget = new WallClockBudget($request->budgetSeconds);
 
+        // Sigma's /toplists already returns full items+brand+offer+tracker
+        // payload by default. `?include=items` is a no-op (verified
+        // 2026-04-25: identical bytes, identical time, with vs without).
         $listUrl = $this->baseUrl . '/toplists?per_page=' . $perPage
-            . '&page=' . $page . '&include=items';
+            . '&page=' . $page;
 
         $this->logger->debug('ToplistSync.http_request url=' . $listUrl);
         $httpT0   = microtime(true);
