@@ -132,11 +132,11 @@ jQuery(document).ready(function($) {
                     var data = response.data;
                     if (data.partial === true && !data.is_complete) {
                         var nextPartialCount = partialCount + 1;
-                        if (nextPartialCount > 10) {
-                            onDone({page: page, ok: false, message: 'stuck after 10 partial retries'});
+                        if (nextPartialCount > 3) {
+                            onDone({page: page, ok: false, message: 'stuck after 3 partial retries — page consistently exceeds budget; check debug.log for ToplistSync.http and ToplistSync.store_slow entries'});
                             return;
                         }
-                        var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
+                        var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 4000);
                         setTimeout(function() { fetchToplistPage(page, nextPartialCount, onDone); }, delayMs);
                         return;
                     }
@@ -317,12 +317,12 @@ jQuery(document).ready(function($) {
                         // Partial response → re-issue the same page with backoff.
                         if (data.partial === true && !data.is_complete) {
                             var nextPartialCount = partialCount + 1;
-                            if (nextPartialCount > 10) {
-                                $message.html('<span style="color: #dc3232;">✗ Page ' + page + ' stuck after 10 partial retries — aborting. Try again later. <a href="#" class="dataflair-dismiss-error">dismiss</a></span>');
+                            if (nextPartialCount > 3) {
+                                $message.html('<span style="color: #dc3232;">✗ Page ' + page + ' stuck after 3 partial retries — aborting. Check debug.log for slow upstream/store entries. <a href="#" class="dataflair-dismiss-error">dismiss</a></span>');
                                 $button.text(originalText).prop('disabled', false);
                                 return;
                             }
-                            var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 8000);
+                            var delayMs = Math.min(1000 * Math.pow(2, nextPartialCount - 1), 4000);
                             setTimeout(function() {
                                 syncBrandsBatch(page, totalSynced, nextPartialCount);
                             }, delayMs);
