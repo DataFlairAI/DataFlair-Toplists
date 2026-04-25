@@ -54,7 +54,7 @@ final class SettingsPage implements PageInterface
             </nav>
 
             <form id="dataflair-settings-form" method="post" action="options.php">
-                <?php wp_nonce_field('dataflair_save_settings', 'dataflair_settings_nonce'); ?>
+                <?php settings_fields('dataflair_settings'); ?>
 
                 <?php if ($current_tab === 'api_connection'): ?>
                     <!-- API Connection Tab -->
