@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.6
+ * Version: 2.1.7
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.6');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.7');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -218,6 +218,31 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Sync\LogoSync|null */
     private $logo_sync = null;
+
+    /**
+     * Phase 9.11 — extracted HTTP/URL/Support utilities. Lazy.
+     *
+     * @var \DataFlair\Toplists\Support\UrlValidator|null
+     */
+    private $url_validator = null;
+
+    /** @var \DataFlair\Toplists\Support\UrlTransformer|null */
+    private $url_transformer = null;
+
+    /** @var \DataFlair\Toplists\Support\EnvironmentDetector|null */
+    private $environment_detector = null;
+
+    /** @var \DataFlair\Toplists\Http\ApiBaseUrlDetector|null */
+    private $api_base_url_detector = null;
+
+    /** @var \DataFlair\Toplists\Http\BrandsApiUrlBuilder|null */
+    private $brands_api_url_builder = null;
+
+    /** @var \DataFlair\Toplists\Http\ApiErrorFormatter|null */
+    private $api_error_formatter = null;
+
+    /** @var \DataFlair\Toplists\Support\RelativeTimeFormatter|null */
+    private $relative_time_formatter = null;
 
     /**
      * Legacy singleton accessor. Continues to function as a strangler-fig
@@ -749,6 +774,65 @@ class DataFlair_Toplists {
         return $this->logo_sync;
     }
 
+    /**
+     * Phase 9.11 — lazy getters for the extracted HTTP/URL/Support utilities.
+     */
+    private function url_validator() {
+        if ($this->url_validator instanceof \DataFlair\Toplists\Support\UrlValidator) {
+            return $this->url_validator;
+        }
+        $this->url_validator = new \DataFlair\Toplists\Support\UrlValidator();
+        return $this->url_validator;
+    }
+
+    private function url_transformer() {
+        if ($this->url_transformer instanceof \DataFlair\Toplists\Support\UrlTransformer) {
+            return $this->url_transformer;
+        }
+        $this->url_transformer = new \DataFlair\Toplists\Support\UrlTransformer($this->url_validator());
+        return $this->url_transformer;
+    }
+
+    private function environment_detector() {
+        if ($this->environment_detector instanceof \DataFlair\Toplists\Support\EnvironmentDetector) {
+            return $this->environment_detector;
+        }
+        $this->environment_detector = new \DataFlair\Toplists\Support\EnvironmentDetector();
+        return $this->environment_detector;
+    }
+
+    private function api_base_url_detector() {
+        if ($this->api_base_url_detector instanceof \DataFlair\Toplists\Http\ApiBaseUrlDetector) {
+            return $this->api_base_url_detector;
+        }
+        $this->api_base_url_detector = new \DataFlair\Toplists\Http\ApiBaseUrlDetector($this->url_transformer());
+        return $this->api_base_url_detector;
+    }
+
+    private function brands_api_url_builder() {
+        if ($this->brands_api_url_builder instanceof \DataFlair\Toplists\Http\BrandsApiUrlBuilder) {
+            return $this->brands_api_url_builder;
+        }
+        $this->brands_api_url_builder = new \DataFlair\Toplists\Http\BrandsApiUrlBuilder($this->api_base_url_detector());
+        return $this->brands_api_url_builder;
+    }
+
+    private function api_error_formatter() {
+        if ($this->api_error_formatter instanceof \DataFlair\Toplists\Http\ApiErrorFormatter) {
+            return $this->api_error_formatter;
+        }
+        $this->api_error_formatter = new \DataFlair\Toplists\Http\ApiErrorFormatter();
+        return $this->api_error_formatter;
+    }
+
+    private function relative_time_formatter() {
+        if ($this->relative_time_formatter instanceof \DataFlair\Toplists\Support\RelativeTimeFormatter) {
+            return $this->relative_time_formatter;
+        }
+        $this->relative_time_formatter = new \DataFlair\Toplists\Support\RelativeTimeFormatter();
+        return $this->relative_time_formatter;
+    }
+
     private function init_hooks() {
         // Phase 9.5: activation/deactivation are now registered at
         // plugin-file load time via the WPPB-style hooks at the top of
@@ -935,14 +1019,8 @@ class DataFlair_Toplists {
      * @return bool True if local dev domain
      */
     private function is_local_url($url) {
-        $parsed = parse_url($url);
-        $host = isset($parsed['host']) ? $parsed['host'] : '';
-        return (
-            preg_match('/\.(test|local|localhost|invalid|example)$/i', $host) ||
-            $host === 'localhost' ||
-            $host === '127.0.0.1' ||
-            $host === '::1'
-        );
+        // Phase 9.11 — delegate to Support\UrlValidator.
+        return $this->url_validator()->isLocal((string) $url);
     }
 
     /**
@@ -953,10 +1031,8 @@ class DataFlair_Toplists {
      * @return string The URL, with https:// if non-local
      */
     private function maybe_force_https($url) {
-        if (!$this->is_local_url($url)) {
-            $url = preg_replace('#^http://#i', 'https://', $url);
-        }
-        return $url;
+        // Phase 9.11 — delegate to Support\UrlTransformer.
+        return $this->url_transformer()->maybeForceHttps((string) $url);
     }
 
     /**
@@ -967,12 +1043,8 @@ class DataFlair_Toplists {
      * @return string Full brands URL with page parameter
      */
     private function get_brands_api_url($page) {
-        $version = get_option('dataflair_brands_api_version', 'v1');
-        $base    = $this->get_api_base_url();  // e.g. .../api/v1
-        if ($version === 'v2') {
-            $base = preg_replace('#/api/v\d+$#', '/api/v2', $base);
-        }
-        return rtrim($base, '/') . '/brands?page=' . intval($page);
+        // Phase 9.11 — delegate to Http\BrandsApiUrlBuilder.
+        return $this->brands_api_url_builder()->buildPageUrl((int) $page);
     }
 
     /**
@@ -981,34 +1053,8 @@ class DataFlair_Toplists {
      * @return string API base URL
      */
     private function get_api_base_url() {
-        // First, try to get from stored option (manually set or auto-detected)
-        $base_url = get_option('dataflair_api_base_url');
-        if (!empty($base_url)) {
-            $base_url = $this->maybe_force_https($base_url);
-            // Safety: strip anything after /api/v1 (e.g. /api/v1/toplists → /api/v1)
-            $base_url = preg_replace('#(/api/v\d+)/.*$#', '$1', $base_url);
-            return rtrim($base_url, '/');
-        }
-        
-        // Try to extract from stored endpoints
-        $endpoints = get_option('dataflair_api_endpoints');
-        if (!empty($endpoints)) {
-            $endpoints_array = array_filter(array_map('trim', explode("\n", $endpoints)));
-            if (!empty($endpoints_array)) {
-                $first_endpoint = $endpoints_array[0];
-                // Extract base URL from endpoint (e.g., https://tenant.dataflair.ai/api/v1/toplists/3)
-                if (preg_match('#^(https?://[^/]+/api/v\d+)/#', $first_endpoint, $matches)) {
-                    $base_url = $matches[1];
-                    $base_url = $this->maybe_force_https($base_url);
-                    // Store it for future use
-                    update_option('dataflair_api_base_url', $base_url);
-                    return rtrim($base_url, '/');
-                }
-            }
-        }
-        
-        // Fallback to default
-        return 'https://sigma.dataflair.ai/api/v1';
+        // Phase 9.11 — delegate to Http\ApiBaseUrlDetector.
+        return $this->api_base_url_detector()->detect();
     }
 
     /**
@@ -1055,23 +1101,8 @@ class DataFlair_Toplists {
      * @return bool
      */
     private function is_running_in_docker() {
-        // Method 1: Check for .dockerenv file (most reliable)
-        if (file_exists('/.dockerenv')) {
-            return true;
-        }
-        // Method 2: Check cgroup (Linux containers)
-        if (is_readable('/proc/1/cgroup')) {
-            $cgroup = file_get_contents('/proc/1/cgroup');
-            if (strpos($cgroup, 'docker') !== false || strpos($cgroup, 'kubepods') !== false) {
-                return true;
-            }
-        }
-        // Method 3: Check if host.docker.internal resolves (Docker Desktop for Mac/Windows)
-        $resolved = gethostbyname('host.docker.internal');
-        if ($resolved !== 'host.docker.internal') {
-            return true;
-        }
-        return false;
+        // Phase 9.11 — delegate to Support\EnvironmentDetector.
+        return $this->environment_detector()->isRunningInDocker();
     }
 
     /**
@@ -1085,103 +1116,13 @@ class DataFlair_Toplists {
      * @return string Detailed error message
      */
     private function build_detailed_api_error($status_code, $body, $headers, $url) {
-        $parsed = parse_url($url);
-        $host = isset($parsed['host']) ? $parsed['host'] : 'unknown';
-
-        // Try to decode JSON body for structured error info
-        $json = json_decode($body, true);
-        $api_message = '';
-        if (is_array($json) && isset($json['message'])) {
-            $api_message = $json['message'];
-        }
-
-        // Check for WWW-Authenticate header — tells us if it's HTTP Basic Auth or Bearer
-        $www_auth = '';
-        if (is_object($headers) && isset($headers['www-authenticate'])) {
-            $www_auth = $headers['www-authenticate'];
-        } elseif (is_array($headers) && isset($headers['www-authenticate'])) {
-            $www_auth = $headers['www-authenticate'];
-        }
-
-        // Check content-type to see if the response is HTML (web server error page) vs JSON (API error)
-        $content_type = '';
-        if (is_object($headers) && isset($headers['content-type'])) {
-            $content_type = $headers['content-type'];
-        } elseif (is_array($headers) && isset($headers['content-type'])) {
-            $content_type = $headers['content-type'];
-        }
-        $is_html_response = (stripos($content_type, 'text/html') !== false);
-
-        switch ($status_code) {
-            case 401:
-                // Distinguish between HTTP Basic Auth 401 and API Bearer 401
-                if (stripos($www_auth, 'Basic') !== false) {
-                    $has_http_auth = !empty(trim(get_option('dataflair_http_auth_user', '')));
-                    if ($has_http_auth) {
-                        return 'HTTP Basic Auth failed (401). Your staging username/password was rejected by the web server at ' . $host . '. '
-                             . 'Check that the HTTP Auth Username and Password in plugin settings match your .htpasswd or nginx auth_basic credentials. '
-                             . 'This is the web server blocking the request before it reaches the DataFlair API.';
-                    } else {
-                        return 'HTTP Basic Auth required (401). The server at ' . $host . ' requires HTTP Basic Authentication (e.g. .htpasswd). '
-                             . 'This is common on staging environments. Go to DataFlair plugin settings and fill in the "HTTP Auth Username" and "HTTP Auth Password" fields. '
-                             . 'These are your web server credentials — not your DataFlair API token.';
-                    }
-                } elseif (stripos($www_auth, 'Bearer') !== false || !empty($api_message)) {
-                    return 'API authentication failed (401). The DataFlair API rejected your Bearer token. '
-                         . 'API says: "' . ($api_message ?: 'Unauthenticated') . '". '
-                         . 'Possible causes: (1) Token is expired or revoked — generate a new one in DataFlair > Configuration > API Credentials. '
-                         . '(2) Token is an API Key (dfk_) instead of a Plugin Token (dfp_) — only dfp_ tokens work for this plugin. '
-                         . '(3) Token was copy-pasted with extra spaces or line breaks — re-copy it carefully. '
-                         . 'Token starts with: ' . substr(trim(get_option('dataflair_api_token', '')), 0, 10) . '...';
-                } elseif ($is_html_response) {
-                    return 'Authentication failed (401) — the server at ' . $host . ' returned an HTML page instead of a JSON API response. '
-                         . 'This usually means the web server itself (nginx/Apache) is blocking the request before it reaches the DataFlair API. '
-                         . 'Most likely cause: HTTP Basic Auth (.htpasswd) is enabled on staging. '
-                         . 'Go to plugin settings and fill in the "HTTP Auth Username" and "HTTP Auth Password" fields.';
-                } else {
-                    return 'Authentication failed (401) at ' . $host . '. '
-                         . 'Could not determine the specific cause. Response body: ' . substr($body, 0, 300) . '. '
-                         . 'Check: (1) Is staging behind HTTP Basic Auth? Add credentials in plugin settings. '
-                         . '(2) Is your dfp_ token valid and not expired? (3) Is the API Base URL correct?';
-                }
-
-            case 403:
-                return 'Access forbidden (403). The server accepted your credentials but your token does not have permission to access this resource. '
-                     . 'API says: "' . ($api_message ?: 'Forbidden') . '". '
-                     . 'Check that your API credential in DataFlair has the correct permissions and is marked as active.';
-
-            case 404:
-                return 'Endpoint not found (404) at ' . $url . '. '
-                     . 'This usually means the API Base URL is wrong or the route does not exist. '
-                     . 'Expected format: https://tenant.dataflair.ai/api/v1. '
-                     . 'Currently configured: ' . get_option('dataflair_api_base_url', '(not set)');
-
-            case 419:
-                return 'CSRF token mismatch (419). The API returned a Laravel session error. '
-                     . 'This should not happen for API routes. Check that the API Base URL points to /api/v1 routes, not web routes.';
-
-            case 429:
-                return 'Rate limited (429). Too many requests to the DataFlair API. '
-                     . 'API says: "' . ($api_message ?: 'Too Many Requests') . '". '
-                     . 'Wait a few minutes and try again, or check your API credential rate limit settings.';
-
-            case 500:
-                return 'Server error (500). The DataFlair API encountered an internal error. '
-                     . 'This is a server-side issue, not a plugin configuration problem. '
-                     . 'API says: "' . ($api_message ?: substr($body, 0, 200)) . '". '
-                     . 'Contact DataFlair support if this persists.';
-
-            case 502:
-            case 503:
-            case 504:
-                return 'Server unavailable (' . $status_code . '). The DataFlair API at ' . $host . ' is temporarily unavailable. '
-                     . 'This could be a deployment in progress, server overload, or infrastructure issue. Try again in a few minutes.';
-
-            default:
-                return 'Unexpected HTTP ' . $status_code . ' from ' . $host . '. '
-                     . ($api_message ? 'API says: "' . $api_message . '". ' : '')
-                     . 'Response body: ' . substr($body, 0, 300);
-        }
+        // Phase 9.11 — delegate to Http\ApiErrorFormatter.
+        return $this->api_error_formatter()->format(
+            (int) $status_code,
+            (string) $body,
+            $headers,
+            (string) $url
+        );
     }
 
     // NOTE: ajax_fetch_all_toplists() moved to DataFlair\Toplists\Admin\Handlers\FetchAllToplistsHandler
@@ -1238,29 +1179,16 @@ class DataFlair_Toplists {
      * e.g. "just now", "3 minutes ago", "2 hours ago"
      */
     private function time_ago( $timestamp ) {
-        $diff = time() - $timestamp;
-
-        if ( $diff < 10 )                    return 'just now';
-        if ( $diff < 60 )                    return $diff . ' seconds ago';
-        if ( $diff < 120 )                   return '1 minute ago';
-        if ( $diff < 3600 )                  return floor( $diff / 60 ) . ' minutes ago';
-        if ( $diff < 7200 )                  return '1 hour ago';
-        if ( $diff < 86400 )                 return floor( $diff / 3600 ) . ' hours ago';
-        return date( 'Y-m-d H:i', $timestamp );
+        // Phase 9.11 — delegate to Support\RelativeTimeFormatter.
+        return $this->relative_time_formatter()->timeAgo((int) $timestamp);
     }
 
     /**
      * Returns a future-relative label, e.g. "in 3 minutes", "in 45 seconds"
      */
     private function time_until( $timestamp ) {
-        $diff = $timestamp - time();
-
-        if ( $diff <= 0 )       return 'any moment';
-        if ( $diff < 60 )       return 'in ' . $diff . ' seconds';
-        if ( $diff < 120 )      return 'in 1 minute';
-        if ( $diff < 3600 )     return 'in ' . floor( $diff / 60 ) . ' minutes';
-        if ( $diff < 7200 )     return 'in 1 hour';
-        return 'in ' . floor( $diff / 3600 ) . ' hours';
+        // Phase 9.11 — delegate to Support\RelativeTimeFormatter.
+        return $this->relative_time_formatter()->timeUntil((int) $timestamp);
     }
 
     // NOTE: get_last_brands_cron_time() removed in v1.11.0 (Phase 0B H1).
