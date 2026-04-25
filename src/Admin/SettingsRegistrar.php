@@ -37,6 +37,11 @@ final class SettingsRegistrar
         'dataflair_ribbon_text_color',
         'dataflair_cta_bg_color',
         'dataflair_cta_text_color',
+        // Phase 9.6 (admin UX redesign) — Sync Schedule tab.
+        'dataflair_brands_sync_cadence',
+        'dataflair_toplists_sync_cadence',
+        'dataflair_sync_retry_count',
+        'dataflair_sync_alert_email',
     ];
 
     public function register(): void

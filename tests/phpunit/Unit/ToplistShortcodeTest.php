@@ -119,6 +119,13 @@ final class ToplistShortcodeTest extends TestCase
             public function updateLocalLogoUrl(int $id, string $local_url): bool { return true; }
             public function updateCachedReviewPostId(int $id, int $review_post_id): bool { return true; }
             public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool { return true; }
+            public function setDisabledByApiBrandIds(array $api_brand_ids, bool $disabled): int { return 0; }
+            public function findPaginated(\DataFlair\Toplists\Database\BrandsQuery $query): \DataFlair\Toplists\Database\BrandsPage
+            {
+                return new \DataFlair\Toplists\Database\BrandsPage([], 0, 1, 25);
+            }
+            public function findActiveByApiBrandIds(array $api_brand_ids): array { return []; }
+            public function collectDistinctValuesForFilter(string $field): array { return []; }
         };
     }
 

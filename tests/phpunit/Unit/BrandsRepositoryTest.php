@@ -10,10 +10,14 @@ declare(strict_types=1);
 
 namespace DataFlair\Toplists\Tests\Unit\Database;
 
+use DataFlair\Toplists\Database\BrandsPage;
+use DataFlair\Toplists\Database\BrandsQuery;
 use DataFlair\Toplists\Database\BrandsRepository;
 use Mockery as M;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsPage.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsQuery.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepository.php';
 
@@ -37,6 +41,7 @@ final class BrandsRepositoryTest extends TestCase
             $flat = (count($args) === 1 && is_array($args[0])) ? $args[0] : $args;
             return vsprintf(str_replace(['%d', '%s', '%f'], ['%s', '%s', '%s'], $sql), $flat);
         });
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(static fn($v) => addcslashes((string) $v, '_%\\'));
         return $wpdb;
     }
 
@@ -160,5 +165,109 @@ final class BrandsRepositoryTest extends TestCase
 
         $repo = new BrandsRepository($wpdb);
         $this->assertTrue($repo->updateCachedReviewPostId(42, 777));
+    }
+
+    public function test_set_disabled_by_api_brand_ids_empty_input_returns_zero(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldNotReceive('query');
+
+        $repo = new BrandsRepository($wpdb);
+        $this->assertSame(0, $repo->setDisabledByApiBrandIds([], true));
+    }
+
+    public function test_set_disabled_by_api_brand_ids_runs_bulk_update(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('query')->once()->andReturn(3);
+
+        $repo = new BrandsRepository($wpdb);
+        $this->assertSame(3, $repo->setDisabledByApiBrandIds([100, 200, 300], true));
+    }
+
+    public function test_find_active_by_api_brand_ids_empty_input(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldNotReceive('get_results');
+
+        $repo = new BrandsRepository($wpdb);
+        $this->assertSame([], $repo->findActiveByApiBrandIds([]));
+    }
+
+    public function test_find_active_by_api_brand_ids_keys_by_api_id(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_results')->once()->andReturn([
+            ['id' => 1, 'api_brand_id' => 100, 'name' => 'A', 'is_disabled' => 0],
+            ['id' => 2, 'api_brand_id' => 200, 'name' => 'B', 'is_disabled' => 0],
+        ]);
+
+        $repo = new BrandsRepository($wpdb);
+        $out  = $repo->findActiveByApiBrandIds([100, 200]);
+
+        $this->assertArrayHasKey(100, $out);
+        $this->assertArrayHasKey(200, $out);
+    }
+
+    public function test_find_paginated_returns_page_dto(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn('42');
+        $wpdb->shouldReceive('get_results')->once()->andReturn([
+            ['id' => 1, 'api_brand_id' => 100, 'name' => 'A'],
+            ['id' => 2, 'api_brand_id' => 200, 'name' => 'B'],
+        ]);
+
+        $q = BrandsQuery::fromArray(['page' => 2, 'per_page' => 25]);
+        $repo = new BrandsRepository($wpdb);
+        $page = $repo->findPaginated($q);
+
+        $this->assertInstanceOf(BrandsPage::class, $page);
+        $this->assertSame(42, $page->total);
+        $this->assertSame(2, $page->page);
+        $this->assertSame(25, $page->perPage);
+        $this->assertCount(2, $page->rows);
+    }
+
+    public function test_find_paginated_with_filters_binds_params(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn('5');
+        $wpdb->shouldReceive('get_results')->once()->andReturn([]);
+
+        $q = BrandsQuery::fromArray([
+            'search'   => 'bet',
+            'licenses' => ['MGA'],
+            'disabled' => false,
+        ]);
+        $repo = new BrandsRepository($wpdb);
+        $page = $repo->findPaginated($q);
+
+        $this->assertSame(5, $page->total);
+        $this->assertSame([], $page->rows);
+    }
+
+    public function test_collect_distinct_values_for_filter_csv_column(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_col')->once()->andReturn([
+            'MGA, UKGC',
+            'UKGC',
+            ' Curacao ',
+        ]);
+
+        $repo   = new BrandsRepository($wpdb);
+        $values = $repo->collectDistinctValuesForFilter('licenses');
+
+        $this->assertContains('MGA', $values);
+        $this->assertContains('UKGC', $values);
+        $this->assertContains('Curacao', $values);
+    }
+
+    public function test_collect_distinct_values_for_unknown_field_returns_empty(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $repo = new BrandsRepository($wpdb);
+        $this->assertSame([], $repo->collectDistinctValuesForFilter('nonsense'));
     }
 }

@@ -30,6 +30,34 @@ final class AdminAssetsRegistrar
      */
     public function enqueue(string $hook): void
     {
+        $isDataflairScreen = in_array($hook, self::ADMIN_HOOKS, true)
+            || strpos($hook, 'dataflair') !== false;
+
+        if (!$isDataflairScreen) {
+            return;
+        }
+
+        // Phase 9.6 (admin UX redesign) — shared chrome on every DataFlair screen.
+        $uiCssPath = DATAFLAIR_PLUGIN_DIR . 'assets/admin/admin-ui.css';
+        $uiCssVer  = file_exists($uiCssPath) ? (string) filemtime($uiCssPath) : DATAFLAIR_VERSION;
+        wp_enqueue_style(
+            'dataflair-admin-ui',
+            DATAFLAIR_PLUGIN_URL . 'assets/admin/admin-ui.css',
+            [],
+            $uiCssVer
+        );
+
+        $uiJsPath = DATAFLAIR_PLUGIN_DIR . 'assets/admin/admin-ui.js';
+        $uiJsVer  = file_exists($uiJsPath) ? (string) filemtime($uiJsPath) : DATAFLAIR_VERSION;
+        wp_enqueue_script(
+            'dataflair-admin-ui',
+            DATAFLAIR_PLUGIN_URL . 'assets/admin/admin-ui.js',
+            [],
+            $uiJsVer,
+            true
+        );
+
+        // Legacy assets (Select2 + admin.js) only on the original two screens.
         if (!in_array($hook, self::ADMIN_HOOKS, true)) {
             return;
         }
