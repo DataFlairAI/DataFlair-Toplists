@@ -39,14 +39,22 @@ final class SettingsPage implements PageInterface
         // toplists schema never had one (it lives on the brands table).
         // The MySQL error silently emptied $toplists and hid the table —
         // dropped the stale reference.
+        // Phase 9.6: no SQL `ORDER BY` — sorting alongside the heavy
+        // `sync_warnings` JSON column triggers MySQL filesort, which on
+        // sites with verbose warnings (60+ strings/row) overflows
+        // `sort_buffer_size` with "Out of sort memory" and silently
+        // returns zero rows. Sort in PHP — 175 rows is trivial.
         $toplists = $wpdb->get_results(
             "SELECT id, api_toplist_id, name, slug, version,
                     last_synced, item_count, locked_count, sync_warnings,
                     current_period,
                     JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name')) AS template_name
-             FROM $table_name
-             ORDER BY api_toplist_id ASC"
+             FROM $table_name"
         );
+
+        if (is_array($toplists)) {
+            usort($toplists, static fn($a, $b) => (int) $a->api_toplist_id <=> (int) $b->api_toplist_id);
+        }
 
         // Get current tab from URL
         $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'api';
