@@ -467,7 +467,9 @@ class DataFlair_Toplists {
 
         $token   = trim((string) get_option('dataflair_api_token'));
         $logger  = \DataFlair\Toplists\Logging\LoggerFactory::get();
-        $urlFn   = function ($page) { return $this->get_brands_api_url((int) $page); };
+        $urlFn   = function ($page, $perPage = 25) {
+            return $this->brands_api_url_builder()->buildPageUrl((int) $page, (int) $perPage);
+        };
         $default = new \DataFlair\Toplists\Sync\BrandSyncService(
             $this->api_client(),
             $this->logo_downloader(),

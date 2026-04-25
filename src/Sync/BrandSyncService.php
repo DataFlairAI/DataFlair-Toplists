@@ -117,7 +117,7 @@ final class BrandSyncService implements BrandSyncServiceInterface
 
     private function syncBrandsPage(int $page, WallClockBudget $budget, int $perPage): array
     {
-        $url = (string) call_user_func($this->brandsUrlBuilder, $page);
+        $url = (string) call_user_func($this->brandsUrlBuilder, $page, $perPage);
         $this->logger->debug('BrandSync.http_request url=' . $url);
 
         $httpT0   = microtime(true);

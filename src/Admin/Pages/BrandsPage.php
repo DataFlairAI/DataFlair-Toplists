@@ -101,7 +101,7 @@ final class BrandsPage implements PageInterface
                 </div>
             </div>
 
-            <p class="description">Fetches all active brands from the DataFlair API in batches of 15. Existing brands will be updated.</p>
+            <p class="description">Fetches all active brands from the DataFlair API in batches of 25. Existing brands will be updated.</p>
             <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html(($this->lastSyncLabelFormatter)('dataflair_last_brands_sync')); ?></p>
 
             <hr>

@@ -17,7 +17,7 @@ final class BrandsApiUrlBuilder
     {
     }
 
-    public function buildPageUrl(int $page): string
+    public function buildPageUrl(int $page, int $perPage = 25): string
     {
         $version = get_option('dataflair_brands_api_version', 'v1');
         $base    = $this->base->detect();
@@ -26,6 +26,6 @@ final class BrandsApiUrlBuilder
             $base = preg_replace('#/api/v\d+$#', '/api/v2', $base);
         }
 
-        return rtrim((string) $base, '/') . '/brands?page=' . $page;
+        return rtrim((string) $base, '/') . '/brands?per_page=' . $perPage . '&page=' . $page;
     }
 }
