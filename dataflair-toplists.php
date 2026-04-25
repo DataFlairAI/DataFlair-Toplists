@@ -891,9 +891,16 @@ class DataFlair_Toplists {
         // under src/Admin. Each one hooks into WP on its own schedule;
         // the calls below register them once per request.
         (new \DataFlair\Toplists\Admin\MenuRegistrar(
-            $this->settings_page_obj(),
+            new \DataFlair\Toplists\Admin\Pages\DashboardPage(),
+            new \DataFlair\Toplists\Admin\Pages\ToplistsListPage(
+                \Closure::fromCallable([$this, 'format_last_sync_label'])
+            ),
             $this->brands_page_obj(),
-            $this
+            new \DataFlair\Toplists\Admin\Pages\ToolsPage(
+                \Closure::fromCallable([$this, 'get_api_base_url']),
+                $this
+            ),
+            $this->settings_page_obj()
         ))->register();
         (new \DataFlair\Toplists\Admin\SettingsRegistrar())->register();
 

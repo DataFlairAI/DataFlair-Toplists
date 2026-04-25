@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace DataFlair\Toplists\Admin\Pages;
 
-class ToplistsListPage implements PageInterface
+final class ToplistsListPage implements PageInterface
 {
     public function __construct(private \Closure $lastSyncLabelFormatter) {}
 
