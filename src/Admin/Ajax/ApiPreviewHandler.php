@@ -74,12 +74,25 @@ final class ApiPreviewHandler implements AjaxHandlerInterface
             case 'brands':
                 return $base_url . '/brands';
             case 'brands/custom':
-                return $resource_id > 0 ? $base_url . '/brands/' . $resource_id : null;
+                // Single-brand endpoint only exists on V2; V1 returns 404.
+                $v2_base = $this->toV2Base($base_url);
+                return $resource_id > 0 ? $v2_base . '/brands/' . $resource_id : null;
             case 'brands_v2':
-                $v2_base = preg_replace('#/api/v\d+$#', '/api/v2', $base_url);
-                return rtrim((string) $v2_base, '/') . '/brands';
+                return $this->toV2Base($base_url) . '/brands';
             default:
                 return null;
         }
+    }
+
+    /** Rewrite any /api/vN segment to /api/v2 so single-resource endpoints resolve. */
+    private function toV2Base(string $base_url): string
+    {
+        // Try regex first; fall back to plain str_replace for v1 → v2.
+        $replaced = preg_replace('#/api/v\d+$#', '/api/v2', $base_url);
+        if ($replaced !== null && $replaced !== $base_url) {
+            return rtrim($replaced, '/');
+        }
+        // Fallback: replace the last /v1, /v2 etc. occurrence directly.
+        return rtrim((string) preg_replace('#/v\d+$#', '/v2', $base_url), '/');
     }
 }
