@@ -3,13 +3,14 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.0
+ * Version: 2.1.1
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
  * Author URI: https://dataflair.ai
  * License: GPL v2 or later
  * Text Domain: dataflair-toplists
+ * Domain Path: /languages
  */
 
 // Exit if accessed directly
@@ -18,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.0');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.1');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -30,394 +31,17 @@ if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
-// Auto-updates from GitHub releases (public repo — no token needed)
-if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-    $dataflair_update_checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/DataFlairAI/DataFlair-Toplists/',
-        __FILE__,
-        'dataflair-toplists'
-    );
-    $dataflair_update_checker->getVcsApi()->enableReleaseAssets();
+// Phase 9.5 — WPPB-style lifecycle hooks. WordPress requires these to
+// be registered at plugin-file load time (not from inside a class
+// __construct), so they live here at the top. The god-class below
+// keeps its `activate()` / `deactivate()` methods as thin delegators
+// for any downstream code that may invoke them directly.
+if (function_exists('register_activation_hook')) {
+    register_activation_hook(__FILE__, ['\\DataFlair\\Toplists\\Lifecycle\\Activator', 'activate']);
 }
-
-// Plugin info for the "View details" popup on wp-admin/plugins.php
-add_filter('plugins_api', 'dataflair_plugins_api_info', 20, 3);
-// @codeCoverageIgnoreStart
-function dataflair_plugins_api_info($res, $action, $args) {
-    if ($action !== 'plugin_information') {
-        return $res;
-    }
-    if (!isset($args->slug) || $args->slug !== 'dataflair-toplists') {
-        return $res;
-    }
-
-    $res = new stdClass();
-    $res->name    = 'DataFlair Toplists';
-    $res->slug    = 'dataflair-toplists';
-    $res->version = DATAFLAIR_VERSION;
-    $res->author  = '<a href="https://dataflair.ai">DataFlair</a>';
-    $res->homepage = 'https://dataflair.ai';
-    $res->requires = '6.3';
-    $res->tested   = '6.9';
-    $res->requires_php = '8.1';
-
-    $res->sections = [
-        'description' => '
-<p>DataFlair Toplists is a WordPress plugin that connects your site to the <strong>DataFlair</strong> affiliate management platform. DataFlair is a white-label iGaming data service built for casino and sportsbook affiliate publishers, it lets you manage your entire brand catalogue, bonus offers, promo codes, affiliate tracking links, geo rules, and rating data in one central dashboard, then distribute that data to all your WordPress affiliate sites simultaneously.</p>
-<p>This plugin is the WordPress-side receiver. It syncs your toplists and brands from the DataFlair API, stores them locally in custom database tables, and renders fully styled casino and sportsbook comparison cards on any page or post, with no live API calls on the front end.</p>
-
-<h4>How It Works</h4>
-<p>Your DataFlair account holds your brand catalogue and toplist configurations (e.g. "Top 10 Casinos in India", "Best Sportsbooks in Italy"). The plugin syncs this data on a configurable schedule and caches it locally. You place the DataFlair Gutenberg block or <code>[dataflair_toplist id="123"]</code> shortcode on any page, and the plugin renders the full toplist from cached data, fast and reliable.</p>
-
-<h4>Toplist Sync</h4>
-<ul>
-  <li>Syncs from DataFlair API v1 and v2</li>
-  <li>Full sync and incremental sync modes with conflict detection and preview before overwriting</li>
-  <li>Supports multiple geo-editions, rotation schedules, and locked item positions</li>
-  <li>Stores complete offer, tracker, and geo data as JSON for flexible querying</li>
-  <li>Paginated API fetch handles large brand catalogues automatically</li>
-</ul>
-
-<h4>Brand Management</h4>
-<ul>
-  <li>Syncs your full brand catalogue into a local database table</li>
-  <li>Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries</li>
-  <li>Admin screen at DataFlair, Brands shows all synced brands with their affiliate data</li>
-  <li><strong>Review URL Override:</strong> per-brand custom review URL that wins over all automatic URL generation across the entire site. Field locks after saving and unlocks on Edit.</li>
-</ul>
-
-<h4>Casino Card Rendering</h4>
-<ul>
-  <li>Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link (shown only when a published review or manual review URL exists)</li>
-  <li>Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages</li>
-  <li>Review pros defaults are read from published review CPT meta with safe fallback logic for duplicate slugs and brand-id matches</li>
-  <li>Review post resolution matches published reviews by slug or by _review_brand_id when the live review slug differs from the API slug (for example draft at base slug vs published …-india)</li>
-  <li>Review URL resolution priority: manual override, published review post permalink, auto-generated /reviews/{slug}/, affiliate CTA link</li>
-  <li>Normalizes casino key slug generation to match Gutenberg editor brandSlug behavior for brands with special characters</li>
-  <li>Supports multiple product types (casino, sportsbook, poker) with type-aware labels</li>
-</ul>
-
-<h4>Gutenberg Block and Shortcode</h4>
-<ul>
-  <li>Native WordPress block with inspector controls for toplist selection, item limit, and display options</li>
-  <li>Includes a testing-focused accordion table layout option to inspect synced data without wide horizontal-scroll tables</li>
-  <li>Server-side rendered, always reflects live synced data</li>
-  <li>Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads</li>
-  <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
-</ul>
-
-<h4>Automatic Updates</h4>
-<ul>
-  <li>Self-updating via GitHub releases, no WordPress.org required</li>
-  <li>WordPress shows native update notifications when a new release is published on GitHub</li>
-  <li>Powered by plugin-update-checker v5.6, release-based (not branch-based)</li>
-</ul>
-
-<h4>Admin Interface</h4>
-<ul>
-  <li>DataFlair, Toplists: view all synced toplists, trigger manual sync, preview before committing</li>
-  <li>DataFlair, Brands: full brand table with review URL override editing</li>
-  <li>DataFlair, Settings: configure API endpoint, API key, sync frequency, and feature flags</li>
-  <li>REST API endpoints for the block editor</li>
-</ul>
-        ',
-
-        'changelog' => '
-<h4>2.1.0</h4>
-<ul>
-  <li><strong>Phase 9 — strict deprecation default-on.</strong> The v2.0.x migration window closes. Any call to <code>DataFlair_Toplists::get_instance()</code> from outside <code>DATAFLAIR_PLUGIN_DIR</code> now emits <code>E_USER_DEPRECATED</code> once per unique caller file/line per request, pointing to <code>\\DataFlair\\Toplists\\Plugin::boot()</code>.</li>
-  <li>Internal god-class call sites inside <code>dataflair-toplists.php</code> (hook-dispatch re-entry, extracted delegators) are filtered out of the notice emission so downstream <code>error_log</code> sees signal, not noise.</li>
-  <li>Sites still on the legacy entry point can silence the notices temporarily with <code>add_filter(\'dataflair_strict_deprecation\', \'__return_false\');</code> — this remains a supported opt-out for the v2.1.x line. Planned removal of the class symbol entirely is tracked for <strong>v3.0.0</strong> once the remaining ~80 god-class methods (shortcode, schema upgrades, private DB helpers) have extracted in v2.1.x point releases.</li>
-  <li><strong>New test:</strong> <code>ShimForwardingTest</code> — pins the default-on behaviour, the filter-off opt-out, the per-caller de-duplication, and the internal-caller filtering so the signal-to-noise contract can\'t silently regress. Full suite: <strong>409 tests, all green</strong>.</li>
-  <li><strong>UPGRADING.md:</strong> refreshed with the v2.1.0 strict-mode guidance, the extraction trajectory for v2.1.x, and the v3.0.0 removal commitment.</li>
-</ul>
-
-<h4>2.0.0</h4>
-<ul>
-  <li><strong>Phase 8 — canonical bootstrap seam.</strong> <code>DataFlair\\Toplists\\Plugin::boot()</code> is now the canonical entry point for the plugin. The plugin file calls <code>Plugin::boot()</code> directly; the boot routine is idempotent and internally still calls <code>DataFlair_Toplists::get_instance()</code> to preserve every existing hook registration.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Container</code> — hand-written lazy service container (<code>register</code> / <code>set</code> / <code>get</code> / <code>has</code>, zero external dependencies). Services are resolved on first <code>get()</code> and memoised. Currently wires the <code>logger</code> service; downstream integrators can call <code>Plugin::boot()-&gt;container()-&gt;set(\'logger\', new MySentryLogger())</code> to override before any sync or render.</li>
-  <li>Added: <code>Plugin::resetForTests()</code> — test-only seam for PHPUnit tear-down; no production code should call it.</li>
-  <li><strong>Deprecation — not removal yet.</strong> <code>DataFlair_Toplists</code> is marked <code>@deprecated 2.0.0</code>; <code>DataFlair_Toplists::get_instance()</code> continues to work through the v2.0.x line. Strict-mode notices are opt-in: <code>add_filter(\'dataflair_strict_deprecation\', \'__return_true\')</code> to enable <code>E_USER_DEPRECATED</code> emission. Removal tracked for v2.1.0.</li>
-  <li><strong>Migration guide:</strong> see <code>UPGRADING.md</code>. Strangler-fig preserved — the god-class still owns hook registrations and every existing call site keeps working byte-for-byte.</li>
-  <li><strong>New tests:</strong> <code>ContainerTest</code> (lazy resolution, memoisation, factory re-registration invalidation), <code>PluginBootTest</code> (idempotent <code>boot()</code>, legacy singleton preserved, container accessor).</li>
-  <li><strong>Why a major bump:</strong> new canonical public API (<code>Plugin::boot()</code>), formal deprecation window opens, downstream integrators should migrate within the v2.0.x line.</li>
-</ul>
-
-<h4>1.15.1</h4>
-<ul>
-  <li><strong>Phase 7 — block registrars extracted.</strong> <code>register_block_type</code> for the <code>dataflair-toplists/toplist</code> block is now owned by <code>DataFlair\Toplists\Block\BlockRegistrar</code>. The render callback moved to <code>DataFlair\Toplists\Block\ToplistBlock</code> (closure-based DI for the shortcode renderer + option reader keeps it <code>$wpdb</code>-free). Editor CSS enqueue moved to <code>DataFlair\Toplists\Block\EditorAssets</code>. Block metadata path resolution (<code>build/block.json</code> → <code>src/block.json</code> fallback), block attributes, shortcode delegation, and <code>prosCons</code> pass-through all preserved byte-for-byte.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Block\\BlockBootstrap</code> — single wiring seam. The god-class calls <code>$this-&gt;block_bootstrap()-&gt;boot()-&gt;register()</code> from <code>init_hooks()</code>; <code>register()</code> installs both the <code>init</code> and <code>enqueue_block_editor_assets</code> hooks.</li>
-  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Block\\</code> → <code>src/Block/</code>.</li>
-  <li><strong>New tests:</strong> <code>BlockRegistrarTest</code> (4), <code>ToplistBlockTest</code> (6), <code>EditorAssetsTest</code> (1), backed by namespace-local WP function stubs in <code>BlockTestStubs.php</code>. Suite now at 392 tests / 915 assertions, all green.</li>
-  <li><strong>Internal:</strong> <code>register_block()</code>, <code>render_block($attributes)</code>, and <code>enqueue_editor_assets()</code> on the god-class are now thin delegators. No behavioural change for block editor users.</li>
-</ul>
-
-<h4>1.15.0</h4>
-<ul>
-  <li><strong>Phase 6 — REST endpoints extracted.</strong> The three <code>/wp-json/dataflair/v1/*</code> routes are now owned by <code>DataFlair\Toplists\Rest\RestRouter</code>. Per-route logic lives in dedicated controllers: <code>ToplistsController</code>, <code>CasinosController</code>, and <code>HealthController</code>. The <code>dataflair/v1</code> namespace, URL shapes, response shapes, and permission contracts are preserved byte-for-byte.</li>
-  <li><strong>H12 pagination contract now execution-path tested.</strong> The <code>/toplists/{id}/casinos</code> endpoint\'s <code>?page</code>, <code>?per_page</code> (default 20, max 100), <code>?full=1</code> escape hatch, and <code>X-WP-Total</code> / <code>X-WP-TotalPages</code> headers are now pinned by unit tests on the controller itself, not just a structural scan of the plugin file.</li>
-  <li><strong>ToplistsRepository grew two lean methods.</strong> <code>listAllForOptions()</code> and <code>countAll()</code> replace ad-hoc <code>$wpdb->get_results</code> / <code>$wpdb->get_var</code> calls in REST handlers — every REST read path now routes through the repository.</li>
-  <li><strong>New tests:</strong> <code>RestRouterTest</code>, <code>ToplistsControllerTest</code>, <code>CasinosControllerTest</code>, <code>HealthControllerTest</code>, plus two new <code>ToplistsRepository</code> tests for the new methods. Suite now at 381 tests / 887 assertions, all green. No behavioural changes for downstream consumers.</li>
-  <li><strong>Internal:</strong> <code>dataflair-toplists.php</code> <code>register_rest_routes()</code> / <code>get_toplists_rest()</code> / <code>get_toplist_casinos_rest()</code> are now thin delegators. PSR-4 autoload extended with <code>DataFlair\Toplists\Rest\\</code>.</li>
-</ul>
-
-<h4>1.14.0</h4>
-<ul>
-  <li><strong>Phase 5 — admin pages + AJAX router extracted.</strong> Every admin-side AJAX action is now registered through a single <code>AjaxRouter</code> that owns nonce + capability checks centrally, dispatches to one handler class per action, and wraps the structured response in <code>wp_send_json_*</code>. No public contract change: every <code>wp_ajax_dataflair_*</code> action name, nonce action, payload shape, and admin-JS integration preserved byte-for-byte.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Admin\\AjaxRouter</code>. Per-action routing table (<code>handler</code>, <code>nonce</code>, <code>capability</code>), <code>check_ajax_referer()</code> + <code>current_user_can()</code> gate before any handler runs, <code>try/catch</code> around handler invocation so a thrown <code>Throwable</code> becomes a logged <code>ajax.router.handler_threw</code> warning + <code>wp_send_json_error</code> instead of a 500. <code>getRegisteredActions()</code> exposes the registration set for tests + introspection.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Admin\\AjaxHandlerInterface</code> — single-method contract (<code>handle(array $request): array</code>) returning <code>[\'success\' =&gt; bool, \'data\' =&gt; array|null]</code>. Eleven concrete handlers implement it: <code>SaveSettingsHandler</code>, <code>FetchAllToplistsHandler</code>, <code>SyncToplistsBatchHandler</code>, <code>FetchAllBrandsHandler</code>, <code>SyncBrandsBatchHandler</code>, <code>GetAlternativeToplistsHandler</code>, <code>SaveAlternativeToplistHandler</code>, <code>DeleteAlternativeToplistHandler</code>, <code>GetAvailableGeosHandler</code>, <code>ApiPreviewHandler</code>, <code>SaveReviewUrlHandler</code>.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Admin\\Assets\\AdminAssetsRegistrar</code> — the <code>admin_enqueue_scripts</code> filter registration now lives in a dedicated registrar class. Select2 + <code>dataflair-admin</code> bundle enqueue + five <code>wp_localize_script</code> nonces (<code>save_settings</code>, <code>fetch_all_toplists</code>, <code>sync_toplists_batch</code>, <code>fetch_all_brands</code>, <code>sync_brands_batch</code>) preserved byte-for-byte.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Admin\\Pages\\PageInterface</code> + <code>SettingsPage</code> + <code>BrandsPage</code> thin delegator seams. The 700-line <code>settings_page()</code> and 1,200-line <code>brands_page()</code> HTML bodies stay on the god-class for one more release and render through an injected <code>\\Closure</code>; a follow-up (v1.14.1 or Phase 6) moves the HTML to <code>views/admin/</code>.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Admin\\AdminBootstrap</code> — single wiring seam that instantiates the router, registers all 11 handlers with their matching nonce actions, and exposes <code>registerAssets()</code>. The god-class calls <code>$this-&gt;admin_bootstrap()-&gt;boot()</code> + <code>-&gt;registerAssets()</code> from <code>init_hooks()</code>; a lazy getter caches the instance.</li>
-  <li>Added: repository extensions used by the handlers — <code>AlternativesRepository::deleteById(int $id): bool</code>, <code>ToplistsRepository::collectGeoNames(): array</code> (parses <code>data.data.geo.name</code> out of every toplist\'s JSON blob, dedups, sorts alphabetically), and <code>BrandsRepository::updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool</code>.</li>
-  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Admin\\</code> → <code>src/Admin/</code>. Existing entries retained.</li>
-  <li>Changed: the eleven <code>add_action(\'wp_ajax_dataflair_*\', array($this, \'ajax_*\'))</code> registrations in <code>init_hooks()</code> are now a single <code>$this-&gt;admin_bootstrap()-&gt;boot();</code> call. The legacy <code>ajax_*</code> methods on the god-class remain (kept until Phase 8 — shim birth) so any external caller that invoked them directly continues to work. The single <code>add_action(\'admin_enqueue_scripts\', …)</code> line becomes <code>$this-&gt;admin_bootstrap()-&gt;registerAssets();</code>.</li>
-  <li>Removed: <code>includes/render-casino-card.php</code> forwarding shim (deprecated in v1.13.0 with an explicit one-release removal notice). The template lives at <code>views/frontend/casino-card.php</code>; downstream themes must update any direct <code>include</code> path. Every integration test that referenced the old path now references the new one.</li>
-  <li>Added: 17 new tests — <code>AjaxRouterTest</code> (unknown-action guard, nonce failure, cap denial, successful wrap, exception translation, <code>$_GET</code>+<code>$_POST</code> merge, registration listing), <code>GetAvailableGeosHandlerTest</code> (forwards repo output, empty array), <code>SaveSettingsHandlerTest</code> (token trimmed not sanitised, password trimmed only, brands-api-version whitelisted to v1|v2, empty base URL deletes option, base URL pinned to <code>/api/vN</code>, colour fields sanitised, absent fields not written). Full suite: <strong>358 tests, 823 assertions, all green</strong>.</li>
-</ul>
-
-<h4>1.13.0</h4>
-<ul>
-  <li><strong>Phase 4 — rendering + ViewModels extracted.</strong> The casino-card and toplist-table renderers are now owned by dedicated classes. The casino-card template has moved from <code>includes/render-casino-card.php</code> to <code>views/frontend/casino-card.php</code>; the old path stays as a forwarding shim for one release (deleted in Phase 5). No public contract change: <code>render_casino_card()</code> and <code>render_toplist_table()</code> on the god-class retain their signatures and continue to return byte-identical HTML.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\CardRenderer</code> implementing <code>CardRendererInterface</code>. Wraps the casino-card template-include path through an immutable <code>CasinoCardVM</code> ViewModel (readonly <code>item</code>, <code>toplistId</code>, <code>customizations</code>, <code>prosConsData</code>, <code>brandMetaMap</code>). Preserves every Phase 0A / 0B / Phase 1 invariant — read-only (no <code>wp_remote_*</code>, no <code>wp_insert_post</code>, no <code>wp_handle_sideload</code>, no <code>update_option</code>, no <code>update_post_meta</code>), precomputed <code>local_logo_url</code> consumed verbatim, <code>cached_review_post_id</code> preferred over <code>WP_Query</code>, prefetched <code>brand_meta_map</code> wins over per-card repository calls (H7 contract), and the <code>dataflair_review_url</code> filter fires on the resolved URL. The god-class delegator drops the legacy pre-Phase-0A fallback (it was unreachable in practice and violated the read-only contract).</li>
-  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\TableRenderer</code> implementing <code>TableRendererInterface</code>. Wraps the block-editor debug <code>layout=table</code> accordion output through the immutable <code>ToplistTableVM</code> ViewModel (readonly <code>items</code>, <code>title</code>, <code>isStale</code>, <code>lastSynced</code>, <code>prosConsData</code>). HTML output is byte-identical to the god-class method.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Frontend\\Render\\ProsConsResolver</code> trait — shared helper that both renderers consume. Keeps <code>resolve_pros_cons_for_table_item()</code> public so the template\'s <code>$this-></code> call surface is unchanged when <code>$this</code> rebinds to the renderer instance instead of the god-class.</li>
-  <li>Added: lazy filter-based DI for the renderers — <code>dataflair_card_renderer</code>, <code>dataflair_table_renderer</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
-  <li>Added: <code>BrandsRepository::findByName(string $name)</code> — backs the legacy per-card name-based review-URL fallback cascade used by <code>CardRenderer</code> when the caller passes a <code>null</code> <code>brand_meta_map</code>.</li>
-  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Frontend\\</code> → <code>src/Frontend/</code>. Existing entries retained.</li>
-  <li>Changed: the god-class <code>render_casino_card()</code> shrinks from 638 lines to a 15-line delegator, and <code>render_toplist_table()</code> from 136 lines to an 11-line delegator. Plugin file drops from 6,411 to 5,663 lines. Template path references still work through the forwarding shim at <code>includes/render-casino-card.php</code>.</li>
-  <li>Added: 17 new tests — <code>CasinoCardVMTest</code> + <code>ToplistTableVMTest</code> (readonly enforcement, default values, full-field construction), <code>CardRendererTest</code> (Brain Monkey integration — map-path does not query the repo, null-map falls back to <code>findByApiBrandId</code>, <code>dataflair_review_url</code> filter fires with the right initial URL in both paths), <code>TableRendererTest</code> (accordion wrapper, stale notice gating, title omission, pros/cons propagation through VM, offer fields rendered). Full suite: <strong>341 tests, 793 assertions, all green</strong>.</li>
-</ul>
-
-<h4>1.12.1</h4>
-<ul>
-  <li><strong>Phase 3 — sync services extracted.</strong> Continues the strangler-fig arc started in Phase 2. The toplist and brand sync pipelines are now owned by dedicated service classes; the god-class AJAX handlers shrink to 5–20 line delegators. No public contract change: every AJAX endpoint, every response shape, every filter, every action hook, every option name preserved byte-for-byte.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Sync\\ToplistSyncService</code> implementing <code>ToplistSyncServiceInterface</code>. Owns the full bulk happy-path + progressive per-ID fallback (per_page=10 → per_page=5 × 2 → per_page=1 × 5), the 30 s hard deadline, the JSON decode + invalid-body error paths, the page-1 paginated <code>DELETE FROM wp_dataflair_toplists</code> reset, the <code>dataflair_toplists_batch_last_page</code> transient, and the legacy <code>dataflair_last_toplists_sync</code> / <code>dataflair_last_toplists_cron_run</code> option writes.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Sync\\BrandSyncService</code> implementing <code>BrandSyncServiceInterface</code>. Owns the 13-column brand upsert, the Active status filter, the page-1 paginated <code>DELETE FROM wp_dataflair_brands</code>, the 25 s <code>WallClockBudget</code> with 3 s headroom, the H4 <code>unset()</code> + <code>gc_collect_cycles()</code> memory hygiene, the <code>download_brand_logo()</code> invocation (with its 3 MB / 8 s cap + HEAD-before-GET), and the <code>dataflair_brand_logo_stored</code> action hook at store time.</li>
-  <li>Added: <code>DataFlair\\Toplists\\Sync\\AlternativesSyncService</code> implementing <code>AlternativesSyncServiceInterface</code>. Covers the alternative-toplists CRUD surface with input guards (<code>toplist_id &gt; 0</code>, save requires <code>toplist_id</code> + <code>geo</code>) and logger-side warnings on rejected input.</li>
-  <li>Added: immutable value objects <code>SyncRequest</code> (readonly <code>type</code>, <code>page</code>, <code>perPage</code>, <code>budgetSeconds</code>; factories <code>toplists()</code> / <code>brands()</code> honour the H13 budget defaults of 25.0 s, per_page 10 for toplists and 5 for brands) and <code>SyncResult</code> (readonly <code>success</code>, <code>page</code>, <code>lastPage</code>, <code>synced</code>, <code>errors</code>, <code>partial</code>, <code>isComplete</code>, <code>nextPage</code>; <code>toArray()</code> preserves every legacy AJAX key — <code>page</code>, <code>last_page</code>, <code>synced</code>, <code>errors</code>, <code>partial</code>, <code>next_page</code>, <code>is_complete</code>, <code>total_synced</code>, <code>total_brands</code>, <code>skipped</code>, <code>skip_reason</code>, <code>fallback</code> — so the admin JS continues to work verbatim).</li>
-  <li>Added: lazy filter-based DI for services — <code>dataflair_toplist_sync_service</code>, <code>dataflair_brand_sync_service</code>, <code>dataflair_alternatives_sync_service</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
-  <li>Added: PSR-4 autoload entry for <code>DataFlair\\Toplists\\Sync\\</code> → <code>src/Sync/</code>. Existing entries retained.</li>
-  <li>Changed: the god-class AJAX handlers <code>ajax_sync_toplists_batch</code>, <code>ajax_sync_brands_batch</code>, and the alternatives save/delete handlers are now thin delegators — nonce + capability + token precheck stay at the AJAX gate, everything below forwards into the service. Removed ~520 lines of now-dead private methods from the god-class (<code>sync_toplists_page_per_id</code>, <code>sync_brands_page</code>, plus helpers). God-class shrinks to 6,343 lines.</li>
-  <li>Added: 38 new tests — <code>ToplistSyncServiceTest</code> (bulk happy path, per-ID fallback on WP_Error, 400 fails fast vs 500 retries, invalid JSON, missing <code>data</code> key, page-1 DELETE reset, persist-failure counts as error), <code>BrandSyncServiceTest</code> (13-column upsert shape, Active-only filter, missing-id error path, page-1 DELETE, logo downloader invocation), <code>AlternativesSyncServiceTest</code> (input guards, delegation), <code>SyncRequestTest</code> + <code>SyncResultTest</code> (readonly enforcement, <code>toArray</code> legacy-key shape, partial keeps same page for retry, extra-keys overrides for fallback path). Full suite: <strong>324 tests, 753 assertions, all green</strong>.</li>
-</ul>
-
-<h4>1.12.0</h4>
-<ul>
-  <li><strong>Phase 2 — repositories + HTTP client extracted.</strong> First real strangler-fig phase of the refactor arc. The god-class keeps every public method signature intact; the implementations now delegate through typed, testable collaborators.</li>
-  <li>Added: new <code>src/</code> tree. <code>src/Http/{ApiClient, LogoDownloader}</code> implement <code>HttpClientInterface</code> + <code>LogoDownloaderInterface</code>. <code>src/Database/{ToplistsRepository, BrandsRepository, AlternativesRepository}</code> implement their matching interfaces — all Phase 0B/Phase 1 invariants preserved (15 MB response cap, 12 s timeout, 3 MB logo cap, 8 s logo timeout, HEAD-before-GET, 7-day reuse window, <code>dataflair_http_call</code> telemetry, <code>dataflair_brand_logo_stored</code> hook).</li>
-  <li>Changed: <code>api_get()</code> and <code>download_brand_logo()</code> in the god-class are now 1–5 line delegators forwarding to the new <code>ApiClient</code> / <code>LogoDownloader</code>. No public contract change. Both accept their existing arguments and return exactly the same shapes.</li>
-  <li>Added: lazy filter-based DI via <code>dataflair_api_client</code>, <code>dataflair_logo_downloader</code>, <code>dataflair_brands_repo</code>, <code>dataflair_toplists_repo</code>, <code>dataflair_alternatives_repo</code>. Any filter return that does not implement the documented interface is rejected and the default kept.</li>
-  <li>Changed: H7 (batched <code>api_brand_id IN (...)</code> brand lookup) and H8 (batched review-post JOIN) now route through <code>BrandsRepository::findManyByApiBrandIds()</code> and <code>BrandsRepository::findReviewPostsByApiBrandIds()</code>. Behavior byte-identical; only the callsite changes.</li>
-  <li>Added: PSR-4 autoload entries for <code>DataFlair\\Toplists\\Database\\</code> → <code>src/Database/</code> and <code>DataFlair\\Toplists\\Http\\</code> → <code>src/Http/</code>. Existing entries for <code>Models</code>, <code>Cli</code>, <code>Support</code>, <code>Logging</code> retained.</li>
-  <li>Added: 39 new tests — <code>ApiClientTest</code> + <code>LogoDownloaderTest</code> (Brain Monkey behavioural pins: budget short-circuit, 15 MB cap, retry+success, retry exhaustion, HEAD-before-GET, size cap, hook firing, nested logo-URL shapes). <code>BrandsRepositoryTest</code>, <code>ToplistsRepositoryTest</code>, <code>AlternativesRepositoryTest</code> (Mockery-stubbed <code>$wpdb</code> — lookup, upsert/insert/update paths, delete, dedup rules). The pre-existing <code>SyncApiSizeCapTest</code> and <code>LogoSizeCapTest</code> were retargeted from god-class method scans to <code>src/Http/*</code> source scans. Full suite: <strong>286 tests, 645 assertions, all green</strong>.</li>
-  <li>Tooling: <code>patchwork.json</code> adds <code>sleep</code> to <code>redefinable-internals</code> so Brain Monkey can stub retry backoff in unit tests.</li>
-</ul>
-
-<h4>1.11.2</h4>
-<ul>
-  <li><strong>Phase 1 — observability foundation.</strong> Lands before any extraction phase so every subsequent refactor (Phase 2 and later) ships with a contract for structured logging + telemetry in place. Consumers (Sentry on Sigma, stdout on local, file on shared hosts) are swappable without touching plugin code.</li>
-  <li>Added: pluggable <code>DataFlair\Toplists\Logging\LoggerInterface</code> (PSR-3-shaped, hand-written — no <code>psr/log</code> dependency). Methods: <code>emergency/alert/critical/error/warning/notice/info/debug</code>, each accepting <code>(string $message, array $context = [])</code>.</li>
-  <li>Added: three bundled implementations — <code>NullLogger</code> (no-op), <code>ErrorLogLogger</code> (writes to <code>error_log()</code> with a <code>[DataFlair][LEVEL]</code> prefix and JSON-encoded context), and a <code>SentryLogger</code> stub for downstream subclasses.</li>
-  <li>Added: <code>LoggerFactory::get()</code> resolves the active logger via <code>apply_filters(\'dataflair_logger\', …)</code>. Caches per-request. A filter return value that does not implement <code>LoggerInterface</code> is rejected and the default is kept. Minimum log level filterable via <code>dataflair_logger_level</code> (default: <code>notice</code>).</li>
-  <li>Added: six stable telemetry hooks emitted at named call sites — <code>dataflair_sync_batch_started</code>, <code>dataflair_sync_batch_finished</code>, <code>dataflair_sync_item_failed</code>, <code>dataflair_render_started</code>, <code>dataflair_render_finished</code>, <code>dataflair_http_call</code>. Structured payloads include <code>elapsed_seconds</code>, <code>memory_peak</code>, <code>page</code>, <code>per_page</code>, <code>budget_seconds</code>, etc. These are the telemetry points the later extraction phases will preserve byte-for-byte.</li>
-  <li>Added: WP-CLI command <code>wp dataflair logs [--since=15m] [--level=warning] [--limit=200]</code>. Tails the active logger — for <code>ErrorLogLogger</code>, stream-reads the last 512 KB of the <code>error_log</code> destination, filters by the <code>[DataFlair]</code> tag + level threshold + time window. Custom loggers register their own tail via the <code>dataflair_logs_tail</code> filter.</li>
-  <li>Changed: option rename migration (one-time, gated by <code>dataflair_options_renamed_v1_11_2</code>). <code>dataflair_last_toplists_cron_run</code> becomes <code>dataflair_last_toplists_sync</code>; brands equivalent. The legacy names continue to be written in parallel for one release so any downstream reader keeps working, and <code>format_last_sync_label()</code> falls back to the legacy name when the new one is empty.</li>
-  <li>Tests: +13 new tests covering the <code>LoggerInterface</code> contract shape, factory resolution + caching + filter fallbacks, <code>ErrorLogLogger</code> min-level + JSON context encoding, and the <code>wp dataflair logs</code> command (tag filter, level filter, since filter, custom-tail precedence, limit cap). Total suite: 247 tests, 566 assertions, all green.</li>
-</ul>
-
-<h4>1.11.1</h4>
-<ul>
-  <li><strong>Phase 0.5 — perf rig + CI gate.</strong> Internal tooling release. No production-facing behaviour change. Gives the plugin a deterministic, repeatable perf harness so every subsequent refactor phase ships with a mechanical proof that it does not re-introduce the Sigma OOM.</li>
-  <li>Added: WP-CLI command <code>wp dataflair perf:seed --tier={S|Sigma|L|XL|P}</code>. Generates deterministic synthetic toplists + brands at five tier sizes — from 10 toplists / 50 brands (tier S, smoke) up to 2,000 toplists / 5,000 brands (tier P, punishing). Each tier has a documented target JSON payload per toplist so the render path is exercised at realistic blob sizes.</li>
-  <li>Added: WP-CLI command <code>wp dataflair perf:run --tier=Sigma --scenario={render|rest|admin|sync}</code>. Captures peak RSS, wall time, and query count across a scenario and fails with a non-zero exit when the configured thresholds (default 512 MB peak, 5 s wall) are breached.</li>
-  <li>Added: drop-in MU-plugin <code>mu-plugins/dataflair-perf-probe.php</code> that emits a single-line peak-memory / wall-time / query-count stanza to stderr and error_log on every WP request. Dependency-free — works on any WP surface (frontend, REST, AJAX, WP-CLI).</li>
-  <li>Added: <code>composer perf</code> script that wires the seed + run commands into a single repeatable invocation. Gracefully no-ops with a hint when WP-CLI is not on PATH so dev laptops without WP-CLI do not fail.</li>
-  <li>Added: GitHub Actions workflow <code>.github/workflows/perf-gate.yml</code> that runs the Sigma-tier render scenario on every PR targeting <code>epic/refactor-april</code> or <code>main</code>, under a <code>memory_limit=1G</code> PHP process with the 512 MB / 5 s gate. A <code>skip-perf-gate</code> PR label bypasses the gate for docs-only or known-flaky situations — never leave it on a code PR.</li>
-  <li>Added: <code>docs/PERF.md</code> — thresholds, tiers, scenarios, local run guide, probe output format, fatal-reproduction steps, environment variables, and the label-bypass policy.</li>
-</ul>
-
-<h4>1.11.0</h4>
-<ul>
-  <li><strong>Phase 0B safety rails — defense-in-depth follow-up to 1.10.8.</strong> This release lands twelve latent-OOM, timeout-cap, and memory-hygiene fixes across the sync, render, admin, REST, and migration paths. No behaviour change on the happy path — everything here either caps an unbounded resource or yields under pressure.</li>
-  <li>Removed: the WP-cron auto-sync machinery (H1). <code>dataflair_sync_cron</code> and <code>dataflair_brands_sync_cron</code> are gone. Sync now runs only when an operator triggers it from the admin Tools page or via WP-CLI. A one-time migration (gated by the persistent option <code>dataflair_cron_cleared_v1_11</code>) clears any legacy schedules from prior installs.</li>
-  <li>Added: <code>WallClockBudget</code> primitive (H13). Sync handlers take a 25 s budget with 3 s headroom; when the budget is exhausted mid-page they return <code>partial: true</code> and the admin JS re-issues the same page with exponential backoff (1 s → 2 s → 4 s → capped at 8 s, max 10 consecutive partials).</li>
-  <li>Fixed: HTTP size caps. <code>api_get()</code> streams to a temp file with a 15 MB body cap and 12 s default timeout (H2). <code>download_brand_logo()</code> caps at 3 MB with an 8 s timeout and does a <code>HEAD</code> before <code>GET</code> to short-circuit oversized downloads (H3).</li>
-  <li>Fixed: <code>unset()</code> + <code>gc_collect_cycles()</code> after each item inside the remaining sync batches (H4). Prevents PHP from carrying forward 200–500 MB of decoded JSON rows through an admin-triggered bulk sync.</li>
-  <li>Fixed: casino-card render no longer fires N per-card <code>$wpdb->prepare</code> cascades (H7). The shortcode handler prefetches every card\'s brand row in at most three <code>IN(...)</code> queries and passes the map into <code>render_casino_card()</code>. The review-post lookup gets the same batched treatment (H8).</li>
-  <li>Fixed: <code>brands</code> admin page paginates server-side at 50/page with a lean column projection and pulls data blobs only for the current slice (H5). Filter dropdowns now use <code>SELECT DISTINCT</code> on CSV columns instead of parsing every blob. <code>settings</code> page projects to a lean set of columns plus a <code>JSON_UNQUOTE(JSON_EXTRACT(data, \'$.data.template.name\'))</code> extract — the full JSON blob is never pulled into PHP (H6).</li>
-  <li>Fixed: <code>check_database_upgrade()</code> short-circuits on a <code>dataflair_schema_ok_v{VERSION}</code> transient (12 h TTL, busts on version bump) (H9). Every front-end request no longer re-runs the migration logic.</li>
-  <li>Fixed: <code>clear_tracker_transients()</code> is now a chunked DELETE loop with <code>LIMIT 1000</code> (H10), optionally yielding to a <code>WallClockBudget</code>. Replaces the prior single unbounded DELETE that could blow <code>max_allowed_packet</code> and deadlock under row-based replication.</li>
-  <li>Fixed: plugin no longer issues wholesale <code>TRUNCATE</code> on <code>wp_dataflair_*</code> (H11). <code>TRUNCATE</code> is not safely replicable across all managed-MySQL providers. Replaced with <code>delete_all_paginated()</code>, a binlog-safe chunked DELETE helper with a hardcoded table whitelist.</li>
-  <li>Fixed: REST <code>/toplists/{id}/casinos</code> now paginates (H12). <code>?per_page</code> default 20, max 100; <code>?page</code> 1-based. Default per-item shape is lean: <code>{id, name, rating, offer_text, logo_url}</code>. <code>?full=1</code> preserves the legacy verbose shape for the block editor. <code>X-WP-Total</code> / <code>X-WP-TotalPages</code> headers included.</li>
-  <li>Added: new tests — <code>CronRemovedTest</code>, <code>SyncApiSizeCapTest</code>, <code>LogoSizeCapTest</code>, <code>WallClockBudgetTest</code>, <code>RenderBatchQueryCountTest</code>, <code>ClearTransientsChunkedTest</code>, <code>RestCasinosPaginationTest</code>. Full suite: 234 tests, 527 assertions.</li>
-</ul>
-
-<h4>1.10.8</h4>
-<ul>
-  <li>Fixed: critical — casino-card rendering is now fully read-only. The render chain no longer sideloads brand logos at page-view time and no longer auto-creates review CPT rows. These two render-time writes were the root cause of memory-exhaustion fatals on sites with a 1 GB PHP memory limit.</li>
-  <li>Added: pre-computed <code>local_logo_url</code> and <code>cached_review_post_id</code> columns on <code>wp_dataflair_brands</code>. The render template reads them directly; sync populates <code>local_logo_url</code> and the new CLI backfills <code>cached_review_post_id</code>.</li>
-  <li>Added: WP-CLI command <code>wp dataflair reconcile-reviews [--batch=500] [--dry-run]</code> to link existing brand rows to their published review posts. Run once after upgrade.</li>
-  <li>Added: <code>do_action(\'dataflair_brand_logo_stored\', $brand_id, $local_url, $remote_url)</code> hook fires when a logo is stored at sync time, so themes can react without coupling to private render internals.</li>
-  <li>Added: regression tests <code>RenderIsReadOnlyTest</code> and <code>CasinoCardUsesPrecomputedLogoTest</code> permanently enforce the read-only render invariant.</li>
-  <li>Changed: minimum PHP bumped to 8.1 and minimum WordPress to 6.3 to match the supported runtime on target sites.</li>
-</ul>
-
-<h4>1.10.7</h4>
-<ul>
-  <li>Fixed: "Fetch All Toplists from API" no longer returns 500 on heavy pages. Bulk list fetch dropped from per_page=20 to per_page=10 to stay inside the DataFlair API\'s ~15s serializer budget (verified across all 18 pages / 175 toplists, heaviest page ~13.6s).</li>
-  <li>Improved: per-ID fallback splitter rewritten for speed — skips the redundant per_page=10 retry level, uses no-retry 15s-timeout slices, and a 30s hard deadline on the whole fallback. Previous version could stall ~3 minutes on a failing page; worst case is now ~25-30s.</li>
-  <li>Added: "skipped" response shape so one unrecoverable page no longer halts the whole sync. The admin UI advances past skipped pages and reports them in the final summary.</li>
-  <li>Added: retry with exponential backoff (1s, 2s) on transient WP_Error and 5xx responses in the API helper, with configurable timeout and max-retries arguments.</li>
-</ul>
-
-<h4>1.10.6</h4>
-<ul>
-  <li>Improved: Redesigned the "Synced Toplists" admin table for a cleaner look with a wider Name column, removing redundant Slug, Locked, Sync Health, and Shortcode columns.</li>
-  <li>Improved: Optimized the "Fetch All Toplists from API" process by batching requests with full item inclusion, dramatically reducing sync time and preventing API timeouts.</li>
-</ul>
-
-<h4>1.10.5</h4>
-<ul>
-  <li>Fixed: pinned Composer platform requirement to PHP 8.3.16 so that legacy deployment scripts running composer install without --no-dev do not fail resolving PHP 8.4-only development dependencies like doctrine/instantiator 2.1.0</li>
-</ul>
-
-<h4>1.10.4</h4>
-<ul>
-  <li>Added: Composer convenience scripts install-prod and install-dev in composer.json for explicit production vs development dependency installs</li>
-  <li>Improved: composer.json now defaults to dist installs with optimized autoloading to reduce deployment variance</li>
-  <li>Fixed: production guidance now enforces --no-dev installs to prevent PHPUnit/dev dependencies from being installed on PHP 8.3 servers</li>
-</ul>
-
-<h4>1.10.3</h4>
-<ul>
-  <li>Fixed: release packaging now uses production-only Composer dependencies (no --dev) so PHPUnit and other dev packages are not shipped to production servers</li>
-  <li>Improved: vendor/composer metadata regenerated in no-dev mode for PHP 8.3 compatibility on production installs</li>
-</ul>
-
-<h4>1.10.2</h4>
-<ul>
-  <li>Added: Gutenberg layout option "Accordion Tables (Testing)" that renders each brand as an accordion with two compact data tables to avoid horizontal scrolling during QA</li>
-  <li>Fixed: card layout now resolves page-level block pros/cons overrides with stable and legacy key formats, matching table layout behavior</li>
-  <li>Improved: card details now surface the resolved Pros and Cons list so page-level overrides are visible during testing</li>
-</ul>
-
-<h4>1.10.1</h4>
-<ul>
-  <li>Fixed: Gutenberg pros and cons overrides now use stable brand and item identifiers from synced toplist data instead of position-only keys, preventing custom copy from drifting after reorder or refresh</li>
-  <li>Improved: synced casino items now carry itemId and brandId values in API v2 parsing to support reliable editor override matching</li>
-  <li>Added: PHPUnit coverage for both data.items and data.listItems payloads to verify itemId and brandId mapping</li>
-</ul>
-
-<h4>1.10.0</h4>
-<ul>
-  <li>Fixed: Read Review link on casino cards only appears when a published review exists or a manual review URL override is set (hidden for draft-only reviews)</li>
-  <li>Fixed: review CPT resolution finds published posts by _review_brand_id when the WordPress slug differs from the API brand slug, and no longer lets a plugin draft at the base slug hide the live published review (for example …-india)</li>
-  <li>Improved: new auto-created review drafts store _review_brand_id from api_brand_id when id is absent</li>
-  <li>Added: E2E test script tests/e2e/test-read-review-link.php (draft vs published, slug mismatch, draft+published shadow case)</li>
-</ul>
-
-<h4>1.9.9</h4>
-<ul>
-  <li>Added: Brand::whereJson() query helper for JSON field filtering in the Brand model</li>
-  <li>Added: brands table migration for external_id_virtual generated column with idx_external_id_virtual index for fast externalId lookups</li>
-  <li>Improved: whereJson SQL builder now supports JSON_EXTRACT path/value comparisons for data.externalId-style queries</li>
-</ul>
-
-<h4>1.9.8</h4>
-<ul>
-  <li>Fixed: ProductTypeLabels and DataIntegrityChecker now use the DataFlair\\Toplists\\Models namespace to comply with Composer PSR-4 autoloading</li>
-  <li>Improved: backward compatibility aliases keep legacy class references working while enabling PSR-4 class resolution</li>
-</ul>
-
-<h4>1.9.7</h4>
-<ul>
-  <li>Fixed: restored Composer PSR-4 autoload mapping for DataFlair model classes in composer.json</li>
-  <li>Improved: regenerated Composer autoload metadata to include DataFlair\\Toplists\\Models namespace resolution</li>
-</ul>
-
-<h4>1.9.6</h4>
-<ul>
-  <li>Fixed: Gutenberg Pros and Cons inspector copy now references review CPT defaults instead of API-default replacement wording</li>
-  <li>Added: regression test for review pros fallback that ignores draft slug matches and prefers published _review_brand_id matches</li>
-  <li>Added: integration coverage to verify ExternalId is preserved in stored toplist and brand JSON payloads</li>
-</ul>
-
-<h4>1.9.4</h4>
-<ul>
-  <li>Fixed: casino override key generation now sanitizes brand names to match Gutenberg editor brandSlug behavior</li>
-  <li>Improved: pros and cons overrides now resolve reliably for brands whose API slugs contain special characters (for example, dots)</li>
-</ul>
-
-<h4>1.9.3</h4>
-<ul>
-  <li>Added: E2E test suite — brand sync (9 assertions), toplist sync (16 assertions), cron jobs (14 assertions)</li>
-  <li>Added: run.sh test orchestrator with auto-detection for Docker/wp-env, production WP-CLI, and CI environments</li>
-  <li>Added: BrandModelTest.php — 100% coverage for Brand model</li>
-  <li>Added: ProductTypeLabelsTest.php — 100% coverage for ProductTypeLabels</li>
-  <li>Fixed: constant definitions wrapped in if(!defined()) guards to prevent redefinition on test bootstrap</li>
-  <li>Fixed: deprecated ReflectionProperty::setAccessible(true) calls removed from ToplistModelTest (PHP 8.5)</li>
-  <li>Improved: @codeCoverageIgnore added to admin HTML methods and casino card renderer</li>
-  <li>Improved: vendor/ cleaned to production-only dependencies (dev packages removed)</li>
-</ul>
-
-<h4>1.9.1</h4>
-<ul>
-  <li>Added: View Details popup on plugins.php now shows full description and changelog</li>
-  <li>Added: CLAUDE.md with release checklist and permanent rsync rule</li>
-  <li>Updated: README.md fully rewritten with complete feature documentation</li>
-</ul>
-
-<h4>1.9.0</h4>
-<ul>
-  <li>Added: automatic plugin updates via GitHub releases (plugin-update-checker v5.6)</li>
-  <li>Added: promo code display with copy-to-clipboard button on toplist casino cards</li>
-  <li>Added: per-brand review URL override in DataFlair, Brands admin</li>
-  <li>Fixed: global $wpdb missing in card renderer, review URL override was silently failing</li>
-  <li>Fixed: draft/preview post URLs replaced with clean /reviews/{slug}/ fallback</li>
-  <li>Fixed: undefined $product_type and $labels PHP warnings in card template</li>
-</ul>
-
-<h4>1.8.1</h4>
-<ul>
-  <li>Added: review URL input field in Brands table, locks after save, unlocks on Edit</li>
-</ul>
-
-<h4>1.8.0</h4>
-<ul>
-  <li>Added: review URL override column in brands table</li>
-  <li>Added: Composer autoload infrastructure</li>
-</ul>
-
-<h4>1.7.0</h4>
-<ul>
-  <li>Added: DataFlair API v2 brands sync</li>
-  <li>Added: compare preview before overwriting synced data</li>
-  <li>Fixed: block REST API endpoint</li>
-</ul>
-
-<h4>1.6.0</h4>
-<ul>
-  <li>Added: editions support for geo-market toplists</li>
-  <li>Fixed: critical sync failure on missing table</li>
-</ul>
-
-<h4>1.5.0</h4>
-<ul>
-  <li>Added: snapshot support, data integrity checker, API preview tab</li>
-</ul>
-
-<h4>1.4.0</h4>
-<ul>
-  <li>Added: /api/v1/brands endpoint support with 8 new brand fields</li>
-  <li>Fixed: self-healing cron</li>
-</ul>
-        ',
-    ];
-
-    return $res;
+if (function_exists('register_deactivation_hook')) {
+    register_deactivation_hook(__FILE__, ['\\DataFlair\\Toplists\\Lifecycle\\Deactivator', 'deactivate']);
 }
-// @codeCoverageIgnoreEnd
 
 /**
  * Main DataFlair Plugin Class.
@@ -902,13 +526,16 @@ class DataFlair_Toplists {
     }
 
     private function init_hooks() {
-        // Activation/Deactivation
-        register_activation_hook(__FILE__, array($this, 'activate'));
-        register_deactivation_hook(__FILE__, array($this, 'deactivate'));
-        
-        // Check and upgrade database schema
-        add_action('plugins_loaded', array($this, 'check_database_upgrade'));
-        
+        // Phase 9.5: activation/deactivation are now registered at
+        // plugin-file load time via the WPPB-style hooks at the top of
+        // dataflair-toplists.php, routing directly to
+        // \DataFlair\Toplists\Lifecycle\{Activator, Deactivator}.
+        // Schema migration on plugins_loaded is owned by
+        // \DataFlair\Toplists\Database\SchemaMigrator (wired from
+        // Plugin::boot()). The god-class keeps its activate() /
+        // deactivate() / check_database_upgrade() methods as thin
+        // delegators so direct callers still work.
+
         // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
@@ -974,435 +601,63 @@ class DataFlair_Toplists {
     }
 
     /**
-     * Plugin activation
+     * Plugin activation.
+     *
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Lifecycle\Activator::activate()}. This
+     * delegator exists only for direct callers that may still invoke
+     * the god-class instance method.
+     *
+     * @deprecated 2.1.1 Call `\DataFlair\Toplists\Lifecycle\Activator::activate()`.
      */
     public function activate() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        $alternative_toplists_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        $charset_collate = $wpdb->get_charset_collate();
-        
-        // Check if JSON type is supported
-        $supports_json = $this->supports_json_type();
-        $data_type = $supports_json ? 'JSON' : 'longtext';
-        
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            api_toplist_id bigint(20) NOT NULL,
-            name varchar(255) NOT NULL,
-            slug varchar(255) DEFAULT NULL,
-            current_period varchar(100) DEFAULT NULL,
-            published_at datetime DEFAULT NULL,
-            item_count int(11) NOT NULL DEFAULT 0,
-            locked_count int(11) NOT NULL DEFAULT 0,
-            sync_warnings text DEFAULT NULL,
-            data $data_type NOT NULL,
-            version varchar(50) DEFAULT NULL,
-            last_synced datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY api_toplist_id (api_toplist_id)
-        ) $charset_collate;";
-        
-        $brands_sql = "CREATE TABLE IF NOT EXISTS $brands_table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            api_brand_id bigint(20) NOT NULL,
-            name varchar(255) NOT NULL,
-            slug varchar(255) NOT NULL,
-            status varchar(50) NOT NULL,
-            product_types text,
-            licenses text,
-            top_geos text,
-            offers_count int(11) DEFAULT 0,
-            trackers_count int(11) DEFAULT 0,
-            classification_types VARCHAR(500) NOT NULL DEFAULT '',
-            review_url_override VARCHAR(500) DEFAULT NULL,
-            data $data_type NOT NULL,
-            last_synced datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY api_brand_id (api_brand_id)
-        ) $charset_collate;";
-        
-        $alternative_toplists_sql = "CREATE TABLE IF NOT EXISTS $alternative_toplists_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            toplist_id bigint(20) NOT NULL,
-            geo varchar(255) NOT NULL,
-            alternative_toplist_id bigint(20) NOT NULL,
-            created_at datetime NOT NULL,
-            updated_at datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY toplist_geo (toplist_id, geo),
-            KEY toplist_id (toplist_id),
-            KEY alternative_toplist_id (alternative_toplist_id)
-        ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
-        dbDelta($brands_sql);
-        dbDelta($alternative_toplists_sql);
-        $this->ensure_brands_external_id_index();
-        
-        // NOTE: cron scheduling removed in v1.11.0 (Phase 0B H1). Legacy
-        // cron events are cleared once at upgrade time by the
-        // `dataflair_cron_cleared_v1_11` gate in upgrade_database().
+        \DataFlair\Toplists\Lifecycle\Activator::activate();
     }
-    
+
     /**
-     * Plugin deactivation
+     * Plugin deactivation.
+     *
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Lifecycle\Deactivator::deactivate()}.
+     *
+     * @deprecated 2.1.1 Call `\DataFlair\Toplists\Lifecycle\Deactivator::deactivate()`.
      */
     public function deactivate() {
-        wp_clear_scheduled_hook('dataflair_sync_cron');
-        wp_clear_scheduled_hook('dataflair_brands_sync_cron');
+        \DataFlair\Toplists\Lifecycle\Deactivator::deactivate();
     }
-    
+
     /**
-     * Check and upgrade database schema if needed
+     * Check and upgrade database schema if needed.
+     *
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Database\SchemaMigrator::checkDatabaseUpgrade()}.
+     * The hook registration that used to call this method moved to
+     * `SchemaMigrator::register()` (wired from `Plugin::boot()`). This
+     * delegator exists only for explicit callers.
+     *
+     * @deprecated 2.1.1 Use `\DataFlair\Toplists\Database\SchemaMigrator::checkDatabaseUpgrade()`.
      */
     public function check_database_upgrade() {
-        $db_version = get_option('dataflair_db_version', '1.0');
-        $current_version = '1.11'; // v1.11: Phase 0B H1 clears legacy cron + misc safety rails
-
-        // Phase 0B H9: short-circuit the whole upgrade/self-heal path on warm
-        // hits via a 12h transient keyed by the current schema version. The
-        // transient is busted automatically whenever $current_version changes.
-        // Saves ~4 SHOW TABLES + column-introspection queries on every request.
-        $schema_ok_key = 'dataflair_schema_ok_v' . $current_version;
-        if (get_transient($schema_ok_key) === '1') {
-            return;
-        }
-
-        if (version_compare($db_version, $current_version, '<')) {
-            $this->upgrade_database();
-            update_option('dataflair_db_version', $current_version);
-        }
-
-        // H1: clear legacy cron events exactly once. Gated by a persistent
-        // option so the clear survives restart loops and can't re-run. Safe
-        // to call on every request — after the one-time clear the option is
-        // set and this short-circuits.
-        if (get_option('dataflair_cron_cleared_v1_11') !== '1') {
-            wp_clear_scheduled_hook('dataflair_sync_cron');
-            wp_clear_scheduled_hook('dataflair_brands_sync_cron');
-            update_option('dataflair_cron_cleared_v1_11', '1');
-        }
-
-        // Phase 1 — option rename migration. The `dataflair_last_*_cron_run`
-        // names were kept as option keys after the cron machinery was deleted
-        // in v1.11.0; rename them to the more accurate `dataflair_last_*_sync`
-        // now that we have an observability release to carry the change.
-        // One-time, gated so reverting + re-upgrading is idempotent.
-        if (get_option('dataflair_options_renamed_v1_11_2') !== '1') {
-            foreach (array(
-                'dataflair_last_toplists_cron_run' => 'dataflair_last_toplists_sync',
-                'dataflair_last_brands_cron_run'   => 'dataflair_last_brands_sync',
-            ) as $legacy => $new) {
-                $legacy_value = get_option($legacy);
-                if ($legacy_value !== false && get_option($new) === false) {
-                    update_option($new, $legacy_value);
-                }
-                // Intentionally keep the legacy row until one release later;
-                // read paths fall back gracefully. Phase 2 or later can delete.
-            }
-            update_option('dataflair_options_renamed_v1_11_2', '1');
-        }
-
-        // Self-heal: ensure all tables exist even if activation hook never fired
-        // (happens when plugin is deployed by copying files rather than via WP Admin)
-        $this->ensure_tables_exist();
-
-        // Migrate to JSON type if supported
-        $this->migrate_to_json_type();
-
-        // Phase 0B H9: mark schema healthy for 12h. Next request short-circuits.
-        set_transient($schema_ok_key, '1', 12 * HOUR_IN_SECONDS);
+        (new \DataFlair\Toplists\Database\SchemaMigrator())->checkDatabaseUpgrade();
     }
 
     /**
-     * Ensure all plugin tables exist. Safe to call on every request — only
-     * runs DDL if a table is actually missing. Covers manual file deploys
-     * where register_activation_hook never fires.
-     */
-    private function ensure_tables_exist() {
-        global $wpdb;
-        $charset_collate = $wpdb->get_charset_collate();
-        $supports_json   = $this->supports_json_type();
-        $data_type       = $supports_json ? 'JSON' : 'longtext';
-
-        $table_name      = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $brands_table    = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-        $missing = false;
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) !== $table_name ) {
-            $missing = true;
-        }
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$brands_table'" ) !== $brands_table ) {
-            $missing = true;
-        }
-
-        if ( ! $missing ) {
-            // Tables exist, but ensure generated externalId index is present.
-            $this->ensure_brands_external_id_index();
-            return;
-        }
-
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            api_toplist_id bigint(20) NOT NULL,
-            name varchar(255) NOT NULL,
-            slug varchar(255) DEFAULT NULL,
-            current_period varchar(100) DEFAULT NULL,
-            published_at datetime DEFAULT NULL,
-            item_count int(11) NOT NULL DEFAULT 0,
-            locked_count int(11) NOT NULL DEFAULT 0,
-            sync_warnings text DEFAULT NULL,
-            data $data_type NOT NULL,
-            version varchar(50) DEFAULT NULL,
-            last_synced datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY api_toplist_id (api_toplist_id)
-        ) $charset_collate;";
-
-        $brands_sql = "CREATE TABLE IF NOT EXISTS $brands_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            api_brand_id bigint(20) NOT NULL,
-            name varchar(255) NOT NULL,
-            slug varchar(255) NOT NULL,
-            status varchar(50) NOT NULL,
-            product_types text,
-            licenses text,
-            top_geos text,
-            offers_count int(11) DEFAULT 0,
-            trackers_count int(11) DEFAULT 0,
-            classification_types VARCHAR(500) NOT NULL DEFAULT '',
-            review_url_override VARCHAR(500) DEFAULT NULL,
-            local_logo_url VARCHAR(500) DEFAULT NULL,
-            cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
-            data $data_type NOT NULL,
-            last_synced datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY api_brand_id (api_brand_id)
-        ) $charset_collate;";
-
-        dbDelta( $sql );
-        dbDelta( $brands_sql );
-        $this->ensure_brands_external_id_index();
-
-        error_log( 'DataFlair: ensure_tables_exist() ran dbDelta — tables were missing.' );
-    }
-    
-    /**
-     * Upgrade database schema
-     */
-    private function upgrade_database() {
-        global $wpdb;
-        $table_name             = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $brands_table_name      = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-        $charset_collate        = $wpdb->get_charset_collate();
-
-        // ── Toplists table: add snapshot + integrity columns (v1.5) ──
-        $tl_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
-        if ($tl_table_exists) {
-            $tl_columns = $wpdb->get_col("DESCRIBE $table_name");
-
-            if (!in_array('slug', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN slug VARCHAR(255) DEFAULT NULL AFTER name");
-            }
-            if (!in_array('current_period', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN current_period VARCHAR(100) DEFAULT NULL AFTER slug");
-            } else {
-                // v1.6: widen current_period from VARCHAR(7) to VARCHAR(100) for edition labels
-                $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN current_period VARCHAR(100) DEFAULT NULL");
-            }
-            if (!in_array('published_at', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN published_at DATETIME DEFAULT NULL AFTER current_period");
-            }
-            if (!in_array('item_count', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN item_count INT DEFAULT 0 AFTER published_at");
-            }
-            if (!in_array('locked_count', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN locked_count INT DEFAULT 0 AFTER item_count");
-            }
-            if (!in_array('sync_warnings', $tl_columns)) {
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN sync_warnings TEXT DEFAULT NULL AFTER locked_count");
-            }
-
-            // Add slug index if it doesn't already exist
-            $idx = $wpdb->get_results("SHOW INDEX FROM $table_name WHERE Key_name = 'idx_slug'");
-            if (empty($idx)) {
-                $wpdb->query("CREATE INDEX idx_slug ON $table_name (slug)");
-            }
-
-            error_log('DataFlair: Toplists table upgraded to v1.5 (snapshot + integrity columns)');
-        }
-
-        // ── Brands table: add columns if missing (v1.2 compat) ──
-        $brands_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
-
-        if ($brands_table_exists) {
-            $columns = $wpdb->get_col("DESCRIBE $brands_table_name");
-
-            if (!in_array('product_types', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN product_types text AFTER status");
-            }
-            if (!in_array('licenses', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN licenses text AFTER product_types");
-            }
-            if (!in_array('top_geos', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN top_geos text AFTER licenses");
-            }
-            if (!in_array('offers_count', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN offers_count int(11) DEFAULT 0 AFTER top_geos");
-            }
-            if (!in_array('trackers_count', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN trackers_count int(11) DEFAULT 0 AFTER offers_count");
-            }
-
-            if (!in_array('classification_types', $columns)) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN classification_types VARCHAR(500) NOT NULL DEFAULT '' AFTER trackers_count");
-            }
-
-            error_log('DataFlair: Database schema upgraded to version 1.5');
-        } else {
-            // Table doesn't exist, create it with full schema
-            $brands_sql = "CREATE TABLE IF NOT EXISTS $brands_table_name (
-                id bigint(20) NOT NULL AUTO_INCREMENT,
-                api_brand_id bigint(20) NOT NULL,
-                name varchar(255) NOT NULL,
-                slug varchar(255) NOT NULL,
-                status varchar(50) NOT NULL,
-                product_types text,
-                licenses text,
-                top_geos text,
-                offers_count int(11) DEFAULT 0,
-                trackers_count int(11) DEFAULT 0,
-                classification_types VARCHAR(500) NOT NULL DEFAULT '',
-                review_url_override VARCHAR(500) DEFAULT NULL,
-                local_logo_url VARCHAR(500) DEFAULT NULL,
-                cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
-                data longtext NOT NULL,
-                last_synced datetime NOT NULL,
-                PRIMARY KEY (id),
-                UNIQUE KEY api_brand_id (api_brand_id)
-            ) $charset_collate;";
-
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-            dbDelta($brands_sql);
-
-            error_log('DataFlair: Brands table created with full schema');
-        }
-
-        // ── Brands table: v1.8 — add review_url_override column ──
-        $brands_table_exists_v18 = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
-        if ($brands_table_exists_v18) {
-            $col_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'review_url_override'");
-            if (!$col_exists) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN review_url_override VARCHAR(500) DEFAULT NULL");
-                error_log('DataFlair: Brands table upgraded to v1.8 (review_url_override column added)');
-            }
-        }
-
-        // ── Brands table: v1.10 — add local_logo_url + cached_review_post_id columns (Phase 0A H0) ──
-        // Pre-computed values populated at sync time so render_casino_card() never has to
-        // sideload a logo or look up a review CPT on a cold page view (Sigma OOM root cause).
-        $brands_table_exists_v110 = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
-        if ($brands_table_exists_v110) {
-            $local_logo_url_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'local_logo_url'");
-            if (!$local_logo_url_exists) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN local_logo_url VARCHAR(500) DEFAULT NULL");
-                error_log('DataFlair: Brands table upgraded to v1.10 (local_logo_url column added)');
-            }
-
-            $cached_review_post_id_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'cached_review_post_id'");
-            if (!$cached_review_post_id_exists) {
-                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL");
-                error_log('DataFlair: Brands table upgraded to v1.10 (cached_review_post_id column added)');
-            }
-        }
-
-        // Ensure externalId generated column/index exists on brands table.
-        $this->ensure_brands_external_id_index();
-
-        // Check if alternative toplists table exists, create if not
-        $this->ensure_alternative_toplists_table();
-    }
-
-    /**
-     * Ensure brands table has a generated externalId column + index for JSON filtering.
+     * Ensure the alternative-toplists table exists.
      *
-     * Creates:
-     *  - external_id_virtual VARCHAR(50) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.externalId'))) STORED
-     *  - idx_external_id_virtual index
-     */
-    private function ensure_brands_external_id_index() {
-        global $wpdb;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name;
-        if (!$table_exists) {
-            return;
-        }
-
-        // 1) Add generated column if missing.
-        $col_exists = $wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'external_id_virtual'");
-        if (!$col_exists) {
-            $wpdb->query(
-                "ALTER TABLE $brands_table_name
-                 ADD COLUMN external_id_virtual VARCHAR(50)
-                 GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.externalId'))) STORED"
-            );
-            if ($wpdb->last_error) {
-                error_log('DataFlair: Failed adding external_id_virtual column: ' . $wpdb->last_error);
-            }
-        }
-
-        // 2) Add index if missing.
-        $idx_exists = $wpdb->get_var("SHOW INDEX FROM $brands_table_name WHERE Key_name = 'idx_external_id_virtual'");
-        if (!$idx_exists) {
-            $wpdb->query("CREATE INDEX idx_external_id_virtual ON $brands_table_name (external_id_virtual)");
-            if ($wpdb->last_error) {
-                error_log('DataFlair: Failed creating idx_external_id_virtual index: ' . $wpdb->last_error);
-            }
-        }
-    }
-    
-    /**
-     * Ensure alternative toplists table exists
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Database\SchemaMigrator::ensureAlternativeToplistsTable()}.
+     * Still called from internal AJAX handlers for alt-toplist CRUD,
+     * hence preserved as a delegator (not deleted).
      */
     private function ensure_alternative_toplists_table() {
-        global $wpdb;
-        $alternative_toplists_table = $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME;
-        $charset_collate = $wpdb->get_charset_collate();
-        
-        $alt_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$alternative_toplists_table'") === $alternative_toplists_table;
-        
-        if (!$alt_table_exists) {
-            $alternative_toplists_sql = "CREATE TABLE IF NOT EXISTS $alternative_toplists_table (
-                id bigint(20) NOT NULL AUTO_INCREMENT,
-                toplist_id bigint(20) NOT NULL,
-                geo varchar(255) NOT NULL,
-                alternative_toplist_id bigint(20) NOT NULL,
-                created_at datetime NOT NULL,
-                updated_at datetime NOT NULL,
-                PRIMARY KEY (id),
-                UNIQUE KEY toplist_geo (toplist_id, geo),
-                KEY toplist_id (toplist_id),
-                KEY alternative_toplist_id (alternative_toplist_id)
-            ) $charset_collate;";
-            
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-            dbDelta($alternative_toplists_sql);
-            
-            error_log('DataFlair: Alternative toplists table created');
-        }
+        (new \DataFlair\Toplists\Database\SchemaMigrator())->ensureAlternativeToplistsTable();
     }
-    
+
     // NOTE: add_custom_cron_schedules() and ensure_cron_scheduled() were
     // removed in v1.11.0 (Phase 0B H1). Auto-sync cron is gone — sync now
     // runs only when an operator triggers it from the admin Tools page or
     // via WP-CLI. Legacy cron events are cleared once at upgrade time by
-    // the `dataflair_cron_cleared_v1_11` gate in upgrade_database().
+    // the `dataflair_cron_cleared_v1_11` gate in SchemaMigrator.
 
     /**
      * Add admin menu
@@ -5495,153 +4750,38 @@ class DataFlair_Toplists {
             \DataFlair\Toplists\Logging\LoggerFactory::get()
         ))->listForToplist($request);
     }
-    
+
     /**
-     * Check if MySQL/MariaDB supports JSON data type
-     * 
-     * @return bool
+     * Check if MySQL/MariaDB supports JSON data type.
+     *
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Database\SchemaMigrator::supportsJsonType()}.
+     *
+     * @deprecated 2.1.1 Use `\DataFlair\Toplists\Database\SchemaMigrator::supportsJsonType()`.
      */
     private function supports_json_type() {
-        global $wpdb;
-        
-        // Get MySQL version
-        $version = $wpdb->get_var("SELECT VERSION()");
-        
-        if (empty($version)) {
-            return false;
-        }
-        
-        // Check if it's MariaDB
-        if (stripos($version, 'mariadb') !== false) {
-            // MariaDB 10.2.7+ supports JSON
-            preg_match('/(\d+)\.(\d+)\.(\d+)/', $version, $matches);
-            if (!empty($matches)) {
-                $major = (int)$matches[1];
-                $minor = (int)$matches[2];
-                $patch = (int)$matches[3];
-                return ($major > 10) || ($major == 10 && $minor > 2) || ($major == 10 && $minor == 2 && $patch >= 7);
-            }
-        } else {
-            // MySQL 5.7.8+ supports JSON
-            preg_match('/(\d+)\.(\d+)\.(\d+)/', $version, $matches);
-            if (!empty($matches)) {
-                $major = (int)$matches[1];
-                $minor = (int)$matches[2];
-                $patch = (int)$matches[3];
-                return ($major > 5) || ($major == 5 && $minor > 7) || ($major == 5 && $minor == 7 && $patch >= 8);
-            }
-        }
-        
-        return false;
+        return (new \DataFlair\Toplists\Database\SchemaMigrator())->supportsJsonType();
     }
-    
+
     /**
-     * Migrate data fields from longtext to JSON type
+     * Migrate data fields from longtext to JSON type.
+     *
+     * Phase 9.5 — logic lives in
+     * {@see \DataFlair\Toplists\Database\SchemaMigrator::migrateToJsonType()}.
+     *
+     * @deprecated 2.1.1 Use `\DataFlair\Toplists\Database\SchemaMigrator::migrateToJsonType()`.
      */
     public function migrate_to_json_type() {
-        // Guard: skip entirely if migration already completed.
-        // MariaDB reports JSON columns as "longtext" in INFORMATION_SCHEMA, so
-        // checking DATA_TYPE would always return false — causing an infinite loop.
-        if (get_option('dataflair_json_migration_done')) {
-            return;
-        }
-
-        global $wpdb;
-
-        if (!$this->supports_json_type()) {
-            // Mark done so we stop trying on every cron tick.
-            update_option('dataflair_json_migration_done', '1');
-            error_log('DataFlair: JSON type not supported by MySQL/MariaDB version. Staying on longtext.');
-            return;
-        }
-
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $brands_table_name = $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME;
-
-        $toplists_migrated = false;
-        $brands_migrated   = false;
-
-        // Migrate toplists table
-        {
-            // First, validate all JSON data
-            $invalid_rows = $wpdb->get_results(
-                "SELECT id FROM $table_name WHERE data IS NOT NULL AND data != ''",
-                ARRAY_A
-            );
-            
-            $valid_count = 0;
-            $invalid_count = 0;
-            
-            foreach ($invalid_rows as $row) {
-                $data = $wpdb->get_var($wpdb->prepare(
-                    "SELECT data FROM $table_name WHERE id = %d",
-                    $row['id']
-                ));
-                
-                // Validate JSON
-                json_decode($data);
-                if (json_last_error() === JSON_ERROR_NONE) {
-                    $valid_count++;
-                } else {
-                    $invalid_count++;
-                    error_log('DataFlair: Invalid JSON in toplist ID ' . $row['id'] . ': ' . json_last_error_msg());
-                }
-            }
-            
-            if ($invalid_count === 0) {
-                $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN data JSON NOT NULL");
-                $toplists_migrated = true;
-                error_log('DataFlair: Successfully migrated toplists data column to JSON type');
-            } else {
-                error_log("DataFlair: Cannot migrate toplists table - found $invalid_count invalid JSON rows");
-            }
-        }
-
-        // Migrate brands table
-        {
-            $invalid_rows = $wpdb->get_results(
-                "SELECT id FROM $brands_table_name WHERE data IS NOT NULL AND data != ''",
-                ARRAY_A
-            );
-
-            $valid_count   = 0;
-            $invalid_count = 0;
-
-            foreach ($invalid_rows as $row) {
-                $data = $wpdb->get_var($wpdb->prepare(
-                    "SELECT data FROM $brands_table_name WHERE id = %d",
-                    $row['id']
-                ));
-
-                json_decode($data);
-                if (json_last_error() === JSON_ERROR_NONE) {
-                    $valid_count++;
-                } else {
-                    $invalid_count++;
-                    error_log('DataFlair: Invalid JSON in brand ID ' . $row['id'] . ': ' . json_last_error_msg());
-                }
-            }
-
-            if ($invalid_count === 0) {
-                $wpdb->query("ALTER TABLE $brands_table_name MODIFY COLUMN data JSON NOT NULL");
-                $brands_migrated = true;
-                error_log('DataFlair: Successfully migrated brands data column to JSON type');
-            } else {
-                error_log("DataFlair: Cannot migrate brands table - found $invalid_count invalid JSON rows");
-            }
-        }
-
-        // Mark migration done so it never runs again.
-        // Run regardless of success — on MariaDB the column stays "longtext" even
-        // after ALTER TABLE, so we must not rely on DATA_TYPE to detect completion.
-        update_option('dataflair_json_migration_done', '1');
+        (new \DataFlair\Toplists\Database\SchemaMigrator())->migrateToJsonType();
     }
 }
 
 // Initialize plugin — canonical entry is Plugin::boot(). The call is idempotent
 // and internally calls DataFlair_Toplists::get_instance() so the legacy
 // strangler-fig shim continues to own hook registrations through v2.0.x.
-\DataFlair\Toplists\Plugin::boot();
+// Passing __FILE__ lets Plugin::boot() resolve the plugin file for I18n
+// + GithubUpdateChecker + PluginInfoFilter registrars.
+\DataFlair\Toplists\Plugin::boot(__FILE__);
 
 // Register WP-CLI commands (Phase 0A H0 + Phase 0.5 perf rig).
 if (defined('WP_CLI') && WP_CLI) {

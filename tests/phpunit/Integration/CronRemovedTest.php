@@ -24,6 +24,14 @@ class CronRemovedTest extends TestCase {
         $path = DATAFLAIR_PLUGIN_DIR . 'dataflair-toplists.php';
         $this->source = (string) file_get_contents($path);
         $this->assertNotSame('', $this->source, "Plugin file must be readable at {$path}.");
+
+        // Phase 9.5 (v2.1.1): the legacy-cron clear gate moved from the
+        // god-class's check_database_upgrade() into SchemaMigrator. Append
+        // its source so the structural scans below still see the clears.
+        $migrator = DATAFLAIR_PLUGIN_DIR . 'src/Database/SchemaMigrator.php';
+        if (is_readable($migrator)) {
+            $this->source .= "\n" . (string) file_get_contents($migrator);
+        }
     }
 
     // ── No cron methods defined ──────────────────────────────────────────

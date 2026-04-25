@@ -206,6 +206,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Admin\\Pages\\BrandsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/BrandsPage.php',
         'DataFlair\\Toplists\\Admin\\Pages\\PageInterface' => __DIR__ . '/../..' . '/src/Admin/Pages/PageInterface.php',
         'DataFlair\\Toplists\\Admin\\Pages\\SettingsPage' => __DIR__ . '/../..' . '/src/Admin/Pages/SettingsPage.php',
+        'DataFlair\\Toplists\\Admin\\PluginInfoFilter' => __DIR__ . '/../..' . '/src/Admin/PluginInfoFilter.php',
         'DataFlair\\Toplists\\Block\\BlockBootstrap' => __DIR__ . '/../..' . '/src/Block/BlockBootstrap.php',
         'DataFlair\\Toplists\\Block\\BlockRegistrar' => __DIR__ . '/../..' . '/src/Block/BlockRegistrar.php',
         'DataFlair\\Toplists\\Block\\EditorAssets' => __DIR__ . '/../..' . '/src/Block/EditorAssets.php',
@@ -219,6 +220,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Database\\AlternativesRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/AlternativesRepositoryInterface.php',
         'DataFlair\\Toplists\\Database\\BrandsRepository' => __DIR__ . '/../..' . '/src/Database/BrandsRepository.php',
         'DataFlair\\Toplists\\Database\\BrandsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/BrandsRepositoryInterface.php',
+        'DataFlair\\Toplists\\Database\\SchemaMigrator' => __DIR__ . '/../..' . '/src/Database/SchemaMigrator.php',
         'DataFlair\\Toplists\\Database\\ToplistsRepository' => __DIR__ . '/../..' . '/src/Database/ToplistsRepository.php',
         'DataFlair\\Toplists\\Database\\ToplistsRepositoryInterface' => __DIR__ . '/../..' . '/src/Database/ToplistsRepositoryInterface.php',
         'DataFlair\\Toplists\\Frontend\\Render\\CardRenderer' => __DIR__ . '/../..' . '/src/Frontend/Render/CardRenderer.php',
@@ -232,6 +234,9 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Http\\HttpClientInterface' => __DIR__ . '/../..' . '/src/Http/HttpClientInterface.php',
         'DataFlair\\Toplists\\Http\\LogoDownloader' => __DIR__ . '/../..' . '/src/Http/LogoDownloader.php',
         'DataFlair\\Toplists\\Http\\LogoDownloaderInterface' => __DIR__ . '/../..' . '/src/Http/LogoDownloaderInterface.php',
+        'DataFlair\\Toplists\\I18n' => __DIR__ . '/../..' . '/src/I18n.php',
+        'DataFlair\\Toplists\\Lifecycle\\Activator' => __DIR__ . '/../..' . '/src/Lifecycle/Activator.php',
+        'DataFlair\\Toplists\\Lifecycle\\Deactivator' => __DIR__ . '/../..' . '/src/Lifecycle/Deactivator.php',
         'DataFlair\\Toplists\\Logging\\ErrorLogLogger' => __DIR__ . '/../..' . '/includes/Logging/ErrorLogLogger.php',
         'DataFlair\\Toplists\\Logging\\LoggerFactory' => __DIR__ . '/../..' . '/includes/Logging/LoggerFactory.php',
         'DataFlair\\Toplists\\Logging\\LoggerInterface' => __DIR__ . '/../..' . '/includes/Logging/LoggerInterface.php',
@@ -258,6 +263,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Sync\\ToplistPersisterInterface' => __DIR__ . '/../..' . '/src/Sync/ToplistPersisterInterface.php',
         'DataFlair\\Toplists\\Sync\\ToplistSyncService' => __DIR__ . '/../..' . '/src/Sync/ToplistSyncService.php',
         'DataFlair\\Toplists\\Sync\\ToplistSyncServiceInterface' => __DIR__ . '/../..' . '/src/Sync/ToplistSyncServiceInterface.php',
+        'DataFlair\\Toplists\\UpdateChecker\\GithubUpdateChecker' => __DIR__ . '/../..' . '/src/UpdateChecker/GithubUpdateChecker.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
