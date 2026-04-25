@@ -35,8 +35,12 @@ final class SettingsPage implements PageInterface
         // the settings list needs (template.name) so we never pull the full
         // payload blob. Prior `SELECT *` could page-fault the whole toplist
         // table into memory whenever an admin clicked Settings.
+        // Phase 9.6: `status` column was historically projected but the
+        // toplists schema never had one (it lives on the brands table).
+        // The MySQL error silently emptied $toplists and hid the table —
+        // dropped the stale reference.
         $toplists = $wpdb->get_results(
-            "SELECT id, api_toplist_id, name, slug, version, status,
+            "SELECT id, api_toplist_id, name, slug, version,
                     last_synced, item_count, locked_count, sync_warnings,
                     current_period,
                     JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name')) AS template_name
