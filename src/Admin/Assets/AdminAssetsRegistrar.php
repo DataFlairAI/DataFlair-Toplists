@@ -109,6 +109,21 @@ final class AdminAssetsRegistrar
             );
         }
 
+        // Phase 9.6 (admin UX redesign) — dirty-state.js + color-picker.js on the Settings page.
+        if (strpos($hook, 'dataflair-settings') !== false) {
+            foreach (['dirty-state', 'color-picker'] as $name) {
+                $path = DATAFLAIR_PLUGIN_DIR . "assets/admin/{$name}.js";
+                $ver  = file_exists($path) ? (string) filemtime($path) : DATAFLAIR_VERSION;
+                wp_enqueue_script(
+                    "dataflair-{$name}",
+                    DATAFLAIR_PLUGIN_URL . "assets/admin/{$name}.js",
+                    ['jquery', 'dataflair-admin-ui'],
+                    $ver,
+                    true
+                );
+            }
+        }
+
         // Phase 9.6 (admin UX redesign) — tools.js only on the Tools page.
         if (strpos($hook, 'dataflair-tools') !== false) {
             $tools_js_path = DATAFLAIR_PLUGIN_DIR . 'assets/admin/tools.js';

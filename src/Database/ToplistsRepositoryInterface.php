@@ -57,4 +57,25 @@ interface ToplistsRepositoryInterface
      * Total row count on the toplists table. Used by the REST health endpoint.
      */
     public function countAll(): int;
+
+    /**
+     * Paginated list for the admin Toplists page.
+     *
+     * @return ToplistsPage
+     */
+    public function findPaginated(ToplistsQuery $query): ToplistsPage;
+
+    /**
+     * Extract the ordered item summary from a toplist's data blob.
+     *
+     * @return array<int,array{position:int,brand_id:int,bonus_offer:string,bonus_code:string}>
+     */
+    public function findItemSummaryByApiToplistId(int $api_toplist_id): array;
+
+    /**
+     * Return the decoded JSON data blob for a toplist, or null if not found.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findRawDataByApiToplistId(int $api_toplist_id): ?array;
 }

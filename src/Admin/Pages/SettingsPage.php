@@ -125,9 +125,34 @@ final class SettingsPage implements PageInterface
                             </tr>
                         </table>
 
-                        <?php submit_button('Save Settings', 'primary', 'submit', false, ['id' => 'dataflair-save-settings']); ?>
-                        <span id="dataflair-save-message" style="margin-left: 10px;"></span>
+                        <p style="margin-top:16px;">
+                            <?php submit_button('Save Settings', 'primary', 'submit', false, ['id' => 'dataflair-save-settings', 'style' => 'margin:0;']); ?>
+                            <button type="button" id="df-test-connection" class="button" style="margin-left:8px;">Test Connection</button>
+                            <span id="df-test-connection-result" style="margin-left:10px;"></span>
+                            <span id="dataflair-save-message" style="margin-left:10px;"></span>
+                        </p>
                     </div>
+                    <script>
+                    jQuery(document).ready(function ($) {
+                        $('#df-test-connection').on('click', function () {
+                            var $btn = $(this), $result = $('#df-test-connection-result');
+                            $btn.prop('disabled', true).text('Testing…');
+                            $result.text('');
+                            $.post(<?php echo json_encode(admin_url('admin-ajax.php')); ?>, {
+                                action: 'dataflair_test_api_connection',
+                                _ajax_nonce: <?php echo json_encode(wp_create_nonce('dataflair_test_api_connection')); ?>,
+                            }, function (res) {
+                                $btn.prop('disabled', false).text('Test Connection');
+                                if (!res.success) { $result.html('<span style="color:#b32d2e;">' + (res.data.message || 'Error') + '</span>'); return; }
+                                var d = res.data;
+                                var ok = d.status_code >= 200 && d.status_code < 400;
+                                var cls = ok ? 'color:#00a32a' : 'color:#b32d2e';
+                                var msg = ok ? '✓ Connected (HTTP ' + d.status_code + ', ' + d.ms + ' ms)' : '✗ ' + (d.error || 'HTTP ' + d.status_code);
+                                $result.html('<span style="' + cls + ';font-weight:600;">' + msg + '</span>');
+                            });
+                        });
+                    });
+                    </script>
 
                 <?php elseif ($current_tab === 'customizations'): ?>
                     <!-- Customizations Tab -->
@@ -199,13 +224,12 @@ final class SettingsPage implements PageInterface
                     </div>
 
                 <?php else: ?>
-                    <!-- Sync Schedule Tab (Phase 4 — full form coming later) -->
+                    <!-- Sync Schedule Tab -->
                     <div class="tab-content" style="padding-top:16px;">
                         <h2>Sync Schedule</h2>
                         <p class="description">
-                            Configure automatic sync cadences for Brands and Toplists, the retry
-                            budget, and an alert email for persistent failures. Full form coming
-                            in a subsequent release.
+                            Configure automatic sync cadences for Brands and Toplists. Changes take
+                            effect immediately — the WP-Cron event is rescheduled on save.
                         </p>
                         <table class="form-table">
                             <tr>
@@ -249,10 +273,8 @@ final class SettingsPage implements PageInterface
                                 </td>
                             </tr>
                         </table>
-                        <p class="description" style="color:#646970;margin-top:16px;">
-                            Note: saving cron rescheduling (Phase 4) is not yet wired. Changes to cadence
-                            above take effect in the next release.
-                        </p>
+                        <?php submit_button('Save Schedule', 'primary', 'submit', false, ['id' => 'dataflair-save-schedule']); ?>
+                        <span id="dataflair-save-message-schedule" style="margin-left:10px;"></span>
                     </div>
                 <?php endif; ?>
             </form>

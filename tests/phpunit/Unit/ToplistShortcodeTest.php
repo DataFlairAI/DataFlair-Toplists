@@ -140,6 +140,9 @@ final class ToplistShortcodeTest extends TestCase
             public function collectGeoNames(): array { return []; }
             public function listAllForOptions(): array { return []; }
             public function countAll(): int { return 0; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
         };
     }
 

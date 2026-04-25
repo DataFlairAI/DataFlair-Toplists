@@ -16,9 +16,16 @@ use DataFlair\Toplists\Admin\Ajax\BrandsQueryHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkApplyReviewPatternHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkDisableBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkResyncBrandsHandler;
+use DataFlair\Toplists\Admin\Ajax\ApiHealthHandler;
+use DataFlair\Toplists\Admin\Ajax\BulkDeleteToplistsHandler;
+use DataFlair\Toplists\Admin\Ajax\BulkResyncToplistsHandler;
 use DataFlair\Toplists\Admin\Ajax\LogsDownloadHandler;
 use DataFlair\Toplists\Admin\Ajax\LogsTailHandler;
 use DataFlair\Toplists\Admin\Ajax\RunAllTestsHandler;
+use DataFlair\Toplists\Admin\Ajax\TestApiConnectionHandler;
+use DataFlair\Toplists\Admin\Ajax\ToplistAccordionDetailsHandler;
+use DataFlair\Toplists\Admin\Ajax\ToplistRawJsonHandler;
+use DataFlair\Toplists\Admin\Ajax\ToplistUsageHandler;
 use DataFlair\Toplists\Admin\Ajax\RunTestHandler;
 use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
 use DataFlair\Toplists\Admin\Ajax\DeleteAlternativeToplistHandler;
@@ -157,6 +164,43 @@ final class AdminBootstrap
             'dataflair_logs_download',
             new LogsDownloadHandler(),
             'dataflair_logs_download'
+        );
+
+        // Phase 4 handlers.
+        $router->register(
+            'dataflair_api_health',
+            new ApiHealthHandler(),
+            'dataflair_api_health'
+        );
+        $router->register(
+            'dataflair_toplist_usage',
+            new ToplistUsageHandler(),
+            'dataflair_toplist_usage'
+        );
+        $router->register(
+            'dataflair_test_api_connection',
+            new TestApiConnectionHandler(),
+            'dataflair_test_api_connection'
+        );
+        $router->register(
+            'dataflair_bulk_resync_toplists',
+            new BulkResyncToplistsHandler(),
+            'dataflair_bulk_resync_toplists'
+        );
+        $router->register(
+            'dataflair_bulk_delete_toplists',
+            new BulkDeleteToplistsHandler($this->toplists_repo),
+            'dataflair_bulk_delete_toplists'
+        );
+        $router->register(
+            'dataflair_toplist_accordion_details',
+            new ToplistAccordionDetailsHandler($this->toplists_repo, $this->brands_repo),
+            'dataflair_toplist_accordion_details'
+        );
+        $router->register(
+            'dataflair_toplist_raw_json',
+            new ToplistRawJsonHandler($this->toplists_repo),
+            'dataflair_toplist_raw_json'
         );
 
         return $router;
