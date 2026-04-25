@@ -76,6 +76,10 @@ final class TestsRunner
 
         $result = $this->makeResult($slug, $status, $message, $ms);
         $this->persist($slug, $result);
+
+        $level = $status === 'pass' ? 'INFO' : ($status === 'fail' ? 'ERROR' : 'WARN');
+        error_log("[DataFlair][{$level}] test.run slug={$slug} status={$status} duration_ms={$ms} message={$message}");
+
         return $result;
     }
 
@@ -158,8 +162,9 @@ final class TestsRunner
                     return ['status' => 'warn', 'message' => 'API token is set but no base URL configured — auto-detection will be used.'];
                 }
 
-                $resp = wp_remote_head($base_url, [
-                    'timeout' => 1,
+                $ping_url = rtrim($base_url, '/') . '/toplists';
+                $resp = wp_remote_head($ping_url, [
+                    'timeout' => 3,
                     'headers' => ['Authorization' => 'Bearer ' . $token],
                     'sslverify' => false,
                 ]);
@@ -214,9 +219,9 @@ final class TestsRunner
                     return ['status' => 'warn', 'message' => 'dataflair_db_version option not set — migrations may not have run.'];
                 }
                 if (version_compare($installed, $expected, '>=')) {
-                    return ['status' => 'pass', 'message' => "Schema v{$installed} (current: {$expected})."];
+                    return ['status' => 'pass', 'message' => "DB schema v{$installed} — plugin requires v{$expected}. Up to date."];
                 }
-                return ['status' => 'warn', 'message' => "Schema v{$installed} is older than expected v{$expected} — run plugin activation or deactivate/reactivate."];
+                return ['status' => 'warn', 'message' => "DB schema v{$installed} is older than required v{$expected} — deactivate/reactivate the plugin to run migrations."];
             },
         ];
     }
