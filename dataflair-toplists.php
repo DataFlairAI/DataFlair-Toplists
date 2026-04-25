@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.3
+ * Version: 2.1.4
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.3');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.4');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -625,19 +625,14 @@ class DataFlair_Toplists {
         // upgrade time by the `dataflair_cron_cleared_v1_11` gate in
         // upgrade_database().
 
-        // Enqueue frontend styles and scripts
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_assets'));
-
         // Phase 5 — admin asset enqueue lives in
         // DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar.
         $this->admin_bootstrap()->registerAssets();
-        
-        // Check if shortcode/block is used and enqueue Alpine.js if needed
-        add_action('wp_footer', array($this, 'maybe_enqueue_alpine'), 5);
-        add_action('wp_footer', array($this, 'enqueue_promo_copy_script'), 20);
 
-        // Also check in widgets and other areas
-        add_filter('widget_text', array($this, 'check_widget_for_shortcode'), 10, 2);
+        // Phase 9.8 — frontend stylesheet, Alpine.js conditional enqueue,
+        // promo-copy footer script, Alpine defer attribute, and widget
+        // shortcode detection moved to dedicated registrars under
+        // src/Frontend/Assets/. Plugin::registerHooks() wires them.
 
         // Phase 9.6 — plain-permalinks admin notice extracted to
         // \DataFlair\Toplists\Admin\Notices\PermalinkNotice.
@@ -1941,191 +1936,14 @@ class DataFlair_Toplists {
         );
     }
     
-    /**
-     * Enqueue frontend styles
-     */
-    public function enqueue_frontend_assets() {
-        // Use file modification time as version to prevent caching issues
-        $style_css_version = file_exists(DATAFLAIR_PLUGIN_DIR . 'assets/style.css') 
-            ? filemtime(DATAFLAIR_PLUGIN_DIR . 'assets/style.css') 
-            : DATAFLAIR_VERSION;
-        
-        wp_enqueue_style(
-            'dataflair-toplists',
-            DATAFLAIR_PLUGIN_URL . 'assets/style.css',
-            array(),
-            $style_css_version
-        );
-    }
-    
-    /**
-     * Static flag to track if we've already checked for Alpine.js
-     */
-    private static $alpine_checked = false;
-    private static $shortcode_used = false;
-    
-    /**
-     * Check widget content for shortcode usage
-     */
-    public function check_widget_for_shortcode($text, $instance = null) {
-        if (has_shortcode($text, 'dataflair_toplist')) {
-            self::$shortcode_used = true;
-        }
-        return $text;
-    }
-    
-    /**
-     * Check if Alpine.js is already loaded and enqueue if needed
-     */
-    public function maybe_enqueue_alpine() {
-        // Avoid checking multiple times
-        if (self::$alpine_checked) {
-            return;
-        }
-        
-        self::$alpine_checked = true;
-        
-        // Check if shortcode or block is used on the page
-        global $post;
-        $has_shortcode = false;
-        $has_block = false;
-        
-        // Check main post content
-        if ($post) {
-            $has_shortcode = has_shortcode($post->post_content, 'dataflair_toplist');
-            $has_block = has_block('dataflair-toplists/toplist', $post);
-        }
-        
-        // Check if widget shortcode was found
-        if (self::$shortcode_used) {
-            $has_shortcode = true;
-        }
-        
-        // Check all posts in query (for archive pages, etc.)
-        if (!$has_shortcode && !$has_block) {
-            global $wp_query;
-            if ($wp_query && !empty($wp_query->posts)) {
-                foreach ($wp_query->posts as $query_post) {
-                    if (has_shortcode($query_post->post_content, 'dataflair_toplist') ||
-                        has_block('dataflair-toplists/toplist', $query_post)) {
-                        $has_shortcode = true;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // If no shortcode/block found, don't enqueue
-        if (!$has_shortcode && !$has_block) {
-            return;
-        }
-        
-        // Check if Alpine.js is already enqueued by checking common handles
-        $alpine_handles = array('alpinejs', 'alpine', 'alpine-js', 'alpine.js');
-        $alpine_enqueued = false;
-        
-        foreach ($alpine_handles as $handle) {
-            if (wp_script_is($handle, 'enqueued') || wp_script_is($handle, 'registered')) {
-                $alpine_enqueued = true;
-                break;
-            }
-        }
-        
-        // Also check if Alpine is loaded via inline script or other methods
-        // by checking if it's in the global scripts queue
-        if (!$alpine_enqueued) {
-            global $wp_scripts;
-            if ($wp_scripts && !empty($wp_scripts->queue)) {
-                foreach ($wp_scripts->queue as $queued_handle) {
-                    $script = $wp_scripts->registered[$queued_handle] ?? null;
-                    if ($script && isset($script->src) && (
-                        strpos($script->src, 'alpine') !== false ||
-                        strpos($script->src, 'alpinejs') !== false
-                    )) {
-                        $alpine_enqueued = true;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // Check if Alpine is loaded via theme or other plugins by checking script dependencies
-        if (!$alpine_enqueued && isset($wp_scripts)) {
-            foreach ($wp_scripts->registered as $handle => $script) {
-                if (isset($script->deps) && is_array($script->deps)) {
-                    foreach ($script->deps as $dep) {
-                        if (in_array($dep, $alpine_handles)) {
-                            $alpine_enqueued = true;
-                            break 2;
-                        }
-                    }
-                }
-            }
-        }
-        
-        // If Alpine.js is not found, enqueue it from CDN
-        if (!$alpine_enqueued) {
-            // Allow filtering the Alpine.js URL (for custom CDN or local version)
-            $alpine_url = apply_filters('dataflair_alpinejs_url', 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js');
-            
-            wp_enqueue_script(
-                'alpinejs',
-                $alpine_url,
-                array(),
-                '3.13.5',
-                true
-            );
-            
-            // Add defer attribute for better performance
-            add_filter('script_loader_tag', array($this, 'add_alpine_defer_attribute'), 10, 2);
-        }
-    }
-    
-    /**
-     * Output promo code copy-to-clipboard JS once per page footer.
-     * Handles all .promo-code-copy buttons rendered by the toplist card template.
-     */
-    public function enqueue_promo_copy_script() {
-        ?>
-        <script>
-        (function() {
-            function initPromoCopy() {
-                document.querySelectorAll('.promo-code-copy').forEach(function(btn) {
-                    if (btn.dataset.promoBound) return;
-                    btn.dataset.promoBound = '1';
-                    btn.addEventListener('click', function() {
-                        var code = btn.getAttribute('data-code');
-                        navigator.clipboard.writeText(code).then(function() {
-                            btn.classList.add('copied');
-                            btn.querySelector('.promo-code-value').textContent = 'Copied!';
-                            setTimeout(function() {
-                                btn.classList.remove('copied');
-                                btn.querySelector('.promo-code-value').textContent = code;
-                            }, 2000);
-                        });
-                    });
-                });
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initPromoCopy);
-            } else {
-                initPromoCopy();
-            }
-        })();
-        </script>
-        <?php
-    }
+    // Phase 9.8 — frontend asset methods moved out of the god-class.
+    //   enqueue_frontend_assets()  -> Frontend\Assets\StylesEnqueuer
+    //   maybe_enqueue_alpine()     -> Frontend\Assets\AlpineJsEnqueuer
+    //   enqueue_promo_copy_script()-> Frontend\Assets\PromoCopyScript
+    //   add_alpine_defer_attribute -> Frontend\Assets\AlpineDeferAttribute
+    //   check_widget_for_shortcode -> Frontend\Assets\WidgetShortcodeDetector
 
-    /**
-     * Add defer attribute to Alpine.js script tag
-     */
-    public function add_alpine_defer_attribute($tag, $handle) {
-        if ('alpinejs' === $handle) {
-            return str_replace(' src', ' defer src', $tag);
-        }
-        return $tag;
-    }
-    
+
     /**
      * Build the "Last sync" label for the admin UI. Reads the given option
      * (still named `dataflair_last_*_cron_run` for backward compat — option

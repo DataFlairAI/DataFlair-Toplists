@@ -153,6 +153,15 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.1.4</h4>
+<ul>
+  <li><strong>Phase 9.8 — frontend assets + Alpine.js extraction.</strong> The five frontend asset methods leave the god-class for dedicated single-responsibility classes under <code>DataFlair\\Toplists\\Frontend\\Assets\\</code>. Each registers its own WordPress hook via <code>register()</code>; <code>Plugin::registerHooks()</code> wires them.</li>
+  <li><strong>Five new classes.</strong> <code>StylesEnqueuer</code> owns the <code>dataflair-toplists</code> stylesheet enqueue with filemtime cache busting. <code>AlpineJsEnqueuer</code> owns the conditional CDN load decision (shortcode/block detection across post + queried posts + widgets, plus the four-way Alpine-already-loaded check). <code>PromoCopyScript</code> owns the once-per-page copy-to-clipboard footer script (<code>dataset.promoBound</code> guard preserved). <code>AlpineDeferAttribute</code> filters <code>script_loader_tag</code> to add <code>defer</code> only when this plugin enqueued Alpine itself. <code>WidgetShortcodeDetector</code> sets the cross-class flag from <code>widget_text</code>.</li>
+  <li><strong>Main file trim.</strong> <code>dataflair-toplists.php</code> drops from ~2,347 → ~2,165 LOC (−182). Four hook registrations and five method bodies removed.</li>
+  <li><strong>No public contract change.</strong> Alpine 3.13.5 still loaded from the same jsDelivr URL, still filterable via <code>dataflair_alpinejs_url</code>, still gated by the same shortcode/block detection. Stylesheet handle, footer-script ordering (priority 5 / 20), and DOM markup byte-identical.</li>
+  <li><strong>New tests.</strong> 18 new tests pin the contracts: <code>StylesEnqueuerTest</code>, <code>AlpineJsEnqueuerTest</code>, <code>PromoCopyScriptTest</code>, <code>AlpineDeferAttributeTest</code>, <code>WidgetShortcodeDetectorTest</code>. Full suite: <strong>452 tests, 1,062 assertions, all green</strong>.</li>
+</ul>
+
 <h4>2.1.3</h4>
 <ul>
   <li><strong>Phase 9.7 — AJAX handler extraction.</strong> The eleven remaining <code>ajax_*</code> methods leave the god-class for dedicated single-responsibility handler classes under <code>DataFlair\\Toplists\\Admin\\Ajax\\</code>. Each handler implements <code>AjaxHandlerInterface::handle(array $request): array</code>; nonce + capability checks remain centralised in <code>AjaxRouter</code>. Action names, request shapes, and response payloads preserved byte-for-byte.</li>

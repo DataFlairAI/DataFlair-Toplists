@@ -178,6 +178,22 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.4
+
+2.1.4 is the Phase 9.8 **frontend assets + Alpine.js extraction** release. The five frontend asset methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Frontend/Assets/`. No operator action required, no DB migration, no config change.
+
+What moved out of `dataflair-toplists.php` into `src/Frontend/Assets/`:
+
+- `StylesEnqueuer` — replaces inline `enqueue_frontend_assets()`. Owns the `dataflair-toplists` stylesheet handle with filemtime cache busting.
+- `AlpineJsEnqueuer` — replaces inline `maybe_enqueue_alpine()`. Owns the conditional CDN-load decision: shortcode + block detection across the current post, queried posts, and widgets; four-way already-enqueued check before falling through to the CDN.
+- `PromoCopyScript` — replaces inline `enqueue_promo_copy_script()`. Owns the once-per-page copy-to-clipboard footer script. The `dataset.promoBound` guard preserved verbatim.
+- `AlpineDeferAttribute` — replaces inline `add_alpine_defer_attribute()`. Filters `script_loader_tag` to add `defer` only when the plugin enqueued Alpine itself (theme/other-plugin Alpine instances are not modified).
+- `WidgetShortcodeDetector` — replaces inline `check_widget_for_shortcode()`. Sets the cross-class shortcode-used flag from the `widget_text` filter.
+
+Hook ordering preserved byte-for-byte: stylesheet at `wp_enqueue_scripts`, Alpine at `wp_footer` priority 5, promo-copy at `wp_footer` priority 20, widget detection at `widget_text` priority 10. Alpine URL still filterable via `dataflair_alpinejs_url`.
+
+`dataflair-toplists.php` shrinks from ~2,347 → ~2,165 LOC (−182). Test suite: 452 tests, 1,062 assertions, all green (+18 new tests).
+
 ### To 2.1.3
 
 2.1.3 is the Phase 9.7 **AJAX handler extraction** release. The eleven remaining `ajax_*` methods leave `dataflair-toplists.php` for dedicated single-responsibility handler classes under `src/Admin/Ajax/`. No operator action required, no DB migration, no config change — every `wp_ajax_dataflair_*` action remains identical to v2.1.2 (same nonce names, same expected POST keys, same JSON response shape).
@@ -327,6 +343,14 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.4
+- **Phase 9.8 — frontend assets + Alpine.js extraction.** The five frontend asset methods leave the god-class for dedicated classes under `DataFlair\Toplists\Frontend\Assets\`. Each registers its own WordPress hook via `register()`; `Plugin::registerHooks()` wires them.
+- Added: `StylesEnqueuer`, `AlpineJsEnqueuer`, `PromoCopyScript`, `AlpineDeferAttribute`, `WidgetShortcodeDetector` — all under `src/Frontend/Assets/`.
+- Removed: `enqueue_frontend_assets()`, `maybe_enqueue_alpine()`, `enqueue_promo_copy_script()`, `add_alpine_defer_attribute()`, `check_widget_for_shortcode()` from the god-class. Removed: 4 corresponding `add_action`/`add_filter` registrations from `init_hooks()`.
+- No public contract change. Alpine 3.13.5 still loaded from the same jsDelivr URL, still filterable via `dataflair_alpinejs_url`. Stylesheet handle and footer-script ordering (priority 5 / 20) byte-identical.
+- Main file size: `dataflair-toplists.php` drops from ~2,347 → ~2,165 LOC (−182).
+- Tests: 18 new tests; full suite 452 tests, 1,062 assertions, all green.
 
 ### 2.1.3
 - **Phase 9.7 — AJAX handler extraction.** The eleven remaining `ajax_*` methods leave the god-class for dedicated single-responsibility handler classes under `DataFlair\Toplists\Admin\Ajax\`. Each implements `AjaxHandlerInterface::handle(array $request): array`; `AjaxRouter` retains centralised nonce + capability checks.
@@ -600,4 +624,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.4 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
