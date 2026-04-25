@@ -136,6 +136,7 @@ final class BrandsPage implements PageInterface
                         <th class="check-column" style="width:3%;">
                             <input type="checkbox" id="df-select-all" title="Select all on this page">
                         </th>
+                        <th style="width:28px;"></th>
                         <th style="width:22%;">
                             <?php $this->sortHeader('name', 'Brand', $initial_sort, $initial_dir); ?>
                         </th>
@@ -167,6 +168,7 @@ final class BrandsPage implements PageInterface
 
         <?php $this->renderInlineScript($filter_licenses, $filter_geos, $filter_payments, $filter_product_types,
                                         $initial_sort, $initial_dir, $initial_page, $page_count, $total); ?>
+        <?php $this->renderBrandAccordionScript(); ?>
         <?php
     }
 
@@ -236,7 +238,7 @@ final class BrandsPage implements PageInterface
     private function renderRows(array $brands): void
     {
         if (empty($brands)) {
-            echo '<tr><td colspan="8" style="text-align:center;padding:24px;color:#646970;">'
+            echo '<tr><td colspan="9" style="text-align:center;padding:24px;color:#646970;">'
                . 'No brands found. Try adjusting your filters or sync brands from the API.'
                . '</td></tr>';
             return;
@@ -273,7 +275,15 @@ final class BrandsPage implements PageInterface
             <td class="check-column">
                 <input type="checkbox" class="df-brand-check" value="<?php echo esc_attr($api_id); ?>">
             </td>
-            <td class="df-brand-identity-cell">
+            <td style="width:28px;padding:0 4px;vertical-align:middle;">
+                <button type="button" class="df-brand-toggle-btn button-link"
+                        data-brand-id="<?php echo esc_attr($api_id); ?>"
+                        title="View details"
+                        style="padding:2px 4px;cursor:pointer;color:#646970;">
+                    <span class="dashicons dashicons-arrow-right" style="font-size:16px;width:16px;height:16px;line-height:16px;"></span>
+                </button>
+            </td>
+            <td class="df-brand-identity-cell" style="padding-left:1rem;">
                 <div style="display:flex;align-items:center;gap:10px;">
                     <div class="df-brand-logo-wrap" style="flex-shrink:0;">
                         <?php if ($logo): ?>
@@ -347,6 +357,68 @@ final class BrandsPage implements PageInterface
                 </div>
             </td>
         </tr>
+        <!-- Brand accordion row (lazy-loaded on first expand) -->
+        <tr class="df-brand-accordion-row" id="df-bacc-<?php echo esc_attr($api_id); ?>" style="display:none;">
+            <td colspan="9" style="padding:0;background:#f6f7f7;">
+                <div class="df-brand-accordion-inner" style="padding:16px 20px;">
+                    <div class="df-bacc-loading" style="color:#646970;">Loading details…</div>
+                    <div class="df-bacc-content" style="display:none;">
+
+                        <!-- Info pills -->
+                        <div class="df-bacc-section" style="margin-bottom:14px;">
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:6px;">
+                                <strong style="width:110px;flex-shrink:0;">Type:</strong>
+                                <span class="df-bacc-product-types" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                            </div>
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:6px;">
+                                <strong style="width:110px;flex-shrink:0;">Licenses:</strong>
+                                <span class="df-bacc-licenses" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                            </div>
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:6px;">
+                                <strong style="width:110px;flex-shrink:0;">Payments:</strong>
+                                <span class="df-bacc-payments" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                            </div>
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;">
+                                <strong style="width:110px;flex-shrink:0;">Games:</strong>
+                                <span class="df-bacc-game-types" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                            </div>
+                        </div>
+
+                        <!-- Geos -->
+                        <div class="df-bacc-section" style="margin-bottom:14px;">
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:6px;">
+                                <strong style="width:110px;flex-shrink:0;">Top Geos:</strong>
+                                <span class="df-bacc-top-geos" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                            </div>
+                            <div class="df-bacc-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;">
+                                <strong style="width:110px;flex-shrink:0;">Restricted:</strong>
+                                <span class="df-bacc-restricted" style="display:flex;flex-wrap:wrap;gap:4px;"></span>
+                                <a href="#" class="df-bacc-restricted-toggle" style="font-size:12px;display:none;"></a>
+                            </div>
+                        </div>
+
+                        <!-- Offers + trackers -->
+                        <div class="df-bacc-section">
+                            <strong style="display:block;margin-bottom:8px;">Offers &amp; Tracking Links</strong>
+                            <div class="df-bacc-no-offers" style="color:#646970;display:none;">No offers attached to this brand.</div>
+                            <table class="df-bacc-offers-table widefat" style="display:none;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:5%;">#</th>
+                                        <th style="width:28%;">Offer Text</th>
+                                        <th style="width:15%;">Geo</th>
+                                        <th style="width:20%;">Campaign</th>
+                                        <th>Affiliate Link</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+
+                    </div>
+                </div>
+            </td>
+        </tr>
         <?php
     }
 
@@ -404,12 +476,13 @@ final class BrandsPage implements PageInterface
         window.DFBrands = <?php echo json_encode([
             'ajaxUrl'    => admin_url('admin-ajax.php'),
             'nonces' => [
-                'query'          => wp_create_nonce('dataflair_brands_query'),
-                'disableBrands'  => wp_create_nonce('dataflair_bulk_disable_brands'),
-                'resyncBrands'   => wp_create_nonce('dataflair_bulk_resync_brands'),
-                'applyPattern'   => wp_create_nonce('dataflair_bulk_apply_review_pattern'),
-                'saveReviewUrl'  => wp_create_nonce('dataflair_save_review_url'),
-                'fetchBrands'    => wp_create_nonce('dataflair_fetch_all_brands'),
+                'query'           => wp_create_nonce('dataflair_brands_query'),
+                'brandDetails'    => wp_create_nonce('dataflair_brand_details'),
+                'disableBrands'   => wp_create_nonce('dataflair_bulk_disable_brands'),
+                'resyncBrands'    => wp_create_nonce('dataflair_bulk_resync_brands'),
+                'applyPattern'    => wp_create_nonce('dataflair_bulk_apply_review_pattern'),
+                'saveReviewUrl'   => wp_create_nonce('dataflair_save_review_url'),
+                'fetchBrands'     => wp_create_nonce('dataflair_fetch_all_brands'),
                 'syncBrandsBatch' => wp_create_nonce('dataflair_sync_brands_batch'),
             ],
             'state' => [
@@ -432,6 +505,129 @@ final class BrandsPage implements PageInterface
                 'product_types' => $filterProductTypes,
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG); ?>;
+        </script>
+        <?php
+    }
+
+    private function renderBrandAccordionScript(): void
+    {
+        ?>
+        <script>
+        jQuery(document).ready(function ($) {
+            var ajaxUrl = window.DFBrands.ajaxUrl;
+            var nonce   = window.DFBrands.nonces.brandDetails;
+            var cache   = {};
+
+            function pill(text, cls) {
+                cls = cls || 'df-pill--info';
+                return '<span class="df-pill ' + cls + '" style="font-size:11px;padding:1px 6px;">' + $('<span>').text(text).html() + '</span>';
+            }
+
+            function renderPills($el, arr, cls) {
+                if (!arr || !arr.length) { $el.html('<span style="color:#999;">—</span>'); return; }
+                $el.html(arr.map(function (v) { return pill(v, cls || 'df-pill--info'); }).join(' '));
+            }
+
+            function loadBrandDetails($row, brandId) {
+                var $acc  = $('#df-bacc-' + brandId);
+                var $load = $acc.find('.df-bacc-loading');
+                var $body = $acc.find('.df-bacc-content');
+                $load.show(); $body.hide();
+
+                $.post(ajaxUrl, { action: 'dataflair_brand_details', _ajax_nonce: nonce, api_brand_id: brandId }, function (res) {
+                    $load.hide();
+                    if (!res || !res.success) { $load.text('Failed to load details.').show(); return; }
+                    var d = res.data;
+
+                    renderPills($acc.find('.df-bacc-product-types'), d.product_types, 'df-pill--info');
+                    renderPills($acc.find('.df-bacc-licenses'), d.licenses, 'df-pill--success');
+                    renderPills($acc.find('.df-bacc-payments'), d.payment_methods, 'df-pill--gray');
+                    renderPills($acc.find('.df-bacc-game-types'), d.game_types, 'df-pill--gray');
+                    renderPills($acc.find('.df-bacc-top-geos'), d.top_geos, 'df-pill--info');
+
+                    // Restricted countries — show first 8, "show X more" toggle.
+                    var restricted = d.restricted_countries || [];
+                    var $rest = $acc.find('.df-bacc-restricted');
+                    var $toggle = $acc.find('.df-bacc-restricted-toggle');
+                    if (!restricted.length) {
+                        $rest.html('<span style="color:#999;">None</span>');
+                    } else {
+                        var visible = restricted.slice(0, 8);
+                        var hidden  = restricted.slice(8);
+                        $rest.html(visible.map(function (v) { return pill(v, 'df-pill--error'); }).join(' '));
+                        if (hidden.length) {
+                            $toggle.text('+ ' + hidden.length + ' more').show();
+                            $toggle.off('click').on('click', function (e) {
+                                e.preventDefault();
+                                if ($toggle.data('expanded')) {
+                                    $rest.html(visible.map(function (v) { return pill(v, 'df-pill--error'); }).join(' '));
+                                    $toggle.text('+ ' + hidden.length + ' more').data('expanded', false);
+                                } else {
+                                    $rest.html(restricted.map(function (v) { return pill(v, 'df-pill--error'); }).join(' '));
+                                    $toggle.text('− show less').data('expanded', true);
+                                }
+                            });
+                        }
+                    }
+
+                    // Offers table.
+                    var offers = d.offers || [];
+                    if (!offers.length) {
+                        $acc.find('.df-bacc-no-offers').show();
+                    } else {
+                        var rows = [];
+                        var rowNum = 0;
+                        offers.forEach(function (offer) {
+                            var geoStr  = (offer.geo_countries || []).join(', ') || '—';
+                            var offerText = offer.offer_text || '—';
+                            if (!offer.trackers || !offer.trackers.length) {
+                                rowNum++;
+                                rows.push('<tr>'
+                                    + '<td>' + rowNum + '</td>'
+                                    + '<td title="' + $('<span>').text(offerText).html() + '">' + $('<span>').text(offerText).html() + '</td>'
+                                    + '<td>' + $('<span>').text(geoStr).html() + '</td>'
+                                    + '<td style="color:#999;">—</td>'
+                                    + '<td style="color:#999;">—</td>'
+                                    + '</tr>');
+                            } else {
+                                offer.trackers.forEach(function (t) {
+                                    rowNum++;
+                                    var link = t.tracker_link
+                                        ? '<a href="' + $('<span>').text(t.tracker_link).html() + '" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all;">'
+                                          + $('<span>').text(t.tracker_link.substring(0, 60) + (t.tracker_link.length > 60 ? '…' : '')).html() + '</a>'
+                                        : '<span style="color:#999;">—</span>';
+                                    rows.push('<tr>'
+                                        + '<td>' + rowNum + '</td>'
+                                        + '<td title="' + $('<span>').text(offerText).html() + '">' + $('<span>').text(offerText).html() + '</td>'
+                                        + '<td>' + $('<span>').text(geoStr).html() + '</td>'
+                                        + '<td style="font-size:12px;">' + $('<span>').text(t.campaign_name || '—').html() + '</td>'
+                                        + '<td>' + link + '</td>'
+                                        + '</tr>');
+                                });
+                            }
+                        });
+                        $acc.find('.df-bacc-offers-table tbody').html(rows.join(''));
+                        $acc.find('.df-bacc-offers-table').show();
+                    }
+
+                    $body.show();
+                    cache[brandId] = true;
+                });
+            }
+
+            $(document).on('click', '.df-brand-toggle-btn', function () {
+                var brandId = $(this).data('brand-id');
+                var $acc    = $('#df-bacc-' + brandId);
+                var open    = $acc.is(':visible');
+                $acc.toggle(!open);
+                $(this).find('.dashicons')
+                    .toggleClass('dashicons-arrow-right', open)
+                    .toggleClass('dashicons-arrow-down', !open);
+                if (!open && !cache[brandId]) {
+                    loadBrandDetails($(this).closest('tr'), brandId);
+                }
+            });
+        });
         </script>
         <?php
     }

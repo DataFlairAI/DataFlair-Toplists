@@ -183,12 +183,18 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
                            $item['bonus_offer'] ?? $item['bonus_text'] ?? $item['bonus_code'] ?? '');
             $code       = (string) ($item['offer']['bonus_code'] ?? $item['bonus_code'] ?? '');
             $position   = (int) ($item['position'] ?? ($item['rank'] ?? 0));
+            // First tracker link (affiliate URL) from offer.trackers[0].trackerLink
+            $affiliate = (string) ($item['offer']['trackers'][0]['trackerLink']
+                ?? $item['offer']['trackers'][0]['tracker_link']
+                ?? $item['trackers'][0]['trackerLink']
+                ?? '');
             $out[] = [
-                'position'    => $position,
-                'brand_id'    => $brand_id,
-                'brand_name'  => $brand_name,
-                'bonus_offer' => $bonus,
-                'bonus_code'  => $code,
+                'position'      => $position,
+                'brand_id'      => $brand_id,
+                'brand_name'    => $brand_name,
+                'bonus_offer'   => $bonus,
+                'bonus_code'    => $code,
+                'affiliate_link' => $affiliate,
             ];
         }
 

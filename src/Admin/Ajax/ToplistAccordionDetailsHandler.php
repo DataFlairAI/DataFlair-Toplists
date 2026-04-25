@@ -59,11 +59,12 @@ final class ToplistAccordionDetailsHandler implements AjaxHandlerInterface
             $offer      = $item['bonus_offer'];
             $status     = ($brand_name !== '' && $offer !== '') ? 'synced' : 'partial';
             $items[]    = [
-                'position'    => $item['position'],
-                'brand_id'    => $brand_id,
-                'brand_name'  => $brand_name,
-                'bonus_offer' => $offer,
-                'status'      => $status,
+                'position'      => $item['position'],
+                'brand_id'      => $brand_id,
+                'brand_name'    => $brand_name,
+                'bonus_offer'   => $offer,
+                'affiliate_link' => (string) ($item['affiliate_link'] ?? ''),
+                'status'        => $status,
             ];
         }
 

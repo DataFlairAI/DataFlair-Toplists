@@ -182,7 +182,7 @@ final class ToplistsListPage implements PageInterface
                                     <div class="df-acc-panel df-acc-panel--active" data-panel="items">
                                         <div class="df-acc-items-loading">Loading items…</div>
                                         <table class="df-acc-items-table" style="display:none;">
-                                            <thead><tr><th>#</th><th>Brand</th><th>Bonus Offer</th><th>Status</th></tr></thead>
+                                            <thead><tr><th style="width:36px;">#</th><th style="width:22%;">Brand</th><th style="width:28%;">Bonus Offer</th><th>Affiliate Link</th><th style="width:80px;">Status</th></tr></thead>
                                             <tbody></tbody>
                                         </table>
                                         <p class="df-acc-items-empty" style="display:none;">No items in this toplist.</p>
@@ -326,8 +326,14 @@ final class ToplistsListPage implements PageInterface
                     if (!items.length) { $panel.find('.df-acc-items-empty').show(); return; }
                     var rows = items.map(function (item) {
                         var pillCls = item.status === 'synced' ? 'df-pill--success' : 'df-pill--warning';
-                        return '<tr><td>' + item.position + '</td><td>' + esc(item.brand_name) + ' <span style="color:#999;font-size:11px;">#' + item.brand_id + '</span></td>'
+                        var affLink = item.affiliate_link
+                            ? '<a href="' + esc(item.affiliate_link) + '" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all;">'
+                              + esc(item.affiliate_link.substring(0, 55) + (item.affiliate_link.length > 55 ? '…' : '')) + '</a>'
+                            : '<span style="color:#999;">—</span>';
+                        return '<tr><td style="font-family:monospace;">' + item.position + '</td>'
+                            + '<td>' + esc(item.brand_name) + ' <span style="color:#999;font-size:11px;">#' + item.brand_id + '</span></td>'
                             + '<td title="' + esc(item.bonus_offer) + '">' + esc(item.bonus_offer || '—') + '</td>'
+                            + '<td>' + affLink + '</td>'
                             + '<td><span class="df-pill ' + pillCls + '">' + item.status + '</span></td></tr>';
                     });
                     $panel.find('.df-acc-items-table tbody').html(rows.join(''));
