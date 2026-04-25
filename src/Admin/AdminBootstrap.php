@@ -12,6 +12,7 @@ namespace DataFlair\Toplists\Admin;
 
 use DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar;
 use DataFlair\Toplists\Admin\Ajax\ApiPreviewHandler;
+use DataFlair\Toplists\Admin\Ajax\BrandDetailsHandler;
 use DataFlair\Toplists\Admin\Ajax\BrandsQueryHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkApplyReviewPatternHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkDisableBrandsHandler;
@@ -129,6 +130,11 @@ final class AdminBootstrap
             'dataflair_brands_query'
         );
         $router->register(
+            'dataflair_brand_details',
+            new BrandDetailsHandler($this->brands_repo),
+            'dataflair_brand_details'
+        );
+        $router->register(
             'dataflair_bulk_apply_review_pattern',
             new BulkApplyReviewPatternHandler($this->brands_repo),
             'dataflair_bulk_apply_review_pattern'
@@ -184,7 +190,7 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_bulk_resync_toplists',
-            new BulkResyncToplistsHandler(),
+            new BulkResyncToplistsHandler($this->toplist_sync),
             'dataflair_bulk_resync_toplists'
         );
         $router->register(

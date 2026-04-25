@@ -176,15 +176,25 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
 
         $out = [];
         foreach ($raw_items as $item) {
-            $brand_id   = (int) ($item['brand_id'] ?? $item['casino_id'] ?? 0);
-            $bonus      = (string) ($item['bonus_offer'] ?? $item['bonus_text'] ?? $item['bonus_code'] ?? '');
-            $code       = (string) ($item['bonus_code'] ?? '');
+            // API stores items as {brand:{id,name}, offer:{offerText}, position}
+            $brand_id   = (int) ($item['brand']['id'] ?? $item['brand_id'] ?? $item['casino_id'] ?? 0);
+            $brand_name = (string) ($item['brand']['name'] ?? '');
+            $bonus      = (string) ($item['offer']['offerText'] ?? $item['offer']['bonus_text'] ??
+                           $item['bonus_offer'] ?? $item['bonus_text'] ?? $item['bonus_code'] ?? '');
+            $code       = (string) ($item['offer']['bonus_code'] ?? $item['bonus_code'] ?? '');
             $position   = (int) ($item['position'] ?? ($item['rank'] ?? 0));
+            // First tracker link (affiliate URL) from offer.trackers[0].trackerLink
+            $affiliate = (string) ($item['offer']['trackers'][0]['trackerLink']
+                ?? $item['offer']['trackers'][0]['tracker_link']
+                ?? $item['trackers'][0]['trackerLink']
+                ?? '');
             $out[] = [
-                'position'    => $position,
-                'brand_id'    => $brand_id,
-                'bonus_offer' => $bonus,
-                'bonus_code'  => $code,
+                'position'      => $position,
+                'brand_id'      => $brand_id,
+                'brand_name'    => $brand_name,
+                'bonus_offer'   => $bonus,
+                'bonus_code'    => $code,
+                'affiliate_link' => $affiliate,
             ];
         }
 

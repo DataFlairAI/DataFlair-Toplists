@@ -63,7 +63,7 @@
 
     /* ── Run All ────────────────────────────────────────────────── */
 
-    $('#df-run-all-tests').on('click', function () {
+    $('#df-run-all-btn').on('click', function () {
         var $btn = $(this);
         $btn.prop('disabled', true).text('Running all…');
 
@@ -101,7 +101,7 @@
     }
 
     function loadLogs() {
-        var $btn       = $('#df-load-logs');
+        var $btn       = $('#df-logs-refresh');
         var $container = $('#df-logs-container');
 
         $btn.prop('disabled', true).text('Loading…');
@@ -137,10 +137,10 @@
             });
     }
 
-    $('#df-load-logs').on('click', loadLogs);
+    $('#df-logs-refresh').on('click', loadLogs);
 
     /* Download link — build nonce-signed URL on click so nonce is always fresh */
-    $('#df-download-logs').on('click', function (e) {
+    $('#df-logs-download').on('click', function (e) {
         e.preventDefault();
         var url = ajaxUrl + '?action=dataflair_logs_download&_ajax_nonce=' +
             encodeURIComponent(nonces.logsDownload);

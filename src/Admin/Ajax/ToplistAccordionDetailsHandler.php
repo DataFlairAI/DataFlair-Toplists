@@ -55,15 +55,16 @@ final class ToplistAccordionDetailsHandler implements AjaxHandlerInterface
         $items = [];
         foreach ($item_summaries as $item) {
             $brand_id   = $item['brand_id'];
-            $brand_name = $brand_map[$brand_id]['name'] ?? '';
+            $brand_name = $brand_map[$brand_id]['name'] ?? $item['brand_name'] ?? '';
             $offer      = $item['bonus_offer'];
             $status     = ($brand_name !== '' && $offer !== '') ? 'synced' : 'partial';
             $items[]    = [
-                'position'    => $item['position'],
-                'brand_id'    => $brand_id,
-                'brand_name'  => $brand_name,
-                'bonus_offer' => $offer,
-                'status'      => $status,
+                'position'      => $item['position'],
+                'brand_id'      => $brand_id,
+                'brand_name'    => $brand_name,
+                'bonus_offer'   => $offer,
+                'affiliate_link' => (string) ($item['affiliate_link'] ?? ''),
+                'status'        => $status,
             ];
         }
 

@@ -21,27 +21,39 @@ final class ToplistsListPage implements PageInterface
     {
         global $wpdb;
         $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-        $toplists = $wpdb->get_results(
+
+        $per_page = 25;
+        $paged    = max(1, (int) ($_GET['paged'] ?? 1));
+        $total    = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
+        $total_pages = $total > 0 ? (int) ceil($total / $per_page) : 1;
+        $paged    = min($paged, $total_pages);
+        $offset   = ($paged - 1) * $per_page;
+
+        $toplists = $wpdb->get_results($wpdb->prepare(
             "SELECT id, api_toplist_id, name, slug, version,
                     last_synced, item_count, locked_count, sync_warnings,
                     current_period,
                     JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name')) AS template_name
-             FROM $table_name"
-        );
-        if (is_array($toplists)) {
-            usort($toplists, static fn($a, $b) => (int) $a->api_toplist_id <=> (int) $b->api_toplist_id);
-        }
+             FROM $table_name
+             ORDER BY api_toplist_id ASC
+             LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        ));
 
-        $all_templates = [];
-        if (is_array($toplists)) {
-            foreach ($toplists as $tl) {
-                $tname = isset($tl->template_name) ? (string) $tl->template_name : '';
-                if ($tname !== '' && !in_array($tname, $all_templates, true)) {
-                    $all_templates[] = $tname;
-                }
-            }
-            sort($all_templates);
-        }
+        // All rows for the Alt Geos dropdown (name + IDs only).
+        $all_toplists_for_select = $wpdb->get_results(
+            "SELECT id, api_toplist_id, name FROM $table_name ORDER BY name ASC"
+        );
+
+        // Template filter built from every row, not just current page.
+        $template_rows = $wpdb->get_col(
+            "SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name'))
+             FROM $table_name
+             WHERE JSON_EXTRACT(data, '$.data.template.name') IS NOT NULL"
+        );
+        $all_templates = array_values(array_filter($template_rows ?? []));
+        sort($all_templates);
         ?>
         <div class="wrap">
             <div class="df-page-header">
@@ -53,11 +65,18 @@ final class ToplistsListPage implements PageInterface
                 </div>
             </div>
 
-            <div id="dataflair-toplist-sync-progress" style="display:none;margin-bottom:16px;max-width:400px;">
-                <div style="background:#f0f0f1;border-radius:3px;height:20px;overflow:hidden;position:relative;">
-                    <div id="dataflair-toplist-progress-bar" style="background:#2271b1;width:0%;height:100%;transition:width 0.3s;"></div>
-                    <div id="dataflair-toplist-progress-text" style="position:absolute;top:0;left:0;width:100%;text-align:center;color:#fff;font-size:12px;line-height:20px;font-weight:600;">0%</div>
+            <!-- Sync console (same UX as Dashboard) -->
+            <div id="df-tl-sync-console" class="df-sync-console" data-active="0" style="display:none;margin-bottom:16px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span id="df-tl-spinner" style="animation:df-spin 1s linear infinite;display:inline-block;">↻</span>
+                    <strong id="df-tl-title">Syncing Toplists…</strong>
+                    <span id="df-tl-eta" style="margin-left:auto;color:#646970;font-size:12px;"></span>
                 </div>
+                <div style="height:6px;background:#ddd;border-radius:3px;margin-bottom:8px;">
+                    <div id="df-tl-progress-bar" style="height:100%;background:#2271b1;width:0;border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+                <div id="df-tl-stats" style="font-size:12px;color:#646970;margin-bottom:6px;">Starting…</div>
+                <div id="df-tl-log" style="font-family:monospace;font-size:11px;background:#1e1e1e;color:#d4d4d4;padding:10px 12px;border-radius:4px;max-height:200px;overflow-y:auto;"></div>
             </div>
             <p class="description"><?php echo esc_html(($this->lastSyncLabelFormatter)('dataflair_last_toplists_sync')); ?></p>
             <hr>
@@ -77,7 +96,7 @@ final class ToplistsListPage implements PageInterface
                     </div>
                     <button type="button" id="dataflair-clear-toplist-filters" class="button">Clear</button>
                     <span id="dataflair-toplists-count" style="color:#646970;margin-left:auto;">
-                        Showing <?php echo count($toplists); ?> toplists
+                        <?php echo esc_html($total); ?> toplists total · page <?php echo $paged; ?> of <?php echo $total_pages; ?>
                     </span>
                 </div>
 
@@ -93,6 +112,7 @@ final class ToplistsListPage implements PageInterface
                         <tr>
                             <th style="width:30px;"><input type="checkbox" id="df-toplist-select-all" title="Select all"></th>
                             <th style="width:36px;"></th>
+                            <th style="width:60px;">WP ID</th>
                             <th>API ID</th>
                             <th style="width:38%;">Name</th>
                             <th class="sortable-toplist">
@@ -130,6 +150,7 @@ final class ToplistsListPage implements PageInterface
                                     <span class="dashicons dashicons-arrow-right"></span>
                                 </button>
                             </td>
+                            <td style="font-family:monospace;color:#646970;"><?php echo esc_html($toplist->id); ?></td>
                             <td style="font-family:monospace;"><?php echo esc_html($toplist->api_toplist_id); ?></td>
                             <td>
                                 <?php echo esc_html($toplist->name); ?>
@@ -147,7 +168,7 @@ final class ToplistsListPage implements PageInterface
                         </tr>
                         <!-- Accordion row -->
                         <tr class="toplist-accordion-row" id="acc-<?php echo esc_attr($toplist->id); ?>" style="display:none;">
-                            <td colspan="8" style="padding:0;">
+                            <td colspan="9" style="padding:0;">
                                 <div class="toplist-accordion-inner">
                                     <nav class="df-accordion-tabs">
                                         <button type="button" class="df-acc-tab df-acc-tab--active" data-tab="items">Items</button>
@@ -161,7 +182,7 @@ final class ToplistsListPage implements PageInterface
                                     <div class="df-acc-panel df-acc-panel--active" data-panel="items">
                                         <div class="df-acc-items-loading">Loading items…</div>
                                         <table class="df-acc-items-table" style="display:none;">
-                                            <thead><tr><th>#</th><th>Brand</th><th>Bonus Offer</th><th>Status</th></tr></thead>
+                                            <thead><tr><th style="width:36px;">#</th><th style="width:22%;">Brand</th><th style="width:28%;">Bonus Offer</th><th>Affiliate Link</th><th style="width:80px;">Status</th></tr></thead>
                                             <tbody></tbody>
                                         </table>
                                         <p class="df-acc-items-empty" style="display:none;">No items in this toplist.</p>
@@ -196,7 +217,7 @@ final class ToplistsListPage implements PageInterface
                                                     <td>
                                                         <select class="alt-toplist-select" style="min-width:300px;">
                                                             <option value="">Select a toplist…</option>
-                                                            <?php foreach ($toplists as $alt): ?>
+                                                            <?php foreach ($all_toplists_for_select as $alt): ?>
                                                                 <option value="<?php echo esc_attr($alt->id); ?>">
                                                                     <?php echo esc_html($alt->name); ?> (#<?php echo esc_html($alt->api_toplist_id); ?>)
                                                                 </option>
@@ -215,6 +236,27 @@ final class ToplistsListPage implements PageInterface
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+
+                <div id="df-toplists-pagination" class="tablenav bottom" style="margin-top:8px;"
+                     data-base-url="<?php echo esc_attr(admin_url('admin.php?page=dataflair-toplists-list')); ?>">
+                    <div class="tablenav-pages" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span class="displaying-num" id="df-toplists-paging-label">
+                            <?php echo esc_html($total); ?> toplists — page <?php echo $paged; ?> of <?php echo $total_pages; ?>
+                        </span>
+                        <span class="pagination-links">
+                            <button type="button" class="button df-tl-page-btn" data-page="1"
+                                    <?php echo $paged <= 1 ? 'disabled' : ''; ?>>«</button>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo max(1, $paged - 1); ?>"
+                                    <?php echo $paged <= 1 ? 'disabled' : ''; ?>>‹</button>
+                            <span style="padding:0 8px;">Page <?php echo $paged; ?> of <?php echo $total_pages; ?></span>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo min($total_pages, $paged + 1); ?>"
+                                    <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>›</button>
+                            <button type="button" class="button df-tl-page-btn" data-page="<?php echo $total_pages; ?>"
+                                    <?php echo $paged >= $total_pages ? 'disabled' : ''; ?>>»</button>
+                        </span>
+                    </div>
+                </div>
+
             <?php else: ?>
                 <p class="df-empty-state">No toplists synced yet. Click <strong>Fetch All Toplists from API</strong> to get started.</p>
             <?php endif; ?>
@@ -292,8 +334,14 @@ final class ToplistsListPage implements PageInterface
                     if (!items.length) { $panel.find('.df-acc-items-empty').show(); return; }
                     var rows = items.map(function (item) {
                         var pillCls = item.status === 'synced' ? 'df-pill--success' : 'df-pill--warning';
-                        return '<tr><td>' + item.position + '</td><td>' + esc(item.brand_name) + ' <span style="color:#999;font-size:11px;">#' + item.brand_id + '</span></td>'
+                        var affLink = item.affiliate_link
+                            ? '<a href="' + esc(item.affiliate_link) + '" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all;">'
+                              + esc(item.affiliate_link.substring(0, 55) + (item.affiliate_link.length > 55 ? '…' : '')) + '</a>'
+                            : '<span style="color:#999;">—</span>';
+                        return '<tr><td style="font-family:monospace;">' + item.position + '</td>'
+                            + '<td>' + esc(item.brand_name) + ' <span style="color:#999;font-size:11px;">#' + item.brand_id + '</span></td>'
                             + '<td title="' + esc(item.bonus_offer) + '">' + esc(item.bonus_offer || '—') + '</td>'
+                            + '<td>' + affLink + '</td>'
                             + '<td><span class="df-pill ' + pillCls + '">' + item.status + '</span></td></tr>';
                     });
                     $panel.find('.df-acc-items-table tbody').html(rows.join(''));
@@ -339,7 +387,7 @@ final class ToplistsListPage implements PageInterface
             $(document).on('click', '.df-acc-resync', function () {
                 var $btn = $(this);
                 $btn.prop('disabled', true).text('Syncing…');
-                startToplistBatchSync(function () { $btn.prop('disabled', false).text('↻ Re-sync'); });
+                startToplistBatchSync($btn, function () { $btn.prop('disabled', false).text('↻ Re-sync'); });
             });
 
             /* ── Select all / Bulk bar ───────────────────────────── */
@@ -375,10 +423,11 @@ final class ToplistsListPage implements PageInterface
                 $(this).prop('disabled', true).text('Starting…');
                 var self = this;
                 $.post(ajaxUrl, { action: 'dataflair_bulk_resync_toplists', _ajax_nonce: nonces.bulkResync, api_toplist_ids: ids }, function (res) {
-                    if (res.success && res.data && res.data.start_batch) {
-                        startToplistBatchSync(function () { $(self).prop('disabled', false).text('Re-sync Selected'); });
+                    $(self).prop('disabled', false).text('Re-sync Selected');
+                    if (res.success) {
+                        var d = res.data || {};
+                        alert('Re-sync complete: ' + (d.message || (d.synced + ' synced')));
                     } else {
-                        $(self).prop('disabled', false).text('Re-sync Selected');
                         alert((res.data || {}).message || 'Error starting resync.');
                     }
                 });
@@ -398,33 +447,126 @@ final class ToplistsListPage implements PageInterface
                 });
             });
 
-            /* ── Fetch All Toplists (top button) ─────────────────── */
-            $('#dataflair-fetch-all-toplists').on('click', function () {
-                startToplistBatchSync(function () { $('#dataflair-fetch-all-toplists').text('Fetch All Toplists from API'); });
-            });
+            /* ── Fetch All Toplists + Sync Console ───────────────── */
+            var $tlConsole   = $('#df-tl-sync-console');
+            var $tlBar       = $('#df-tl-progress-bar');
+            var $tlStats     = $('#df-tl-stats');
+            var $tlLog       = $('#df-tl-log');
+            var $tlEta       = $('#df-tl-eta');
 
-            function startToplistBatchSync(onDone) {
+            function tlLog(msg, type) {
+                var colors = { success:'#4ec94e', error:'#f4736a', info:'#7ecfff', done:'#f0e68c', muted:'#888' };
+                var icons  = { success:'✓', error:'✗', info:'→', done:'★', muted:'-' };
+                var now = new Date();
+                var ts = now.toTimeString().slice(0,8);
+                var c  = colors[type] || colors.info;
+                var ic = icons[type]  || icons.info;
+                $tlLog.append('<div style="color:' + c + ';margin-bottom:2px;">' + ts + ' <span>' + ic + '</span> ' + $('<span>').text(msg).html() + '</div>');
+                $tlLog.scrollTop($tlLog[0].scrollHeight);
+            }
+            function tlProgress(page, total) {
+                if (!total) return;
+                var pct = Math.min(100, Math.round((page / total) * 100));
+                $tlBar.css('width', pct + '%');
+            }
+            function tlFmtEta(ms) {
+                if (ms < 60000) return Math.round(ms / 1000) + 's remaining';
+                return Math.round(ms / 60000) + 'min remaining';
+            }
+
+            function startToplistBatchSync($triggerBtn, onDone) {
+                $tlConsole.show();
+                $tlLog.empty();
+                $tlBar.css('width', '0');
+                $tlStats.text('Validating token…');
+                $tlEta.text('');
+                tlLog('Validating API token…', 'info');
+
                 $.post(ajaxUrl, { action: 'dataflair_fetch_all_toplists', _ajax_nonce: nonces.fetchAll }, function (res) {
-                    if (!res.success) { if (onDone) onDone(); return; }
-                    var total = res.data ? (res.data.total || 0) : 0;
-                    var done = 0, page = 1;
-                    $('#dataflair-toplist-sync-progress').show();
+                    if (!res || !res.success) {
+                        var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Token validation failed';
+                        tlLog('Error: ' + errMsg, 'error');
+                        $tlStats.text('Failed — ' + errMsg);
+                        if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
+                        if (onDone) onDone(false);
+                        return;
+                    }
+                    tlLog('Token OK — starting page sync…', 'info');
+
+                    var page = 1, totalPages = null, syncedTotal = 0, tStart = Date.now();
+
                     function nextPage() {
+                        var tPage = Date.now();
                         $.post(ajaxUrl, { action: 'dataflair_sync_toplists_batch', _ajax_nonce: nonces.syncBatch, page: page }, function (r) {
-                            if (r && r.data) done += (r.data.synced || 0);
-                            var pct = total > 0 ? Math.round((done / total) * 100) : 100;
-                            $('#dataflair-toplist-progress-bar').css('width', pct + '%');
-                            $('#dataflair-toplist-progress-text').text(pct + '%');
-                            if (r && r.data && r.data.has_more) { page++; nextPage(); }
-                            else {
-                                $('#dataflair-toplist-sync-progress').hide();
-                                if (onDone) onDone();
+                            var pageMs     = Date.now() - tPage;
+                            var data       = (r && r.data) ? r.data : {};
+
+                            if (!r || !r.success) {
+                                var eMsg = data.message || 'Server error on page ' + page;
+                                tlLog('Error on page ' + page + ': ' + eMsg, 'error');
+                                $tlStats.text('Stopped — ' + eMsg);
+                                if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
+                                if (onDone) onDone(false);
+                                return;
                             }
+
+                            var synced     = data.synced     || 0;
+                            var errors     = data.errors     || 0;
+                            var isComplete = data.is_complete || false;
+                            var lastPage   = data.last_page  || page;
+                            var nextPageNo = data.next_page  || (page + 1);
+                            syncedTotal   += synced;
+
+                            if (totalPages === null) {
+                                totalPages = lastPage;
+                                tlLog('API reports ' + totalPages + ' page(s) to sync', 'info');
+                                $tlStats.text('Page 1 of ' + totalPages + ' · 0 synced');
+                            }
+
+                            tlProgress(page, totalPages);
+                            var lineType = errors > 0 ? 'error' : 'success';
+                            var lineMsg  = 'Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced';
+                            if (errors > 0) lineMsg += '  ·  ⚠ ' + errors + ' errors';
+                            if (synced === 0 && errors === 0) lineMsg += '  ·  (skipped)';
+                            lineMsg += '  ·  ' + pageMs + 'ms';
+                            tlLog(lineMsg, lineType);
+
+                            var elapsed = Date.now() - tStart;
+                            var avg     = elapsed / page;
+                            $tlStats.text('Page ' + page + ' of ' + totalPages + ' · ' + syncedTotal + ' synced');
+                            $tlEta.text(!isComplete ? tlFmtEta((totalPages - page) * avg) : '');
+
+                            if (!isComplete) {
+                                page = nextPageNo;
+                                nextPage();
+                            } else {
+                                var totalSec = ((Date.now() - tStart) / 1000).toFixed(1);
+                                tlLog('Done — ' + syncedTotal + ' toplists synced in ' + totalSec + 's', 'done');
+                                $tlStats.text(syncedTotal + ' toplists synced in ' + totalSec + 's');
+                                $tlEta.text('');
+                                if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API ✓');
+                                if (onDone) onDone(true);
+                            }
+                        }).fail(function () {
+                            tlLog('Page ' + page + ' request failed (network error)', 'error');
+                            $tlStats.text('Network error on page ' + page);
+                            if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
+                            if (onDone) onDone(false);
                         });
                     }
                     nextPage();
+                }).fail(function () {
+                    tlLog('Network error during token validation', 'error');
+                    $tlStats.text('Network error.');
+                    if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
+                    if (onDone) onDone(false);
                 });
             }
+
+            $('#dataflair-fetch-all-toplists').on('click', function () {
+                var $btn = $(this).prop('disabled', true).text('Syncing…');
+                startToplistBatchSync($btn, null);
+            });
 
             /* ── Search + filter ─────────────────────────────────── */
             function filterRows() {
@@ -480,6 +622,13 @@ final class ToplistsListPage implements PageInterface
                     $tbody.append(row);
                     if ($acc.length) $tbody.append($acc[0]);
                 });
+            });
+
+            /* ── Toplists pagination buttons ─────────────────────── */
+            $(document).on('click', '.df-tl-page-btn:not([disabled])', function () {
+                var page    = $(this).data('page');
+                var baseUrl = $('#df-toplists-pagination').data('base-url');
+                window.location.href = baseUrl + '&paged=' + page;
             });
 
             function esc(s) {

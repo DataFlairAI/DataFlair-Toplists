@@ -87,19 +87,21 @@ final class BrandSyncService implements BrandSyncServiceInterface
             return SyncResult::failure($page, (string) $result['message']);
         }
 
-        $partial = !empty($result['partial']);
+        $partial    = !empty($result['partial']);
+        $lastPage   = (int) $result['last_page'];
+        $isComplete = !$partial && $page >= $lastPage;
 
         do_action('dataflair_sync_batch_finished', [
             'type'            => 'brands',
             'page'            => $page,
+            'last_page'       => $lastPage,
             'items_done'      => (int) ($result['synced'] ?? 0),
             'errors'          => (int) ($result['errors'] ?? 0),
             'partial'         => $partial,
+            'is_complete'     => $isComplete,
             'elapsed_seconds' => round(microtime(true) - $batchT0, 3),
             'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
         ]);
-
-        $isComplete = !$partial && $page >= (int) $result['last_page'];
 
         return SyncResult::success(
             $page,

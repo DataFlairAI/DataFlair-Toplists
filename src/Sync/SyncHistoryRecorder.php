@@ -1,22 +1,21 @@
 <?php
 /**
- * Phase 9.6 (admin UX redesign) — capped FIFO history of sync events.
+ * Phase 9.6 (admin UX redesign) — capped FIFO history of sync batches.
  *
- * Subscribes to the existing `dataflair_sync_batch_finished` and
- * `dataflair_sync_item_failed` actions emitted by {@see BrandSyncService}
- * and {@see ToplistSyncService}, and persists a compact, capped history
- * to the `dataflair_sync_history` option for the Dashboard "Recent
- * activity" card and the Tools → Logs tab fallback.
+ * Listens to `dataflair_sync_batch_finished` and accumulates per-page counts
+ * in a transient. When the payload includes `is_complete = true` (or the first
+ * page of a new batch starts) it writes a single batch-level summary entry to
+ * the `dataflair_sync_history` option — one row per full sync run, not per page.
  *
- * Single responsibility: turn sync events into a capped option entry.
- * The sync services do not need to know about it; wiring is via WP hooks.
+ * Also listens to `dataflair_sync_item_failed` to capture hard errors that
+ * never reach a completion event.
  *
  * Storage shape (each entry):
  *   [
  *     'ts'     => int unix timestamp (UTC),
  *     'status' => 'success' | 'partial' | 'error',
- *     'title'  => human-readable headline ("Brands sync · page 3"),
- *     'detail' => secondary line ("12 synced · 0 errors · 4.2s"),
+ *     'title'  => human-readable headline ("Brands sync — 842 synced · 7 pages"),
+ *     'detail' => secondary line ("0 errors · 42.1s"),
  *     'source' => 'brands' | 'toplists',
  *   ]
  */
@@ -27,8 +26,11 @@ namespace DataFlair\Toplists\Sync;
 
 final class SyncHistoryRecorder
 {
-    public const OPTION_KEY = 'dataflair_sync_history';
+    public const OPTION_KEY  = 'dataflair_sync_history';
     public const MAX_ENTRIES = 50;
+
+    /** Transient TTL — 2 hours. Long enough to survive a slow multi-page sync. */
+    private const ACC_TTL = 7200;
 
     public function register(): void
     {
@@ -44,35 +46,69 @@ final class SyncHistoryRecorder
      */
     public function onBatchFinished(array $payload): void
     {
-        $type    = (string) ($payload['type'] ?? '');
+        $type = (string) ($payload['type'] ?? '');
         if ($type !== 'brands' && $type !== 'toplists') {
             return;
         }
 
-        $partial    = !empty($payload['partial']);
-        $items_done = (int) ($payload['items_done'] ?? 0);
+        $page       = (int) ($payload['page'] ?? 1);
+        $itemsDone  = (int) ($payload['items_done'] ?? 0);
         $errors     = (int) ($payload['errors'] ?? 0);
         $elapsed    = (float) ($payload['elapsed_seconds'] ?? 0.0);
-        $page       = (int) ($payload['page'] ?? 0);
+        $partial    = !empty($payload['partial']);
+        $isComplete = !empty($payload['is_complete']);
 
-        $status = $partial ? 'partial' : ($errors > 0 ? 'partial' : 'success');
+        $accKey = 'dataflair_sync_acc_' . $type;
 
-        $title  = ucfirst($type) . ' sync · page ' . $page;
-        $detail = sprintf(
-            '%d synced · %d error%s · %ss',
-            $items_done,
-            $errors,
-            $errors === 1 ? '' : 's',
-            number_format($elapsed, 1)
-        );
+        // On first page, start a fresh accumulator.
+        if ($page === 1) {
+            $acc = [
+                'ts'      => time(),
+                'synced'  => 0,
+                'errors'  => 0,
+                'elapsed' => 0.0,
+                'pages'   => 0,
+            ];
+        } else {
+            $stored = \get_transient($accKey);
+            $acc    = is_array($stored) ? $stored : [
+                'ts'      => time(),
+                'synced'  => 0,
+                'errors'  => 0,
+                'elapsed' => 0.0,
+                'pages'   => 0,
+            ];
+        }
 
-        $this->push([
-            'ts'     => time(),
-            'status' => $status,
-            'title'  => $title,
-            'detail' => $detail,
-            'source' => $type,
-        ]);
+        $acc['synced']  += $itemsDone;
+        $acc['errors']  += $errors;
+        $acc['elapsed'] += $elapsed;
+        $acc['pages']   += 1;
+
+        if ($isComplete || $partial) {
+            // Flush to history as a single batch entry.
+            $status = ($acc['errors'] > 0 || $partial) ? 'partial' : 'success';
+            $label  = ucfirst($type) . ' sync';
+            $pages  = $acc['pages'];
+            $title  = $label . ' — ' . $acc['synced'] . ' synced · ' . $pages . ' page' . ($pages === 1 ? '' : 's');
+            $detail = sprintf(
+                '%d error%s · %ss',
+                $acc['errors'],
+                $acc['errors'] === 1 ? '' : 's',
+                number_format($acc['elapsed'], 1)
+            );
+            $this->push([
+                'ts'     => (int) $acc['ts'],
+                'status' => $status,
+                'title'  => $title,
+                'detail' => $detail,
+                'source' => $type,
+            ]);
+            \delete_transient($accKey);
+        } else {
+            // Not done yet — persist accumulator until next page arrives.
+            \set_transient($accKey, $acc, self::ACC_TTL);
+        }
     }
 
     /**
@@ -85,11 +121,13 @@ final class SyncHistoryRecorder
             return;
         }
 
-        $error = (string) ($payload['error'] ?? 'unknown error');
-        $page  = (int) ($payload['page'] ?? 0);
-
+        $error  = (string) ($payload['error'] ?? 'unknown error');
+        $page   = (int) ($payload['page'] ?? 0);
         $title  = ucfirst($type) . ' sync failed · page ' . $page;
         $detail = $this->truncate($error, 240);
+
+        // Also clear any in-progress accumulator so the next run starts fresh.
+        \delete_transient('dataflair_sync_acc_' . $type);
 
         $this->push([
             'ts'     => time(),

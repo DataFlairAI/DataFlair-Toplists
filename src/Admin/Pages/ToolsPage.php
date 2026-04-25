@@ -54,6 +54,16 @@ final class ToolsPage implements PageInterface
                     Logs
                 </a>
             </nav>
+            <script>
+            window.DFTools = window.DFTools || {};
+            DFTools.ajaxUrl   = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
+            DFTools.nonces    = {
+                runTest:      <?php echo json_encode(wp_create_nonce('dataflair_run_test')); ?>,
+                runAll:       <?php echo json_encode(wp_create_nonce('dataflair_run_all_tests')); ?>,
+                logsTail:     <?php echo json_encode(wp_create_nonce('dataflair_logs_tail')); ?>,
+                logsDownload: <?php echo json_encode(wp_create_nonce('dataflair_logs_download')); ?>,
+            };
+            </script>
 
             <?php if ($current_tab === 'tests'): ?>
                 <?php $this->renderTestsTab(); ?>
@@ -167,16 +177,6 @@ final class ToolsPage implements PageInterface
             </table>
 
         </div>
-        <script>
-        window.DFTools = window.DFTools || {};
-        DFTools.ajaxUrl   = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
-        DFTools.nonces    = {
-            runTest:    <?php echo json_encode(wp_create_nonce('dataflair_run_test')); ?>,
-            runAll:     <?php echo json_encode(wp_create_nonce('dataflair_run_all_tests')); ?>,
-            logsTail:   <?php echo json_encode(wp_create_nonce('dataflair_logs_tail')); ?>,
-            logsDownload: <?php echo json_encode(wp_create_nonce('dataflair_logs_download')); ?>,
-        };
-        </script>
         <?php
     }
 
@@ -258,7 +258,7 @@ final class ToolsPage implements PageInterface
                             <option value="toplists">GET /toplists (list all)</option>
                             <option value="toplists/custom">GET /toplists/{id} (single — enter ID below)</option>
                             <option value="brands">GET /brands (list all)</option>
-                            <option value="brands/custom">GET /brands/{id} (single — enter ID below)</option>
+                            <option value="brands_v2">GET /brands — V2 (list all, V2 schema)</option>
                         </select>
                     </td>
                 </tr>
@@ -329,13 +329,13 @@ final class ToolsPage implements PageInterface
 
                 $endpoint.on('change', function(){
                     var v = $(this).val();
-                    $idRow.toggle(v === 'toplists/custom' || v === 'brands/custom');
+                    $idRow.toggle(v === 'toplists/custom');
                 });
 
                 $fetch.on('click', function(){
                     var ep = $endpoint.val();
                     var resourceId = $idInput.val().trim();
-                    if ((ep === 'toplists/custom' || ep === 'brands/custom') && !resourceId) {
+                    if (ep === 'toplists/custom' && !resourceId) {
                         alert('Please enter a resource ID.');
                         return;
                     }

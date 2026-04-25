@@ -5,7 +5,7 @@
  * Three tabs:
  *   api_connection  — Bearer token, base URL, brands API version
  *   customizations  — Ribbon/CTA color defaults
- *   sync_schedule   — Cadence selects, retry count, alert email (Phase 4 form)
+ *   sync_schedule   — WP-CLI sync reference, retry count, alert email
  *
  * The Sync Toplists section and the toplists table have moved to
  * ToplistsListPage. The API Preview tab has moved to ToolsPage.
@@ -49,12 +49,12 @@ final class SettingsPage implements PageInterface
                     Customizations
                 </a>
                 <a href="?page=dataflair-settings&tab=sync_schedule" class="nav-tab <?php echo $current_tab === 'sync_schedule' ? 'nav-tab-active' : ''; ?>">
-                    Sync Schedule
+                    Sync
                 </a>
             </nav>
 
             <form id="dataflair-settings-form" method="post" action="options.php">
-                <?php wp_nonce_field('dataflair_save_settings', 'dataflair_settings_nonce'); ?>
+                <?php settings_fields('dataflair_settings'); ?>
 
                 <?php if ($current_tab === 'api_connection'): ?>
                     <!-- API Connection Tab -->
@@ -224,43 +224,50 @@ final class SettingsPage implements PageInterface
                     </div>
 
                 <?php else: ?>
-                    <!-- Sync Schedule Tab -->
+                    <!-- Sync Tab -->
                     <div class="tab-content" style="padding-top:16px;">
-                        <h2>Sync Schedule</h2>
+                        <h2>Sync</h2>
                         <p class="description">
-                            Configure automatic sync cadences for Brands and Toplists. Changes take
-                            effect immediately — the WP-Cron event is rescheduled on save.
+                            DataFlair sync is triggered manually — from the Dashboard or via WP-CLI.
+                            There is no automatic WP-Cron schedule. Add the commands below to your
+                            server crontab to run sync on a schedule.
                         </p>
+
+                        <h3 style="margin-top:20px;">WP-CLI Commands</h3>
+                        <table class="widefat striped" style="max-width:680px;margin-bottom:20px;">
+                            <thead><tr><th>Action</th><th>Command</th></tr></thead>
+                            <tbody>
+                                <tr>
+                                    <td>Sync all toplists</td>
+                                    <td><code>wp dataflair sync toplists</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Sync all brands</td>
+                                    <td><code>wp dataflair sync brands</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Sync both</td>
+                                    <td><code>wp dataflair sync all</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Check API health</td>
+                                    <td><code>wp dataflair health</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h3>Example crontab entry (hourly toplists)</h3>
+                        <pre style="background:#f6f7f7;padding:12px 14px;border-radius:3px;font-size:12px;line-height:1.6;max-width:680px;overflow-x:auto;">0 * * * * cd /var/www/html &amp;&amp; wp dataflair sync toplists --allow-root --quiet</pre>
+
+                        <h3 style="margin-top:20px;">Sync Options</h3>
                         <table class="form-table">
-                            <tr>
-                                <th scope="row"><label for="dataflair_brands_sync_cadence">Brands Sync Cadence</label></th>
-                                <td>
-                                    <select id="dataflair_brands_sync_cadence" name="dataflair_brands_sync_cadence">
-                                        <option value="hourly"        <?php selected(get_option('dataflair_brands_sync_cadence', 'six_hours'), 'hourly'); ?>>Hourly</option>
-                                        <option value="six_hours"     <?php selected(get_option('dataflair_brands_sync_cadence', 'six_hours'), 'six_hours'); ?>>Every 6 hours (default)</option>
-                                        <option value="twelve_hours"  <?php selected(get_option('dataflair_brands_sync_cadence', 'six_hours'), 'twelve_hours'); ?>>Every 12 hours</option>
-                                        <option value="daily_3am"     <?php selected(get_option('dataflair_brands_sync_cadence', 'six_hours'), 'daily_3am'); ?>>Daily at 3 AM</option>
-                                    </select>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><label for="dataflair_toplists_sync_cadence">Toplists Sync Cadence</label></th>
-                                <td>
-                                    <select id="dataflair_toplists_sync_cadence" name="dataflair_toplists_sync_cadence">
-                                        <option value="hourly"        <?php selected(get_option('dataflair_toplists_sync_cadence', 'hourly'), 'hourly'); ?>>Hourly (default)</option>
-                                        <option value="six_hours"     <?php selected(get_option('dataflair_toplists_sync_cadence', 'hourly'), 'six_hours'); ?>>Every 6 hours</option>
-                                        <option value="twelve_hours"  <?php selected(get_option('dataflair_toplists_sync_cadence', 'hourly'), 'twelve_hours'); ?>>Every 12 hours</option>
-                                        <option value="daily_3am"     <?php selected(get_option('dataflair_toplists_sync_cadence', 'hourly'), 'daily_3am'); ?>>Daily at 3 AM</option>
-                                    </select>
-                                </td>
-                            </tr>
                             <tr>
                                 <th scope="row"><label for="dataflair_sync_retry_count">Retry Count</label></th>
                                 <td>
                                     <input type="number" id="dataflair_sync_retry_count" name="dataflair_sync_retry_count"
                                            value="<?php echo esc_attr(get_option('dataflair_sync_retry_count', '3')); ?>"
                                            class="small-text" min="0" max="10">
-                                    <p class="description">Number of retry attempts per failed sync request (0 = no retries).</p>
+                                    <p class="description">Number of retry attempts per failed API page request (0 = no retries).</p>
                                 </td>
                             </tr>
                             <tr>
@@ -273,7 +280,7 @@ final class SettingsPage implements PageInterface
                                 </td>
                             </tr>
                         </table>
-                        <?php submit_button('Save Schedule', 'primary', 'submit', false, ['id' => 'dataflair-save-schedule']); ?>
+                        <?php submit_button('Save', 'primary', 'submit', false, ['id' => 'dataflair-save-schedule']); ?>
                         <span id="dataflair-save-message-schedule" style="margin-left:10px;"></span>
                     </div>
                 <?php endif; ?>
