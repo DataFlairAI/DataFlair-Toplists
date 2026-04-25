@@ -100,17 +100,73 @@ AJAX action is preserved.
 
 ---
 
-## Planned: v2.0.x → v2.1.0 (shim drop)
+## v2.0.x → v2.1.0
 
-The `DataFlair_Toplists` god-class is scheduled for full removal in
-v2.1.0. After the drop:
+### What changed
 
-- `DataFlair_Toplists::get_instance()` throws `BadMethodCallException`
-  with a pointer to this guide.
+Strict deprecation warnings on `DataFlair_Toplists::get_instance()` flip
+from **opt-in** (v2.0.0) to **default-on** (v2.1.0). Any call to the
+legacy entry point from outside `DATAFLAIR_PLUGIN_DIR` now emits
+`E_USER_DEPRECATED` once per unique caller file/line per request,
+pointing to `\DataFlair\Toplists\Plugin::boot()`.
+
+The class symbol itself is preserved. Every existing hook registration,
+admin page, shortcode, block, REST route, and AJAX action continues to
+work byte-for-byte — nothing breaks at runtime.
+
+### What downstream consumers need to do
+
+Option 1 — **migrate**. The recommended pattern (same as v2.0.0):
+
+```php
+$plugin    = \DataFlair\Toplists\Plugin::boot();
+$container = $plugin->container();
+$logger    = $container->get('logger');
+```
+
+Option 2 — **silence temporarily**. If you need more time to port call
+sites, silence the notice without breaking anything:
+
+```php
+add_filter('dataflair_strict_deprecation', '__return_false');
+```
+
+This opt-out remains supported for the entire v2.1.x line. The filter
+stops firing in v3.0.0 when the class symbol itself is scheduled for
+removal.
+
+### Internal caller filtering — what's filtered
+
+The god-class still calls `get_instance()` internally during hook
+dispatch, and extracted `src/` classes still walk through the singleton
+during the strangler-fig transition. Emitting on every such call would
+drown `error_log`. v2.1.0 filters out any caller whose stack-frame `file`
+begins with `DATAFLAIR_PLUGIN_DIR`, so only genuine downstream callers
+(your theme, your child plugin, your mu-plugin) see the notice.
+
+---
+
+## Planned: v2.1.x → v3.0.0 (class-symbol removal)
+
+The `DataFlair_Toplists` symbol is scheduled for full removal in v3.0.0.
+After the drop:
+
+- `DataFlair_Toplists::get_instance()` is undefined. Calling it throws
+  `Error: Class "DataFlair_Toplists" not found`.
+- The `dataflair_strict_deprecation` opt-out filter no longer fires —
+  the class it silenced doesn't exist anymore.
 - All implementation in `dataflair-toplists.php` moves to the `src/`
   namespace tree.
 - The plugin file shrinks to a thin bootstrap that calls
   `\DataFlair\Toplists\Plugin::boot()` and does nothing else.
 
-Plan your migration now. The v2.0.x line is explicitly a migration
-window — nothing else about it will change.
+The v2.1.x point releases will each extract a small batch of the
+remaining god-class methods (shortcode, schema upgrades, DB helpers)
+into `src/` equivalents. Every extraction is additive — the class
+symbol stays, the extracted methods stay as thin delegators.
+
+When every method has been extracted and the class body is empty (or
+near-empty), v3.0.0 ships the final removal.
+
+Plan your migration in v2.1.x. The v2.1.x line is explicitly a
+migration window — nothing else about it will change.

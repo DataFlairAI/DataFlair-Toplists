@@ -178,6 +178,18 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.0
+
+2.1.0 closes the v2.0.x migration window on `DataFlair_Toplists::get_instance()`. Strict-deprecation warnings are now **default-on**: any call to `get_instance()` from outside `DATAFLAIR_PLUGIN_DIR` emits `E_USER_DEPRECATED` once per unique caller file/line per request, pointing to `\DataFlair\Toplists\Plugin::boot()`. Internal callers (the god-class's own hook-dispatch re-entry, extracted delegators under `src/`) are filtered out so `error_log` sees signal, not noise.
+
+Sites that are mid-migration can silence the notices without breaking anything:
+
+```php
+add_filter('dataflair_strict_deprecation', '__return_false');
+```
+
+This remains a supported opt-out for the v2.1.x line. The class symbol itself stays in place — planned removal is tracked for **v3.0.0**, after the remaining ~80 god-class methods (shortcode, schema upgrades, private DB helpers) extract incrementally during v2.1.x point releases.
+
 ### To 2.0.0
 
 2.0.0 is the Phase 8 **canonical bootstrap seam** release. The plugin gains a new entry point, `\DataFlair\Toplists\Plugin::boot()`, backed by a hand-written lazy service container (`\DataFlair\Toplists\Container`). The legacy `DataFlair_Toplists::get_instance()` entry point is **deprecated but fully functional** through the entire v2.0.x line — the god-class continues to own WordPress hook registrations as a strangler-fig shim. **Scheduled removal: v2.1.0.**
@@ -272,6 +284,15 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.0
+- **Phase 9 — strict deprecation default-on.** The v2.0.x migration window on `DataFlair_Toplists::get_instance()` closes. Downstream calls from outside `DATAFLAIR_PLUGIN_DIR` now emit `E_USER_DEPRECATED` once per unique caller file/line per request, pointing to `\DataFlair\Toplists\Plugin::boot()`.
+- Per-caller de-duplication — a static guard keyed on `file:line` prevents the notice from firing more than once per caller per request, even as the god-class re-enters `get_instance()` dozens of times during hook dispatch.
+- Internal caller filtering — any call originating inside `DATAFLAIR_PLUGIN_DIR` (including extracted `src/` classes that still walk through the singleton during the strangler-fig transition) is filtered out of the notice emission. Only genuine downstream callers see the warning.
+- Filter opt-out remains supported: `add_filter('dataflair_strict_deprecation', '__return_false');` silences all notices.
+- Added: **6 new tests** — `ShimForwardingTest` (default-on contract, filter opt-out, per-caller de-dup, different-callers-each-fire-once, internal-callers-filtered-out, singleton preserved). Driven by a testable companion class (`DataFlair_Toplists_Phase9_Shim`) that mirrors the v2.1.0 `get_instance()` logic byte-for-byte so we don't have to load the 5,600-line plugin file to exercise the contract. Full suite: **412 tests, 944 assertions, all green**.
+- Refreshed `UPGRADING.md` with v2.1.0 strict-mode guidance, the extraction trajectory for v2.1.x, and the v3.0.0 class-symbol-removal commitment.
+- Scope note: Phase 9 as originally written called for full god-class deletion. Reality of the extraction arc is that ~80 methods (shortcode, schema upgrades, DB helpers) remain un-extracted, so v2.1.0 ships the **signal escalation** (strict-on-by-default) and defers class-symbol removal to v3.0.0 after those methods extract in v2.1.x point releases. No downstream break, no change in hook behaviour.
 
 ### 2.0.0
 - **Phase 8 — canonical bootstrap seam.** `\DataFlair\Toplists\Plugin::boot()` is now the canonical entry point for the plugin. The plugin file calls `Plugin::boot()` directly; the boot routine is idempotent and internally still calls `DataFlair_Toplists::get_instance()` to preserve every existing hook registration.
@@ -502,4 +523,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.0.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
