@@ -240,7 +240,9 @@ jQuery(document).ready(function($) {
     });
     
     // Handle fetch all brands button with batch processing
+    // Skip when brands.js is loaded — it owns the sync flow on that page.
     $('#dataflair-fetch-all-brands').on('click', function(e) {
+        if (typeof window.DFBrands !== 'undefined') { return; }
         e.preventDefault();
         
         var $button = $(this);
