@@ -361,6 +361,7 @@ final class BrandsPage implements PageInterface
         <tr class="df-brand-accordion-row" id="df-bacc-<?php echo esc_attr($api_id); ?>" style="display:none;">
             <td colspan="9" style="padding:0;background:#f6f7f7;">
                 <div class="df-brand-accordion-inner" style="padding:16px 20px;">
+                    <hr style="margin:0 0 14px;border:none;border-top:1px solid #dcdcde;">
                     <div class="df-bacc-loading" style="color:#646970;">Loading details…</div>
                     <div class="df-bacc-content" style="display:none;">
 
