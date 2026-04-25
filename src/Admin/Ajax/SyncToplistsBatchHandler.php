@@ -28,7 +28,23 @@ final class SyncToplistsBatchHandler implements AjaxHandlerInterface
         }
 
         $page   = isset($request['page']) ? (int) $request['page'] : 1;
+        $t0     = microtime(true);
         $result = $this->service->syncPage(SyncRequest::toplists($page));
+        $ms     = (int) round((microtime(true) - $t0) * 1000);
+
+        // Mirror the CLI sync output to PHP error_log so the user can tail
+        // wp-content/debug.log while clicking "Fetch All Toplists from API".
+        $line = sprintf(
+            '[DataFlair] FetchAllToplists page=%d/%d synced=%d errors=%d elapsed_ms=%d partial=%d%s',
+            $page,
+            $result->lastPage,
+            $result->synced,
+            $result->errors,
+            $ms,
+            $result->partial ? 1 : 0,
+            $result->success ? '' : ' FAILED: ' . $result->message
+        );
+        error_log($line);
 
         if ($result->success) {
             return ['success' => true, 'data' => $result->toArray()];
