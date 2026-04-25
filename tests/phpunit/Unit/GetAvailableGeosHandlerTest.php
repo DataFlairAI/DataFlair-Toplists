@@ -14,6 +14,8 @@ use DataFlair\Toplists\Admin\Ajax\GetAvailableGeosHandler;
 use DataFlair\Toplists\Database\ToplistsRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsQuery.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/GetAvailableGeosHandler.php';
@@ -53,6 +55,9 @@ final class GetAvailableGeosHandlerTest extends TestCase
             public function deleteByApiToplistId(int $api_toplist_id): bool { return false; }
             public function listAllForOptions(): array { return []; }
             public function countAll(): int { return 0; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
         };
     }
 }

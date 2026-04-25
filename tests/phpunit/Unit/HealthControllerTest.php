@@ -17,6 +17,8 @@ use DataFlair\Toplists\Database\ToplistsRepositoryInterface;
 use DataFlair\Toplists\Rest\Controllers\HealthController;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsQuery.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Rest/Controllers/HealthController.php';
 require_once __DIR__ . '/RestControllerTestStubs.php';
@@ -40,6 +42,9 @@ final class HealthControllerTest extends TestCase
             public function collectGeoNames(): array { return []; }
             public function listAllForOptions(): array { return []; }
             public function countAll(): int { return 42; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
         };
 
         $response = (new HealthController($repo))->status();
@@ -64,6 +69,9 @@ final class HealthControllerTest extends TestCase
             public function collectGeoNames(): array { return []; }
             public function listAllForOptions(): array { return []; }
             public function countAll(): int { return 0; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
         };
 
         $response = (new HealthController($repo))->status();

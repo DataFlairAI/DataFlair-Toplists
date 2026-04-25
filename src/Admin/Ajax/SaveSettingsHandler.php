@@ -52,6 +52,45 @@ final class SaveSettingsHandler implements AjaxHandlerInterface
             }
         }
 
+        // Sync schedule fields — save values and reschedule WP-Cron events if cadence changed.
+        $cadence_map = ['hourly' => 'hourly', 'six_hours' => 'dataflair_six_hours', 'twelve_hours' => 'dataflair_twelve_hours', 'daily_3am' => 'dataflair_daily_3am'];
+        $schedule_fields = ['dataflair_brands_sync_cadence', 'dataflair_toplists_sync_cadence'];
+
+        foreach ($schedule_fields as $field) {
+            if (!isset($request[$field])) {
+                continue;
+            }
+            $new_cadence = sanitize_key((string) $request[$field]);
+            if (!array_key_exists($new_cadence, $cadence_map)) {
+                continue;
+            }
+            $old_cadence = get_option($field, '');
+            update_option($field, $new_cadence);
+
+            if ($old_cadence !== $new_cadence) {
+                $hook = ($field === 'dataflair_brands_sync_cadence')
+                    ? 'dataflair_cron_sync_brands'
+                    : 'dataflair_cron_sync_toplists';
+                wp_clear_scheduled_hook($hook);
+                $wp_recurrence = $cadence_map[$new_cadence];
+                // daily_3am maps to our custom recurrence; fall back to once-daily if not registered.
+                if (!wp_get_schedules()[$wp_recurrence]) {
+                    $wp_recurrence = 'daily';
+                }
+                wp_schedule_event(time(), $wp_recurrence, $hook);
+            }
+        }
+
+        if (isset($request['dataflair_sync_retry_count'])) {
+            $retry = max(0, min(10, (int) $request['dataflair_sync_retry_count']));
+            update_option('dataflair_sync_retry_count', (string) $retry);
+        }
+
+        if (isset($request['dataflair_sync_alert_email'])) {
+            $email = sanitize_email((string) $request['dataflair_sync_alert_email']);
+            update_option('dataflair_sync_alert_email', $email);
+        }
+
         return ['success' => true, 'data' => ['message' => 'Settings saved successfully.']];
     }
 }

@@ -43,7 +43,7 @@ final class SchemaMigrator
      * changes; the upgrade path (`upgradeDatabase`) will run once per
      * site on the next request after the bump.
      */
-    public const CURRENT_VERSION = '1.11';
+    public const CURRENT_VERSION = '1.12';
 
     /**
      * Hook into `plugins_loaded` to run `checkDatabaseUpgrade` on every
@@ -102,10 +102,12 @@ final class SchemaMigrator
             trackers_count int(11) DEFAULT 0,
             classification_types VARCHAR(500) NOT NULL DEFAULT '',
             review_url_override VARCHAR(500) DEFAULT NULL,
+            is_disabled TINYINT(1) NOT NULL DEFAULT 0,
             data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
-            UNIQUE KEY api_brand_id (api_brand_id)
+            UNIQUE KEY api_brand_id (api_brand_id),
+            KEY idx_is_disabled (is_disabled)
         ) $charset_collate;";
 
         $alternatives_sql = "CREATE TABLE IF NOT EXISTS $alternative_toplists_table (
@@ -245,10 +247,12 @@ final class SchemaMigrator
             review_url_override VARCHAR(500) DEFAULT NULL,
             local_logo_url VARCHAR(500) DEFAULT NULL,
             cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
+            is_disabled TINYINT(1) NOT NULL DEFAULT 0,
             data $data_type NOT NULL,
             last_synced datetime NOT NULL,
             PRIMARY KEY (id),
-            UNIQUE KEY api_brand_id (api_brand_id)
+            UNIQUE KEY api_brand_id (api_brand_id),
+            KEY idx_is_disabled (is_disabled)
         ) $charset_collate;";
 
         dbDelta($sql);
@@ -345,10 +349,12 @@ final class SchemaMigrator
                 review_url_override VARCHAR(500) DEFAULT NULL,
                 local_logo_url VARCHAR(500) DEFAULT NULL,
                 cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL,
+                is_disabled TINYINT(1) NOT NULL DEFAULT 0,
                 data longtext NOT NULL,
                 last_synced datetime NOT NULL,
                 PRIMARY KEY (id),
-                UNIQUE KEY api_brand_id (api_brand_id)
+                UNIQUE KEY api_brand_id (api_brand_id),
+                KEY idx_is_disabled (is_disabled)
             ) $charset_collate;";
 
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -374,6 +380,17 @@ final class SchemaMigrator
             if (!$wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'cached_review_post_id'")) {
                 $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN cached_review_post_id BIGINT(20) UNSIGNED DEFAULT NULL");
                 error_log('DataFlair: Brands table upgraded to v1.10 (cached_review_post_id column added)');
+            }
+        }
+
+        // ── Brands table: v1.12 — is_disabled column + index (admin UX redesign) ──
+        if ($wpdb->get_var("SHOW TABLES LIKE '$brands_table_name'") === $brands_table_name) {
+            if (!$wpdb->get_var("SHOW COLUMNS FROM $brands_table_name LIKE 'is_disabled'")) {
+                $wpdb->query("ALTER TABLE $brands_table_name ADD COLUMN is_disabled TINYINT(1) NOT NULL DEFAULT 0");
+                error_log('DataFlair: Brands table upgraded to v1.12 (is_disabled column added)');
+            }
+            if (!$wpdb->get_var("SHOW INDEX FROM $brands_table_name WHERE Key_name = 'idx_is_disabled'")) {
+                $wpdb->query("CREATE INDEX idx_is_disabled ON $brands_table_name (is_disabled)");
             }
         }
 

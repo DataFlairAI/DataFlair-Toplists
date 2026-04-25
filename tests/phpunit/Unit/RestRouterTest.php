@@ -26,6 +26,8 @@ use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/NullLogger.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsQuery.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Rest/Controllers/ToplistsController.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Rest/Controllers/CasinosController.php';
@@ -146,6 +148,9 @@ final class RestRouterTest extends TestCase
             public function collectGeoNames(): array { return []; }
             public function listAllForOptions(): array { return []; }
             public function countAll(): int { return 0; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
         };
     }
 }

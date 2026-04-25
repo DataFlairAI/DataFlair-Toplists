@@ -124,4 +124,81 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
         $count = $this->wpdb->get_var("SELECT COUNT(*) FROM {$this->table}");
         return (int) $count;
     }
+
+    public function findPaginated(ToplistsQuery $query): ToplistsPage
+    {
+        $where  = '';
+        $params = [];
+
+        if ($query->search !== '') {
+            $like   = '%' . $this->wpdb->esc_like($query->search) . '%';
+            $where  = 'WHERE (name LIKE %s OR slug LIKE %s)';
+            $params = [$like, $like];
+        }
+
+        $order  = esc_sql($query->sortBy) . ' ' . $query->sortDir;
+        $offset = ($query->page - 1) * $query->perPage;
+
+        $count_sql = "SELECT COUNT(*) FROM {$this->table} {$where}";
+        $total = $where !== ''
+            ? (int) $this->wpdb->get_var($this->wpdb->prepare($count_sql, ...$params))
+            : (int) $this->wpdb->get_var($count_sql);
+
+        $select_cols = 'id, api_toplist_id, name, slug, version, last_synced, item_count, sync_warnings, current_period,
+            JSON_UNQUOTE(JSON_EXTRACT(data, \'$.data.template.name\')) AS template_name';
+        $data_sql = "SELECT {$select_cols} FROM {$this->table} {$where} ORDER BY {$order} LIMIT %d OFFSET %d";
+        $data_params = [...$params, $query->perPage, $offset];
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare($data_sql, ...$data_params),
+            ARRAY_A
+        );
+
+        return new ToplistsPage(
+            rows:    is_array($rows) ? $rows : [],
+            total:   $total,
+            page:    $query->page,
+            perPage: $query->perPage
+        );
+    }
+
+    public function findItemSummaryByApiToplistId(int $api_toplist_id): array
+    {
+        $row = $this->findByApiToplistId($api_toplist_id);
+        if ($row === null) {
+            return [];
+        }
+
+        $payload = json_decode((string) ($row['data'] ?? ''), true);
+        $raw_items = $payload['data']['items'] ?? ($payload['items'] ?? []);
+        if (!is_array($raw_items)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($raw_items as $item) {
+            $brand_id   = (int) ($item['brand_id'] ?? $item['casino_id'] ?? 0);
+            $bonus      = (string) ($item['bonus_offer'] ?? $item['bonus_text'] ?? $item['bonus_code'] ?? '');
+            $code       = (string) ($item['bonus_code'] ?? '');
+            $position   = (int) ($item['position'] ?? ($item['rank'] ?? 0));
+            $out[] = [
+                'position'    => $position,
+                'brand_id'    => $brand_id,
+                'bonus_offer' => $bonus,
+                'bonus_code'  => $code,
+            ];
+        }
+
+        usort($out, static fn(array $a, array $b) => $a['position'] <=> $b['position']);
+        return $out;
+    }
+
+    public function findRawDataByApiToplistId(int $api_toplist_id): ?array
+    {
+        $row = $this->findByApiToplistId($api_toplist_id);
+        if ($row === null) {
+            return null;
+        }
+        $decoded = json_decode((string) ($row['data'] ?? ''), true);
+        return is_array($decoded) ? $decoded : null;
+    }
 }

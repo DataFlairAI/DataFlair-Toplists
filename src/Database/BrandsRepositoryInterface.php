@@ -79,4 +79,39 @@ interface BrandsRepositoryInterface
      * upstream DataFlair brand ID. Passing `null` clears the override.
      */
     public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool;
+
+    /**
+     * Phase 9.6 (admin UX redesign) — bulk-flip the `is_disabled` column
+     * for the given upstream brand IDs. Returns the number of rows
+     * affected.
+     *
+     * @param int[] $api_brand_ids
+     */
+    public function setDisabledByApiBrandIds(array $api_brand_ids, bool $disabled): int;
+
+    /**
+     * Phase 9.6 — paginated list view for the admin Brands page. Applies
+     * search, multi-select filters, sort, and offset/limit, and returns
+     * the page rows + total count.
+     */
+    public function findPaginated(BrandsQuery $query): BrandsPage;
+
+    /**
+     * Phase 9.6 — restrict a batch fetch to brands that are not disabled.
+     * Used by the front-end render path to honor the admin disable flag.
+     *
+     * @param int[] $api_brand_ids
+     * @return array<int, array<string, mixed>>
+     */
+    public function findActiveByApiBrandIds(array $api_brand_ids): array;
+
+    /**
+     * Phase 9.6 — collect distinct CSV/JSON values from a column for a
+     * filter chip's option list. Supported fields: 'licenses', 'top_geos',
+     * 'product_types', 'classification_types' (CSV-text columns) and
+     * 'payments' (extracted from the JSON `data` blob).
+     *
+     * @return string[] Sorted, de-duplicated values.
+     */
+    public function collectDistinctValuesForFilter(string $field): array;
 }

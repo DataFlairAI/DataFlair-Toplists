@@ -1,0 +1,180 @@
+/**
+ * Phase 9.6 (admin UX redesign) — shared admin chrome.
+ *
+ * Namespaced under `.df-` and loaded on every `dataflair_page_*` screen via
+ * AdminAssetsRegistrar. Keep generic primitives only (toast region, pills,
+ * page header, filter chip, drawer, inline edit cell, dirty state). Page-
+ * specific styles belong in their own file.
+ */
+
+/* Toast region — fixed top-right stack, aria-live=polite. */
+.df-toast-region {
+    position: fixed;
+    top: 48px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    max-width: 380px;
+}
+
+.df-toast {
+    pointer-events: auto;
+    background: #fff;
+    border-left: 4px solid #2271b1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #1d2327;
+    animation: df-toast-in 180ms ease-out;
+}
+.df-toast--success { border-left-color: #00a32a; }
+.df-toast--error   { border-left-color: #d63638; }
+.df-toast--warning { border-left-color: #dba617; }
+
+@keyframes df-toast-in {
+    from { opacity: 0; transform: translateX(8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Status pills. */
+.df-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+    background: #f0f0f1;
+    color: #1d2327;
+}
+.df-pill--success { background: #e6f4ea; color: #0b6b2a; }
+.df-pill--error   { background: #fce8e8; color: #a00; }
+.df-pill--warning { background: #fcf3da; color: #7c5e00; }
+.df-pill--info    { background: #e7f1fa; color: #1559a8; }
+.df-pill--muted   { background: #f0f0f1; color: #50575e; }
+
+/* Page header (title + action cluster). */
+.df-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 12px 0 18px;
+}
+.df-page-header__title { margin: 0; font-size: 1.4em; }
+.df-page-header__actions { display: flex; gap: 8px; align-items: center; }
+
+/* Filter chip + popover skeleton — JS owns open/close state. */
+.df-filter-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid #c3c4c7;
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+.df-filter-chip[aria-expanded="true"] { border-color: #2271b1; }
+.df-filter-chip__count {
+    background: #2271b1;
+    color: #fff;
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+    min-width: 16px;
+    text-align: center;
+}
+
+/* Drawer (slide-in panel for offers/trackers/details). */
+.df-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 99998;
+}
+.df-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(560px, 100vw);
+    background: #fff;
+    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.16);
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    animation: df-drawer-in 200ms ease-out;
+}
+@keyframes df-drawer-in {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+}
+.df-drawer__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid #dcdcde;
+}
+.df-drawer__body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+
+/* Inline-edit cell — render in display mode, JS upgrades to input. */
+.df-inline-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+.df-inline-edit:hover { background: #f6f7f7; }
+.df-inline-edit--empty { color: #8c8f94; font-style: italic; }
+.df-inline-edit__input {
+    width: 100%;
+    min-width: 220px;
+    padding: 4px 6px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+}
+
+/* Dirty-state pill. */
+.df-dirty-pill {
+    display: none;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #fcf3da;
+    color: #7c5e00;
+    font-size: 12px;
+}
+.df-dirty-pill[data-dirty="1"] { display: inline-flex; align-items: center; gap: 4px; }
+.df-dirty-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #dba617;
+}
+
+/* Bulk action bar (sticky at top of table when any row is checked). */
+.df-bulk-bar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #f0f6fc;
+    border: 1px solid #c5d9ed;
+    border-radius: 4px;
+    margin-bottom: 12px;
+}
+.df-bulk-bar[data-active="1"] { display: flex; }
+.df-bulk-bar__count { font-weight: 500; }

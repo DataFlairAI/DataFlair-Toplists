@@ -142,10 +142,12 @@ final class PluginInfoFilter
 
 <h4>Admin Interface</h4>
 <ul>
-  <li>DataFlair, Toplists: view all synced toplists, trigger manual sync, preview before committing</li>
-  <li>DataFlair, Brands: full brand table with review URL override editing</li>
-  <li>DataFlair, Settings: configure API endpoint, API key, sync frequency, and feature flags</li>
-  <li>REST API endpoints for the block editor</li>
+  <li><strong>Dashboard:</strong> API health tile, stat tiles (brands synced, toplists count, last sync + next-in), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. Sync Brands and Sync Toplists buttons with live progress toast.</li>
+  <li><strong>Toplists list:</strong> search, bulk re-sync and bulk delete, per-row accordion with Items tab (position/brand/offer/synced status per item), Raw JSON tab (pretty-printed blob with copy + download), and Alt Geos tab.</li>
+  <li><strong>Brands:</strong> full brand table with review URL override inline-edit cell.</li>
+  <li><strong>Tools:</strong> Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered DataFlair entries from debug.log, severity colouring, Download), API Preview tab.</li>
+  <li><strong>Settings:</strong> API Connection tab (bearer token + Test Connection), Customizations tab (colour pickers with live preview), Sync Schedule tab (cadence selects, retry count, alert email — saves and reschedules WP-Cron hooks). Dirty-state amber pill + beforeunload guard.</li>
+  <li>REST API endpoints for the block editor.</li>
 </ul>
         ';
     }
@@ -153,6 +155,18 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.0</h4>
+<ul>
+  <li><strong>Admin UX redesign — five-page layout.</strong> The flat single-page admin becomes a five-page suite: Dashboard, Toplists, Brands, Tools, and Settings. Each page is a dedicated <code>PageInterface</code> class; nonce + capability gating remains centralised in <code>AjaxRouter</code>.</li>
+  <li><strong>Dashboard.</strong> API health tile (60 s transient, <code>ApiHealthHandler</code>), stat tiles (brands synced, toplists count, last sync + next-run), recent sync activity feed (<code>dataflair_sync_history</code> option, last 5), scheduled-jobs card, shortcode usage count + copy button (<code>ToplistUsageHandler</code>, 1 hr transient). PageHeader: Sync Brands + Sync Toplists buttons with live progress toast.</li>
+  <li><strong>Toplists list.</strong> Search, sort, bulk re-sync (<code>BulkResyncToplistsHandler</code>) and bulk delete (<code>BulkDeleteToplistsHandler</code>). Per-row accordion (lazy-load, in-memory cache): Items tab — position / brand name (resolved via <code>BrandsRepository::findManyByApiBrandIds</code>) / bonus offer / synced-or-partial status pill; Raw JSON tab — pretty-printed stored blob with copy + download; Alt Geos tab — existing alternative-toplist geo management. Two new repository methods: <code>findItemSummaryByApiToplistId</code> and <code>findRawDataByApiToplistId</code>. New <code>ToplistsQuery</code> + <code>ToplistsPage</code> DTOs; <code>findPaginated(ToplistsQuery)</code> added to the repository.</li>
+  <li><strong>Tools page.</strong> Tests tab: per-test Run button and Run All — results persist to <code>dataflair_test_results</code> option; no auto-run on page load. Logs tab: <code>LogsTailHandler</code> filters <code>wp-content/debug.log</code> for <code>[DataFlair]</code> entries, parses severity, returns 200 lines newest-first; <code>LogsDownloadHandler</code> streams the same slice as <code>text/plain</code>. API Preview tab: existing handler and markup, now lives here.</li>
+  <li><strong>Settings polish.</strong> Dirty-state amber pill + <code>beforeunload</code> guard (<code>dirty-state.js</code>). Colour pickers with live preview card updating on input without a server round-trip (<code>color-picker.js</code>). Test Connection button in the API Connection tab (<code>TestApiConnectionHandler</code>). New Sync Schedule tab: brands and toplists cadence selects, retry count, alert email — on save, <code>SaveSettingsHandler</code> clears and reschedules the relevant WP-Cron hooks.</li>
+  <li><strong>15 new AJAX handlers</strong> (all implement <code>AjaxHandlerInterface</code>): <code>ApiHealthHandler</code>, <code>ToplistUsageHandler</code>, <code>TestApiConnectionHandler</code>, <code>BulkResyncToplistsHandler</code>, <code>BulkDeleteToplistsHandler</code>, <code>ToplistAccordionDetailsHandler</code>, <code>ToplistRawJsonHandler</code>, plus the Phase 3 handlers <code>RunTestHandler</code>, <code>RunAllTestsHandler</code>, <code>LogsTailHandler</code>, <code>LogsDownloadHandler</code>.</li>
+  <li><strong>Schema.</strong> <code>is_disabled TINYINT(1) NOT NULL DEFAULT 0</code> added to <code>wp_dataflair_brands</code> via migration 1.12. Front-end shortcode and <code>BrandMetaPrefetcher</code> honour the flag; disabled brands are excluded from rendered toplists.</li>
+  <li><strong>Tests.</strong> 8 new test files; 7 existing test files updated for the expanded <code>ToplistsRepositoryInterface</code>. Full suite: <strong>627+ tests, all green</strong>.</li>
+</ul>
+
 <h4>2.1.8</h4>
 <ul>
   <li><strong>Phase 9.12 — shortcode + campaign redirect extraction.</strong> The two remaining public entry points leave the god-class for dedicated single-responsibility classes under <code>DataFlair\\Toplists\\Frontend\\Shortcode\\</code> and <code>DataFlair\\Toplists\\Frontend\\Redirect\\</code>. The <code>[dataflair_toplist]</code> orchestrator and the <code>/go/?campaign=</code> affiliate-redirect handler each become small, isolated, lint-green units.</li>

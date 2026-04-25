@@ -23,6 +23,7 @@ namespace DataFlair\Toplists;
 
 use DataFlair\Toplists\Admin\PluginInfoFilter;
 use DataFlair\Toplists\Database\SchemaMigrator;
+use DataFlair\Toplists\Sync\SyncHistoryRecorder;
 use DataFlair\Toplists\Frontend\Assets\AlpineDeferAttribute;
 use DataFlair\Toplists\Frontend\Assets\AlpineJsEnqueuer;
 use DataFlair\Toplists\Frontend\Assets\PromoCopyScript;
@@ -129,6 +130,7 @@ final class Plugin
         (new I18n($pluginFile))->register();
         (new GithubUpdateChecker($pluginFile))->register();
         (new SchemaMigrator())->register();
+        (new SyncHistoryRecorder())->register();
 
         // Phase 9.8 — Frontend asset registrars.
         (new StylesEnqueuer(

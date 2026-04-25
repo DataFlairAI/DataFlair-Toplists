@@ -34,7 +34,7 @@ final class BrandMetaPrefetcherTest extends TestCase
     public function test_returns_empty_shape_for_no_items(): void
     {
         $repo = M::mock(BrandsRepositoryInterface::class);
-        $repo->shouldNotReceive('findManyByApiBrandIds');
+        $repo->shouldNotReceive('findActiveByApiBrandIds');
 
         $prefetcher = new BrandMetaPrefetcher($repo);
         $map = $prefetcher->prefetch([]);
@@ -45,7 +45,7 @@ final class BrandMetaPrefetcherTest extends TestCase
     public function test_delegates_id_batch_to_repository(): void
     {
         $repo = M::mock(BrandsRepositoryInterface::class);
-        $repo->shouldReceive('findManyByApiBrandIds')
+        $repo->shouldReceive('findActiveByApiBrandIds')
             ->once()
             ->with(M::on(fn ($ids) => is_array($ids) && in_array(100, $ids, true)))
             ->andReturn([
@@ -66,7 +66,7 @@ final class BrandMetaPrefetcherTest extends TestCase
     public function test_recasts_repo_array_rows_to_objects(): void
     {
         $repo = M::mock(BrandsRepositoryInterface::class);
-        $repo->shouldReceive('findManyByApiBrandIds')
+        $repo->shouldReceive('findActiveByApiBrandIds')
             ->once()
             ->andReturn([
                 200 => ['api_brand_id' => 200, 'slug' => 'bet365', 'name' => 'Bet365'],

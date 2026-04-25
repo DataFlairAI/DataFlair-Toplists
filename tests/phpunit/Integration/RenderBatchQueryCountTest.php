@@ -159,9 +159,9 @@ class RenderBatchQueryCountTest extends TestCase {
             'BrandMetaPrefetcher::prefetch() must run inline IN (...) batches for slug + name.'
         );
         $this->assertStringContainsString(
-            '$this->brandsRepo->findManyByApiBrandIds(',
+            '$this->brandsRepo->findActiveByApiBrandIds(',
             $body,
-            'The api_brand_id IN (...) batch must be delegated to BrandsRepository::findManyByApiBrandIds().'
+            'The api_brand_id IN (...) batch must be delegated to BrandsRepository::findActiveByApiBrandIds() to honour is_disabled.'
         );
     }
 

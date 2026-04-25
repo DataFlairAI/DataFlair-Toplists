@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.8
+ * Version: 2.2.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.8');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.2.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -648,7 +648,7 @@ class DataFlair_Toplists {
             return $this->brands_page_obj;
         }
         $this->brands_page_obj = new \DataFlair\Toplists\Admin\Pages\BrandsPage(
-            \Closure::fromCallable([$this, 'collect_distinct_csv_values']),
+            $this->brands_repo(),
             \Closure::fromCallable([$this, 'format_last_sync_label'])
         );
         return $this->brands_page_obj;
@@ -893,9 +893,15 @@ class DataFlair_Toplists {
         // under src/Admin. Each one hooks into WP on its own schedule;
         // the calls below register them once per request.
         (new \DataFlair\Toplists\Admin\MenuRegistrar(
-            $this->settings_page_obj(),
+            new \DataFlair\Toplists\Admin\Pages\DashboardPage(),
+            new \DataFlair\Toplists\Admin\Pages\ToplistsListPage(
+                \Closure::fromCallable([$this, 'format_last_sync_label'])
+            ),
             $this->brands_page_obj(),
-            $this
+            new \DataFlair\Toplists\Admin\Pages\ToolsPage(
+                \Closure::fromCallable([$this, 'get_api_base_url'])
+            ),
+            $this->settings_page_obj()
         ))->register();
         (new \DataFlair\Toplists\Admin\SettingsRegistrar())->register();
 

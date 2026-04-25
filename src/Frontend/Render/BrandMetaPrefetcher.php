@@ -63,7 +63,9 @@ final class BrandMetaPrefetcher
 
         if (!empty($wanted_ids)) {
             $id_list = array_keys($wanted_ids);
-            foreach ($this->brandsRepo->findManyByApiBrandIds($id_list) as $api_id => $row_array) {
+            // findActiveByApiBrandIds excludes is_disabled=1 rows so disabled
+            // brands are silently dropped from the front-end render path.
+            foreach ($this->brandsRepo->findActiveByApiBrandIds($id_list) as $api_id => $row_array) {
                 $row = (object) $row_array;
                 $by_id[(int) $api_id] = $row;
                 if (!empty($row->slug) && !isset($by_slug[(string) $row->slug])) {
