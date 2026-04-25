@@ -46,17 +46,11 @@ final class LogsTailHandler implements AjaxHandlerInterface
             ]];
         }
 
-        $raw   = file($log_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($raw === false) {
-            $raw = [];
-        }
-
-        // Keep only DataFlair lines.
-        $df_lines = array_values(array_filter($raw, static fn(string $l) => str_contains($l, self::DF_MARKER)));
-        $total    = count($df_lines);
+        $df_lines  = $this->tailFilteredLines($log_path);
+        $total     = count($df_lines);
         $truncated = $total > self::MAX_LINES;
-        $slice    = array_slice($df_lines, -self::MAX_LINES);
-        $slice    = array_reverse($slice);   // newest-first
+        $slice     = array_slice($df_lines, -self::MAX_LINES);
+        $slice     = array_reverse($slice);   // newest-first
 
         $entries = array_map([$this, 'parseLine'], $slice);
 
@@ -66,6 +60,44 @@ final class LogsTailHandler implements AjaxHandlerInterface
             'truncated' => $truncated,
             'notice'    => '',
         ]];
+    }
+
+    /**
+     * Read only the last 2MB of the log file and return lines containing
+     * the DataFlair marker. Avoids loading a large debug.log into memory.
+     */
+    private function tailFilteredLines(string $path): array
+    {
+        $chunk_size = 2 * 1024 * 1024; // 2MB
+        $size       = filesize($path);
+        if ($size === false || $size === 0) {
+            return [];
+        }
+
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            return [];
+        }
+
+        $offset = max(0, $size - $chunk_size);
+        fseek($fh, $offset);
+        $chunk = fread($fh, $chunk_size);
+        fclose($fh);
+
+        if ($chunk === false || $chunk === '') {
+            return [];
+        }
+
+        // If we didn't start from the beginning, drop the first partial line.
+        if ($offset > 0) {
+            $nl = strpos($chunk, "\n");
+            if ($nl !== false) {
+                $chunk = substr($chunk, $nl + 1);
+            }
+        }
+
+        $lines = explode("\n", rtrim($chunk));
+        return array_values(array_filter($lines, static fn(string $l) => str_contains($l, self::DF_MARKER)));
     }
 
     /** Return the log file path, respecting string WP_DEBUG_LOG values. */
