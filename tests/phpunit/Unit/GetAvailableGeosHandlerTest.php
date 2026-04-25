@@ -8,15 +8,15 @@
 
 declare(strict_types=1);
 
-namespace DataFlair\Toplists\Tests\Unit\Admin\Handlers;
+namespace DataFlair\Toplists\Tests\Unit\Admin\Ajax;
 
-use DataFlair\Toplists\Admin\Handlers\GetAvailableGeosHandler;
+use DataFlair\Toplists\Admin\Ajax\GetAvailableGeosHandler;
 use DataFlair\Toplists\Database\ToplistsRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
-require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Handlers/GetAvailableGeosHandler.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/GetAvailableGeosHandler.php';
 
 final class GetAvailableGeosHandlerTest extends TestCase
 {

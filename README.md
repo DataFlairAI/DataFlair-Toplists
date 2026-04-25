@@ -178,6 +178,21 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.3
+
+2.1.3 is the Phase 9.7 **AJAX handler extraction** release. The eleven remaining `ajax_*` methods leave `dataflair-toplists.php` for dedicated single-responsibility handler classes under `src/Admin/Ajax/`. No operator action required, no DB migration, no config change — every `wp_ajax_dataflair_*` action remains identical to v2.1.2 (same nonce names, same expected POST keys, same JSON response shape).
+
+What moved out of `dataflair-toplists.php` into `src/Admin/Ajax/`:
+
+- `SaveSettingsHandler`, `FetchAllToplistsHandler`, `SyncToplistsBatchHandler`, `SyncBrandsBatchHandler`, `FetchAllBrandsHandler` — sync- and settings-related AJAX surfaces.
+- `GetAlternativeToplistsHandler`, `SaveAlternativeToplistHandler`, `DeleteAlternativeToplistHandler`, `GetAvailableGeosHandler` — alternative-toplist CRUD + geo discovery surface.
+- `ApiPreviewHandler` — admin API preview tab.
+- `SaveReviewUrlHandler` — per-brand review URL override save.
+
+Each handler implements `AjaxHandlerInterface::handle(array $request): array`. Nonce + capability checks remain centralised in `AjaxRouter`. The directory `src/Admin/Handlers/` was renamed to `src/Admin/Ajax/` per the v2.1.x plan delta map; namespace declarations and use statements were updated accordingly.
+
+`dataflair-toplists.php` shrinks from ~2,773 → ~2,347 LOC. `grep -c "function ajax_" dataflair-toplists.php` now returns 0. Full test suite: 434 tests, 1,028 assertions, all green.
+
 ### To 2.1.2
 
 2.1.2 is the Phase 9.6 **admin UI extraction** release. The two largest remaining inline page bodies — `settings_page()` (~705 LOC) and `brands_page()` (~1,237 LOC) — leave the god-class for dedicated owners under `src/Admin/Pages/`. Three more admin-side registrars come along for the ride. No operator action required, no DB migration, no config change — every admin URL, AJAX action, settings option name, capability check, nonce, page slug, and submenu position is preserved byte-for-byte.
@@ -312,6 +327,15 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.3
+- **Phase 9.7 — AJAX handler extraction.** The eleven remaining `ajax_*` methods leave the god-class for dedicated single-responsibility handler classes under `DataFlair\Toplists\Admin\Ajax\`. Each implements `AjaxHandlerInterface::handle(array $request): array`; `AjaxRouter` retains centralised nonce + capability checks.
+- Added (de-stubbed): `SaveSettingsHandler`, `FetchAllToplistsHandler`, `SyncToplistsBatchHandler`, `SyncBrandsBatchHandler`, `FetchAllBrandsHandler`, `GetAlternativeToplistsHandler`, `SaveAlternativeToplistHandler`, `DeleteAlternativeToplistHandler`, `GetAvailableGeosHandler`, `ApiPreviewHandler`, `SaveReviewUrlHandler` — all under `src/Admin/Ajax/`.
+- Renamed: `src/Admin/Handlers/` → `src/Admin/Ajax/` per the v2.1.x plan delta map. Namespace declarations and use statements updated across the existing handler suite, `AdminBootstrap`, and the test suite.
+- Removed: every `function ajax_*` body from `dataflair-toplists.php`. `grep -c "function ajax_" dataflair-toplists.php` returns 0.
+- No public contract change. Every `wp_ajax_dataflair_*` action name, nonce, expected POST key set, and JSON response shape remains identical to v2.1.2. Frontend admin JS unchanged.
+- Main file size: `dataflair-toplists.php` drops from ~2,773 → ~2,347 LOC.
+- Tests: full suite 434 tests, 1,028 assertions, all green.
 
 ### 2.1.2
 - **Phase 9.6 — admin UI extraction.** `dataflair-toplists.php` shrank by ~2,082 lines (43%) as the two largest inline admin page bodies and three admin-side registrars extracted into dedicated classes under `src/Admin/`. The main plugin file dropped from 4,855 → ~2,773 LOC — the largest single phase by LOC of the v2.1.x continuation arc.
@@ -576,4 +600,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

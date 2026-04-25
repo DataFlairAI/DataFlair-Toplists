@@ -153,6 +153,16 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.1.3</h4>
+<ul>
+  <li><strong>Phase 9.7 — AJAX handler extraction.</strong> The eleven remaining <code>ajax_*</code> methods leave the god-class for dedicated single-responsibility handler classes under <code>DataFlair\\Toplists\\Admin\\Ajax\\</code>. Each handler implements <code>AjaxHandlerInterface::handle(array $request): array</code>; nonce + capability checks remain centralised in <code>AjaxRouter</code>. Action names, request shapes, and response payloads preserved byte-for-byte.</li>
+  <li><strong>Directory rename.</strong> <code>src/Admin/Handlers/</code> → <code>src/Admin/Ajax/</code> per the v2.1.x plan delta map. Namespace declarations and use statements updated across <code>AdminBootstrap</code> and the existing handler suite.</li>
+  <li><strong>Eleven handlers de-stubbed.</strong> <code>SaveSettingsHandler</code>, <code>FetchAllToplistsHandler</code>, <code>SyncToplistsBatchHandler</code>, <code>SyncBrandsBatchHandler</code>, <code>FetchAllBrandsHandler</code>, <code>GetAlternativeToplistsHandler</code>, <code>SaveAlternativeToplistHandler</code>, <code>DeleteAlternativeToplistHandler</code>, <code>GetAvailableGeosHandler</code>, <code>ApiPreviewHandler</code>, <code>SaveReviewUrlHandler</code> now host the real implementations — the god-class methods are gone.</li>
+  <li><strong>Main file trim.</strong> <code>dataflair-toplists.php</code> drops from ~2,773 → ~2,347 LOC. <code>grep -c "function ajax_" dataflair-toplists.php</code> now returns 0.</li>
+  <li><strong>No public contract change.</strong> Every <code>wp_ajax_dataflair_*</code> action remains identical to v2.1.2: same nonce names, same expected POST keys, same JSON response shape. Frontend admin JS unchanged.</li>
+  <li><strong>Tests stay green.</strong> Full suite: <strong>434 tests, 1,028 assertions, all green</strong>.</li>
+</ul>
+
 <h4>2.1.2</h4>
 <ul>
   <li><strong>Phase 9.6 — admin UI extraction.</strong> The two largest remaining inline page bodies leave the god-class. <code>settings_page()</code> (~705 LOC) is now owned by <code>DataFlair\\Toplists\\Admin\\Pages\\SettingsPage</code>; <code>brands_page()</code> (~1,237 LOC) is now owned by <code>DataFlair\\Toplists\\Admin\\Pages\\BrandsPage</code>. Markup, jQuery wiring, AJAX endpoints, pagination shape, and filter dropdowns preserved byte-for-byte — verified by manual smoke on the two pages and by reflection-based contract tests.</li>

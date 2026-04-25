@@ -2,7 +2,7 @@
 /**
  * Namespace-local WordPress function stubs for SaveSettingsHandlerTest.
  *
- * SaveSettingsHandler lives in DataFlair\Toplists\Admin\Handlers and calls
+ * SaveSettingsHandler lives in DataFlair\Toplists\Admin\Ajax and calls
  * update_option / delete_option / esc_url_raw / sanitize_text_field
  * unqualified — PHP resolves those to the current namespace first. The
  * stubs record every write against SaveSettingsHandlerTestStubs::$options
@@ -26,7 +26,7 @@ namespace {
     }
 }
 
-namespace DataFlair\Toplists\Admin\Handlers {
+namespace DataFlair\Toplists\Admin\Ajax {
     if (!function_exists(__NAMESPACE__ . '\\update_option')) {
         function update_option($key, $value)
         {

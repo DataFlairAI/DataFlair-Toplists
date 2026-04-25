@@ -15,14 +15,14 @@
 
 declare(strict_types=1);
 
-namespace DataFlair\Toplists\Tests\Unit\Admin\Handlers;
+namespace DataFlair\Toplists\Tests\Unit\Admin\Ajax;
 
-use DataFlair\Toplists\Admin\Handlers\SaveSettingsHandler;
+use DataFlair\Toplists\Admin\Ajax\SaveSettingsHandler;
 use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once __DIR__ . '/SaveSettingsHandlerTestStubs.php';
-require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Handlers/SaveSettingsHandler.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/SaveSettingsHandler.php';
 
 final class SaveSettingsHandlerTest extends TestCase
 {

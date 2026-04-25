@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace DataFlair\Toplists\Admin\Handlers;
+namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
 use DataFlair\Toplists\Http\HttpClientInterface;
