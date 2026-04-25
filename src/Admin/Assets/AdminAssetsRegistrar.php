@@ -108,5 +108,18 @@ final class AdminAssetsRegistrar
                 true
             );
         }
+
+        // Phase 9.6 (admin UX redesign) — tools.js only on the Tools page.
+        if (strpos($hook, 'dataflair-tools') !== false) {
+            $tools_js_path = DATAFLAIR_PLUGIN_DIR . 'assets/admin/tools.js';
+            $tools_js_ver  = file_exists($tools_js_path) ? (string) filemtime($tools_js_path) : DATAFLAIR_VERSION;
+            wp_enqueue_script(
+                'dataflair-tools',
+                DATAFLAIR_PLUGIN_URL . 'assets/admin/tools.js',
+                ['jquery', 'dataflair-admin-ui'],
+                $tools_js_ver,
+                true
+            );
+        }
     }
 }

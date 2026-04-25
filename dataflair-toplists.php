@@ -897,8 +897,7 @@ class DataFlair_Toplists {
             ),
             $this->brands_page_obj(),
             new \DataFlair\Toplists\Admin\Pages\ToolsPage(
-                \Closure::fromCallable([$this, 'get_api_base_url']),
-                $this
+                \Closure::fromCallable([$this, 'get_api_base_url'])
             ),
             $this->settings_page_obj()
         ))->register();

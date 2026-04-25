@@ -16,6 +16,11 @@ use DataFlair\Toplists\Admin\Ajax\BrandsQueryHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkApplyReviewPatternHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkDisableBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\BulkResyncBrandsHandler;
+use DataFlair\Toplists\Admin\Ajax\LogsDownloadHandler;
+use DataFlair\Toplists\Admin\Ajax\LogsTailHandler;
+use DataFlair\Toplists\Admin\Ajax\RunAllTestsHandler;
+use DataFlair\Toplists\Admin\Ajax\RunTestHandler;
+use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
 use DataFlair\Toplists\Admin\Ajax\DeleteAlternativeToplistHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllToplistsHandler;
@@ -130,6 +135,28 @@ final class AdminBootstrap
             'dataflair_bulk_resync_brands',
             new BulkResyncBrandsHandler(),
             'dataflair_bulk_resync_brands'
+        );
+
+        $runner = new TestsRunner();
+        $router->register(
+            'dataflair_run_test',
+            new RunTestHandler($runner),
+            'dataflair_run_test'
+        );
+        $router->register(
+            'dataflair_run_all_tests',
+            new RunAllTestsHandler($runner),
+            'dataflair_run_all_tests'
+        );
+        $router->register(
+            'dataflair_logs_tail',
+            new LogsTailHandler(),
+            'dataflair_logs_tail'
+        );
+        $router->register(
+            'dataflair_logs_download',
+            new LogsDownloadHandler(),
+            'dataflair_logs_download'
         );
 
         return $router;

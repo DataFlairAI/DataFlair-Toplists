@@ -91,10 +91,7 @@ final class MenuRegistrarTest extends TestCase
                 $this->createStub(BrandsRepositoryInterface::class),
                 static fn(string $option) => 'never'
             ),
-            new ToolsPage(
-                static fn() => 'http://api.test',
-                new \DataFlair_Toplists()
-            ),
+            new ToolsPage(static fn() => 'http://api.test'),
             new SettingsPage(
                 static fn() => 'http://api.test',
                 static fn(string $option) => 'never'
