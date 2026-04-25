@@ -152,21 +152,21 @@ final class ToolsPage implements PageInterface
                                 <br><code style="font-size:11px;color:#646970;"><?php echo esc_html($slug); ?></code>
                             </td>
                             <td style="color:#646970;font-size:12px;"><?php echo esc_html($meta['description']); ?></td>
-                            <td class="df-test-status-cell">
+                            <td class="df-test-status">
                                 <?php $this->renderStatusPill($r['status']); ?>
                             </td>
-                            <td class="df-test-message-cell" style="font-size:12px;color:#3c434a;">
+                            <td class="df-test-message" style="font-size:12px;color:#3c434a;">
                                 <?php echo esc_html($r['message']); ?>
                             </td>
-                            <td class="df-test-lastrun-cell" style="font-size:12px;color:#646970;">
+                            <td class="df-test-ts" style="font-size:12px;color:#646970;">
                                 <?php echo esc_html($ts); ?>
                             </td>
-                            <td class="df-test-duration-cell" style="font-size:12px;color:#646970;">
+                            <td class="df-test-duration" style="font-size:12px;color:#646970;">
                                 <?php echo esc_html($ms); ?>
                             </td>
                             <td>
                                 <button type="button"
-                                        class="button button-small df-run-test-btn"
+                                        class="button button-small df-run-test"
                                         data-slug="<?php echo esc_attr($slug); ?>">
                                     ▶
                                 </button>
