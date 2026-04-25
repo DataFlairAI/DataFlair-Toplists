@@ -21,9 +21,12 @@ final class ApiHealthHandler implements AjaxHandlerInterface
 
     public function handle(array $request): array
     {
-        $cached = get_transient(self::TRANSIENT);
-        if (is_array($cached)) {
-            return ['success' => true, 'data' => $cached];
+        $force = !empty($request['force']);
+        if (!$force) {
+            $cached = get_transient(self::TRANSIENT);
+            if (is_array($cached)) {
+                return ['success' => true, 'data' => $cached];
+            }
         }
 
         $token    = trim((string) get_option('dataflair_api_token', ''));
@@ -35,9 +38,10 @@ final class ApiHealthHandler implements AjaxHandlerInterface
             return ['success' => true, 'data' => $data];
         }
 
-        $start = microtime(true);
-        $resp  = wp_remote_head(rtrim($base_url, '/'), [
-            'timeout'   => 1,
+        $probe_url = rtrim($base_url, '/') . '/toplists?per_page=1';
+        $start     = microtime(true);
+        $resp      = wp_remote_get($probe_url, [
+            'timeout'   => 5,
             'headers'   => ['Authorization' => 'Bearer ' . $token],
             'sslverify' => false,
         ]);
@@ -49,9 +53,17 @@ final class ApiHealthHandler implements AjaxHandlerInterface
             return ['success' => true, 'data' => $data];
         }
 
-        $code   = (int) wp_remote_retrieve_response_code($resp);
-        $status = ($code >= 200 && $code < 400) ? 'healthy' : 'failing';
-        $error  = $status === 'failing' ? "HTTP {$code}" : '';
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        if ($code >= 200 && $code < 300) {
+            $status = 'healthy';
+            $error  = '';
+        } elseif ($code === 401 || $code === 403) {
+            $status = 'failing';
+            $error  = "HTTP {$code} — check API token";
+        } else {
+            $status = 'failing';
+            $error  = "HTTP {$code}";
+        }
 
         $data = ['status' => $status, 'ping_ms' => $ping_ms, 'error' => $error];
         set_transient(self::TRANSIENT, $data, self::TTL);

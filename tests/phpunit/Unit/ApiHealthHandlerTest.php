@@ -56,7 +56,7 @@ final class ApiHealthHandlerTest extends TestCase
 
         $err = \Mockery::mock(\WP_Error::class);
         $err->shouldReceive('get_error_message')->andReturn('cURL error');
-        Functions\when('wp_remote_head')->justReturn($err);
+        Functions\when('wp_remote_get')->justReturn($err);
         Functions\when('is_wp_error')->justReturn(true);
 
         $result = (new ApiHealthHandler())->handle([]);
@@ -75,7 +75,7 @@ final class ApiHealthHandlerTest extends TestCase
             default => $d,
         });
 
-        Functions\when('wp_remote_head')->justReturn(['response' => ['code' => 200]]);
+        Functions\when('wp_remote_get')->justReturn(['response' => ['code' => 200]]);
         Functions\when('is_wp_error')->justReturn(false);
         Functions\when('wp_remote_retrieve_response_code')->justReturn(200);
 

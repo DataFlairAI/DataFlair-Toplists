@@ -39,9 +39,6 @@ final class DashboardPage implements PageInterface
         }
         $recent = array_slice($history, 0, 5);
 
-        $cron_brands   = wp_next_scheduled('dataflair_cron_sync_brands');
-        $cron_toplists = wp_next_scheduled('dataflair_cron_sync_toplists');
-
         $usage_cache = get_transient('dataflair_toplist_usage');
         $usage_count = is_array($usage_cache) ? (int) ($usage_cache['count'] ?? 0) : null;
         ?>
@@ -70,7 +67,7 @@ final class DashboardPage implements PageInterface
                     $toplist_count > 0 ? 'pass' : 'warn',
                     '?page=dataflair-toplists-list'
                 ); ?>
-                <?php $this->renderLastSyncTile($last_sync_ts, $cron_brands, $cron_toplists); ?>
+                <?php $this->renderLastSyncTile($last_sync_ts); ?>
                 <?php $this->renderApiHealthTile($api_health); ?>
             </div>
 
@@ -102,16 +99,24 @@ final class DashboardPage implements PageInterface
 
                 <div class="df-card df-card--narrow">
                     <div class="df-card__header">
-                        <h2 class="df-card__title">Scheduled Jobs</h2>
+                        <h2 class="df-card__title">WP-CLI Sync</h2>
                     </div>
                     <ul class="df-jobs-list">
                         <li>
-                            <span class="df-jobs-label">Brands sync</span>
-                            <span class="df-jobs-value"><?php echo $cron_brands ? esc_html('Next: ' . human_time_diff($cron_brands)) : '<span class="df-text-muted">Not scheduled</span>'; ?></span>
+                            <span class="df-jobs-label">Sync toplists</span>
+                            <code style="font-size:11px;">wp dataflair sync toplists</code>
                         </li>
                         <li>
-                            <span class="df-jobs-label">Toplists sync</span>
-                            <span class="df-jobs-value"><?php echo $cron_toplists ? esc_html('Next: ' . human_time_diff($cron_toplists)) : '<span class="df-text-muted">Not scheduled</span>'; ?></span>
+                            <span class="df-jobs-label">Sync brands</span>
+                            <code style="font-size:11px;">wp dataflair sync brands</code>
+                        </li>
+                        <li>
+                            <span class="df-jobs-label">Sync all</span>
+                            <code style="font-size:11px;">wp dataflair sync all</code>
+                        </li>
+                        <li>
+                            <span class="df-jobs-label">API health</span>
+                            <code style="font-size:11px;">wp dataflair health</code>
                         </li>
                     </ul>
 
@@ -199,59 +204,67 @@ final class DashboardPage implements PageInterface
 
             /* ── Core sync loop ───────────────────────────────── */
             function startBatchSync(type) {
-                var label      = type === 'brands' ? 'Brands' : 'Toplists';
-                var fetchAction = type === 'brands' ? 'dataflair_fetch_all_brands'   : 'dataflair_fetch_all_toplists';
-                var fetchNonce  = type === 'brands' ? fetchBrandsNonce               : fetchToplistsNonce;
-                var syncAction  = type === 'brands' ? 'dataflair_sync_brands_batch'  : 'dataflair_sync_toplists_batch';
-                var syncNonce   = type === 'brands' ? syncBrandsNonce                : syncToplistsNonce;
-                var $btn        = type === 'brands' ? $('#df-dash-sync-brands')       : $('#df-dash-sync-toplists');
+                var label       = type === 'brands' ? 'Brands' : 'Toplists';
+                var fetchAction = type === 'brands' ? 'dataflair_fetch_all_brands'  : 'dataflair_fetch_all_toplists';
+                var fetchNonce  = type === 'brands' ? fetchBrandsNonce              : fetchToplistsNonce;
+                var syncAction  = type === 'brands' ? 'dataflair_sync_brands_batch' : 'dataflair_sync_toplists_batch';
+                var syncNonce   = type === 'brands' ? syncBrandsNonce               : syncToplistsNonce;
+                var $btn        = type === 'brands' ? $('#df-dash-sync-brands')      : $('#df-dash-sync-toplists');
 
-                $btn.prop('disabled', true).text('Fetching…');
+                $btn.prop('disabled', true).text('Validating…');
                 showConsole('Syncing ' + label + '…');
-                logLine('Fetching ' + label.toLowerCase() + ' list from API…', 'info');
+                logLine('Validating API token…', 'info');
 
-                var tFetch = Date.now();
+                /* Step 1 — token check (FetchAll returns {start_batch:true}, no totals) */
                 $.post(ajaxUrl, { action: fetchAction, _ajax_nonce: fetchNonce }, function (res) {
-                    var fetchMs = Date.now() - tFetch;
                     if (!res || !res.success) {
                         var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Request failed';
-                        logLine('Error fetching list: ' + errMsg, 'error');
-                        $stats.text('Failed to fetch list.');
+                        logLine('Error: ' + errMsg, 'error');
+                        $stats.text('Failed — ' + errMsg);
                         $btn.prop('disabled', false).text('Sync ' + label);
                         return;
                     }
 
-                    var total      = res.data ? (res.data.total || 0) : 0;
-                    var totalPages = res.data ? (res.data.pages || Math.ceil(total / 10) || 1) : 1;
-                    var syncedTotal = 0;
-                    var page       = 1;
-                    var tStart     = Date.now();
-
-                    logLine('Found ' + total + ' ' + label.toLowerCase() + ' across ' + totalPages + ' pages (' + fetchMs + 'ms)', 'info');
-                    $stats.text('Page 1 of ' + totalPages + ' · 0 synced');
+                    logLine('Token OK — starting page sync…', 'info');
                     $btn.text('Syncing…');
 
+                    var syncedTotal = 0;
+                    var totalPages  = null; /* resolved from first batch response */
+                    var page        = 1;
+                    var tStart      = Date.now();
+
+                    /* Step 2 — iterative batch loop */
                     function nextPage() {
                         var tPage = Date.now();
                         $.post(ajaxUrl, { action: syncAction, _ajax_nonce: syncNonce, page: page }, function (r) {
-                            var pageMs  = Date.now() - tPage;
-                            var synced  = (r && r.data) ? (r.data.synced || 0) : 0;
-                            var hasMore = r && r.data && r.data.has_more;
+                            var pageMs     = Date.now() - tPage;
+                            var data       = (r && r.data) ? r.data : {};
+                            var synced     = data.synced     || 0;
+                            var isComplete = data.is_complete || false;
+                            var lastPage   = data.last_page  || page;
+                            var nextPageNo = data.next_page  || (page + 1);
                             syncedTotal += synced;
+
+                            /* Derive totalPages from first response */
+                            if (totalPages === null) {
+                                totalPages = lastPage;
+                                logLine('API reports ' + totalPages + ' page(s) to sync', 'info');
+                                $stats.text('Page 1 of ' + totalPages + ' · 0 synced');
+                            }
+
                             setProgress(page, totalPages);
+                            var lineType = (r && r.success) ? 'success' : 'error';
+                            logLine('Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced  ·  ' + pageMs + 'ms', lineType);
 
-                            var status = (r && r.success) ? 'success' : 'error';
-                            logLine('Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced  ·  ' + pageMs + 'ms', status);
-
-                            /* ETA based on avg ms/page so far */
+                            /* ETA */
                             var elapsed    = Date.now() - tStart;
                             var avgPerPage = elapsed / page;
                             var remaining  = (totalPages - page) * avgPerPage;
                             $stats.text('Page ' + page + ' of ' + totalPages + ' · ' + syncedTotal + ' synced');
-                            $eta.text(hasMore ? fmtEta(remaining) : '');
+                            $eta.text(!isComplete ? fmtEta(remaining) : '');
 
-                            if (hasMore) {
-                                page++;
+                            if (!isComplete) {
+                                page = nextPageNo;
                                 nextPage();
                             } else {
                                 var totalSec = ((Date.now() - tStart) / 1000).toFixed(1);
@@ -269,7 +282,7 @@ final class DashboardPage implements PageInterface
                     nextPage();
 
                 }).fail(function () {
-                    logLine('Network error fetching list', 'error');
+                    logLine('Network error during token validation', 'error');
                     $stats.text('Network error.');
                     $btn.prop('disabled', false).text('Sync ' + label);
                 });
@@ -282,7 +295,7 @@ final class DashboardPage implements PageInterface
             $('#df-health-refresh').on('click', function () {
                 var $tile = $('#df-health-tile');
                 $tile.find('.df-stat-value').text('Checking…');
-                $.post(ajaxUrl, { action: 'dataflair_api_health', _ajax_nonce: healthNonce }, function (res) {
+                $.post(ajaxUrl, { action: 'dataflair_api_health', _ajax_nonce: healthNonce, force: 1 }, function (res) {
                     if (res.success && res.data) {
                         var s      = res.data.status;
                         var labels = { healthy: 'Healthy', failing: 'Failing', unconfigured: 'Not configured' };
@@ -344,21 +357,15 @@ final class DashboardPage implements PageInterface
         <?php
     }
 
-    private function renderLastSyncTile(int $last_sync_ts, int|false $cron_brands, int|false $cron_toplists): void
+    private function renderLastSyncTile(int $last_sync_ts): void
     {
         $value  = $last_sync_ts > 0 ? human_time_diff($last_sync_ts) . ' ago' : 'Never';
-        $next   = min(
-            $cron_brands   ?: PHP_INT_MAX,
-            $cron_toplists ?: PHP_INT_MAX
-        );
         $status = $last_sync_ts > 0 ? 'pass' : 'warn';
         ?>
         <div class="df-stat-tile <?php echo $status === 'pass' ? 'df-tile--pass' : 'df-tile--warn'; ?>">
             <span class="df-tile-label">Last Sync</span>
             <span class="df-tile-value"><?php echo esc_html($value); ?></span>
-            <?php if ($next < PHP_INT_MAX): ?>
-                <span class="df-tile-sub">Next: <?php echo esc_html(human_time_diff($next)); ?></span>
-            <?php endif; ?>
+            <span class="df-tile-sub">Use Dashboard or WP-CLI to sync</span>
         </div>
         <?php
     }
