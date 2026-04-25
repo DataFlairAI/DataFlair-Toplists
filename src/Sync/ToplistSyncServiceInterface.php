@@ -20,4 +20,13 @@ interface ToplistSyncServiceInterface
      * when $page === 1.
      */
     public function syncPage(SyncRequest $request): SyncResult;
+
+    /**
+     * Re-sync a specific subset of toplists by their API IDs.
+     * Fetches each individually from /toplists/{id} and persists it.
+     * Does NOT delete or reset existing data.
+     *
+     * @param int[] $apiToplistIds
+     */
+    public function syncByApiToplistIds(array $apiToplistIds, int $budgetSeconds = 60): SyncResult;
 }

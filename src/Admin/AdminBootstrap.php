@@ -184,7 +184,7 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_bulk_resync_toplists',
-            new BulkResyncToplistsHandler(),
+            new BulkResyncToplistsHandler($this->toplist_sync),
             'dataflair_bulk_resync_toplists'
         );
         $router->register(

@@ -76,7 +76,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
             $fallback = $this->syncPagePerId($page, $budget);
             if ($fallback->success) {
-                $this->emitBatchFinished($page, $fallback->synced, $fallback->errors, $fallback->partial, $batchT0);
+                $this->emitBatchFinished($page, $fallback->lastPage, $fallback->synced, $fallback->errors, $fallback->partial, $fallback->isComplete, $batchT0);
                 return $fallback;
             }
             return SyncResult::failure(
@@ -111,9 +111,11 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 if ($fallback->success) {
                     $this->emitBatchFinished(
                         $page,
+                        $fallback->lastPage,
                         $fallback->synced,
                         $fallback->errors,
                         $fallback->partial,
+                        $fallback->isComplete,
                         $batchT0
                     );
                     return $fallback;
@@ -195,7 +197,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             $this->markSyncCompleted();
         }
 
-        $this->emitBatchFinished($page, $synced, $errors, $budgetExhausted, $batchT0);
+        $this->emitBatchFinished($page, $lastPage, $synced, $errors, $budgetExhausted, $isComplete, $batchT0);
 
         return SyncResult::success(
             $page,
@@ -205,6 +207,34 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             $budgetExhausted,
             $isComplete
         );
+    }
+
+    public function syncByApiToplistIds(array $apiToplistIds, int $budgetSeconds = 60): SyncResult
+    {
+        $apiToplistIds = array_values(array_filter(array_map('intval', $apiToplistIds)));
+        if (empty($apiToplistIds)) {
+            return SyncResult::success(1, 1, 0, 0, false, true);
+        }
+
+        $budget  = new WallClockBudget((float) $budgetSeconds);
+        $synced  = 0;
+        $errors  = 0;
+        $partial = false;
+
+        foreach ($apiToplistIds as $id) {
+            if ($budget->exceeded(3.0)) {
+                $partial = true;
+                break;
+            }
+            $endpoint = $this->baseUrl . '/toplists/' . $id;
+            if ($this->persister->fetchAndStore($endpoint, $this->token)) {
+                $synced++;
+            } else {
+                $errors++;
+            }
+        }
+
+        return SyncResult::success(1, 1, $synced, $errors, $partial, !$partial);
     }
 
     /**
@@ -454,14 +484,17 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         update_option('dataflair_last_toplists_cron_run', $ts);
     }
 
-    private function emitBatchFinished(int $page, int $synced, int $errors, bool $partial, float $t0): void
-    {
+    private function emitBatchFinished(
+        int $page, int $lastPage, int $synced, int $errors, bool $partial, bool $isComplete, float $t0
+    ): void {
         do_action('dataflair_sync_batch_finished', [
             'type'            => 'toplists',
             'page'            => $page,
+            'last_page'       => $lastPage,
             'items_done'      => $synced,
             'errors'          => $errors,
             'partial'         => $partial,
+            'is_complete'     => $isComplete,
             'elapsed_seconds' => round(microtime(true) - $t0, 3),
             'memory_peak_mb'  => round(memory_get_peak_usage(true) / 1024 / 1024, 1),
         ]);
