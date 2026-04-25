@@ -87,9 +87,10 @@ jQuery(document).ready(function($) {
             },
             success: function(response) {
                 if (response.success && response.data.start_batch) {
-                    // Start parallel pool — fetch page 1 first to learn last_page,
-                    // then fan out the rest with concurrency=3.
-                    runToplistsPool(3);
+                    // Sequential mode (concurrency=1) — diagnosing sigma upstream
+                    // contention. The bulk ?include=items endpoint times out at
+                    // 0 bytes when 3 in-flight; running serial eliminates queueing.
+                    runToplistsPool(1);
                 } else {
                     $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error starting sync') + '</span>');
                     $button.text(originalText).prop('disabled', false);

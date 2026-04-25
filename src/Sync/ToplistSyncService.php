@@ -68,7 +68,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             . '&page=' . $page . '&include=items';
 
         $httpT0   = microtime(true);
-        $response = $this->http->get($listUrl, $this->token, 12, 2, $budget);
+        $response = $this->http->get($listUrl, $this->token, 20, 2, $budget);
         $httpMs   = (int) round((microtime(true) - $httpT0) * 1000);
         $this->logger->info(
             'ToplistSync.http page=' . $page . ' per_page=' . $perPage

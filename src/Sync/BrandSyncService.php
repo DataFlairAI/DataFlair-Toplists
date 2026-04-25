@@ -118,7 +118,7 @@ final class BrandSyncService implements BrandSyncServiceInterface
     {
         $url = (string) call_user_func($this->brandsUrlBuilder, $page);
 
-        $response = $this->http->get($url, $this->token, 12, 2, $budget);
+        $response = $this->http->get($url, $this->token, 20, 2, $budget);
 
         if (is_wp_error($response)) {
             $msg = 'Failed to fetch brands page ' . $page . ': ' . $response->get_error_message();
