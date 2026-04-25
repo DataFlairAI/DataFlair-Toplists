@@ -22,6 +22,8 @@ class ClearTransientsChunkedTest extends TestCase {
 
     private string $source = '';
     private string $migrator_source = '';
+    private string $transient_cleaner_source = '';
+    private string $paginated_deleter_source = '';
 
     protected function setUp(): void {
         parent::setUp();
@@ -36,64 +38,76 @@ class ClearTransientsChunkedTest extends TestCase {
         $this->migrator_source = is_readable($migrator)
             ? (string) file_get_contents($migrator)
             : '';
+
+        // Phase 9.10 (v2.1.6): the H10/H11 chunk helpers moved out of
+        // the god-class into single-responsibility classes. Read their
+        // source for the structural assertions below.
+        $cleaner = DATAFLAIR_PLUGIN_DIR . 'src/Sync/TransientCleaner.php';
+        $this->transient_cleaner_source = is_readable($cleaner)
+            ? (string) file_get_contents($cleaner)
+            : '';
+        $deleter = DATAFLAIR_PLUGIN_DIR . 'src/Database/PaginatedDeleter.php';
+        $this->paginated_deleter_source = is_readable($deleter)
+            ? (string) file_get_contents($deleter)
+            : '';
     }
 
-    // ── H10: clear_tracker_transients is chunked ──────────────────────────
+    // ── H10: TransientCleaner is chunked ──────────────────────────────────
 
-    public function test_clear_tracker_transients_uses_limit_per_statement(): void {
-        $body = $this->extractMethodBody('clear_tracker_transients');
-        $this->assertNotEmpty($body, 'clear_tracker_transients() body must be present in plugin file.');
+    public function test_transient_cleaner_uses_limit_per_statement(): void {
+        $this->assertNotSame('', $this->transient_cleaner_source, 'TransientCleaner source must be readable.');
+        $body = $this->extractMethodBodyIn($this->transient_cleaner_source, 'clear');
+        $this->assertNotEmpty($body, 'TransientCleaner::clear() body must be present.');
 
         $this->assertMatchesRegularExpression(
             '/LIMIT\s+%d/i',
             $body,
-            'clear_tracker_transients() must DELETE with a LIMIT clause — chunked deletion per H10.'
+            'TransientCleaner::clear() must DELETE with a LIMIT clause — chunked deletion per H10.'
         );
     }
 
-    public function test_clear_tracker_transients_accepts_optional_budget(): void {
-        $signature = $this->extractMethodSignature('clear_tracker_transients');
+    public function test_transient_cleaner_accepts_optional_budget(): void {
         $this->assertMatchesRegularExpression(
-            '/\$budget\s*=\s*null/',
-            $signature,
-            'clear_tracker_transients() must accept optional WallClockBudget. Signature: ' . $signature
+            '/clear\s*\(\s*\?WallClockBudget\s+\$budget\s*=\s*null/',
+            $this->transient_cleaner_source,
+            'TransientCleaner::clear() must accept an optional WallClockBudget.'
         );
     }
 
-    public function test_clear_tracker_transients_bails_when_budget_exhausted(): void {
-        $body = $this->extractMethodBody('clear_tracker_transients');
+    public function test_transient_cleaner_bails_when_budget_exhausted(): void {
+        $body = $this->extractMethodBodyIn($this->transient_cleaner_source, 'clear');
         $this->assertMatchesRegularExpression(
             '/\$budget[^;]*->exceeded\(/',
             $body,
-            'clear_tracker_transients() must check $budget->exceeded() inside its loop to yield to the caller.'
+            'TransientCleaner::clear() must check $budget->exceeded() inside its loop to yield to the caller.'
         );
     }
 
-    // ── H11: delete_all_paginated replaces TRUNCATE ──────────────────────
+    // ── H11: PaginatedDeleter replaces TRUNCATE ──────────────────────────
 
-    public function test_delete_all_paginated_helper_is_defined(): void {
+    public function test_paginated_deleter_class_is_defined(): void {
         $this->assertMatchesRegularExpression(
-            '/function\s+delete_all_paginated\s*\(/',
-            $this->source,
-            'delete_all_paginated() helper must exist — H11 TRUNCATE replacement.'
+            '/class\s+PaginatedDeleter/',
+            $this->paginated_deleter_source,
+            'PaginatedDeleter class must exist — H11 TRUNCATE replacement.'
         );
     }
 
-    public function test_delete_all_paginated_uses_limit_chunk(): void {
-        $body = $this->extractMethodBody('delete_all_paginated');
+    public function test_paginated_deleter_uses_limit_chunk(): void {
+        $body = $this->extractMethodBodyIn($this->paginated_deleter_source, 'deleteAll');
         $this->assertMatchesRegularExpression(
             '/DELETE\s+FROM\s+\$?\w+\s+LIMIT\s+%d/i',
             $body,
-            'delete_all_paginated() must DELETE FROM <table> LIMIT %d in a loop (chunked).'
+            'PaginatedDeleter::deleteAll() must DELETE FROM <table> LIMIT %d in a loop (chunked).'
         );
     }
 
-    public function test_delete_all_paginated_whitelists_table_argument(): void {
-        $body = $this->extractMethodBody('delete_all_paginated');
+    public function test_paginated_deleter_whitelists_table_argument(): void {
+        $body = $this->extractMethodBodyIn($this->paginated_deleter_source, 'deleteAll');
         $this->assertStringContainsString(
             'in_array($table',
             $body,
-            'delete_all_paginated() must whitelist its $table argument against the plugin\'s known tables to prevent SQL injection.'
+            'PaginatedDeleter::deleteAll() must whitelist its $table argument against the plugin\'s known tables to prevent SQL injection.'
         );
     }
 
@@ -101,7 +115,7 @@ class ClearTransientsChunkedTest extends TestCase {
         $this->assertDoesNotMatchRegularExpression(
             '/TRUNCATE\s+TABLE/i',
             $this->source,
-            'TRUNCATE TABLE must not appear anywhere in the plugin — H11 replaced it with delete_all_paginated().'
+            'TRUNCATE TABLE must not appear anywhere in the plugin — H11 replaced it with PaginatedDeleter::deleteAll().'
         );
     }
 

@@ -178,6 +178,24 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.6
+
+2.1.6 is the Phase 9.10 **sync pipeline helpers extraction** release. Seven helper methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Sync/` and `src/Database/`. No operator action required, no DB migration, no config change.
+
+What moved out of `dataflair-toplists.php`:
+
+- `EndpointDiscovery` (`src/Sync/`) — replaces inline `discover_toplist_endpoints()`. Walks `/toplists?per_page=15&page=N` until `meta.last_page` is reached, returns the show-endpoint URLs. Closure-injected base URL today; replaced by `Http\ApiBaseUrlDetector` in v2.1.7.
+- `ToplistFetcher` (`src/Sync/`) — replaces inline `fetch_and_store_toplist()`. Owns the GET → JSON parse → `data.id` guard pipeline; delegates the actual upsert to `ToplistDataStore`.
+- `ToplistDataStore` (`src/Database/`) — replaces inline `store_toplist_data()`. Owns the `wp_dataflair_toplists` upsert: integrity validation via `DataFlair_DataIntegrityChecker`, the canonical ten-column row map, format strings, and the `api_toplist_id` upsert key.
+- `TransientCleaner` (`src/Sync/`) — replaces inline `clear_tracker_transients()`. Phase 0B H10. Chunked DELETE at 1,000 rows/statement against both `_transient_dataflair_tracker_%` + `_transient_timeout_dataflair_tracker_%`. Accepts an optional `WallClockBudget` for cooperative bail-out.
+- `PaginatedDeleter` (`src/Database/`) — replaces inline `delete_all_paginated()`. Phase 0B H11. Whitelist-enforced chunked DELETE at clamped 50–5,000 rows/chunk; replaces `TRUNCATE TABLE` (which is not safely replicable on managed-MySQL hosts).
+- `JsonValueCollector` (`src/Database/`) — replaces inline `collect_distinct_csv_values()`. Column-whitelisted DISTINCT collector for CSV-shaped columns (`licenses`, `top_geos`, `product_types`); trims, dedups, sorts.
+- `LogoSync` (`src/Sync/`) — replaces inline `download_brand_logo()` thin wrapper. Sync-side facade onto the existing `Http\LogoDownloader`.
+
+Render-time read-only invariant preserved: none of the new classes are reachable from the casino-card render path. `RenderIsReadOnlyTest` continues to enforce this.
+
+`dataflair-toplists.php` drops by ~167 LOC in this phase (1,939 → 1,772). The seven god-class methods become one-line delegators wired through lazy `Container` getters. Closure-based DI (`\Closure::fromCallable([$this, ...])`) keeps still-private god-class helpers (`get_api_base_url`, `build_detailed_api_error`) wired through without breaking the strangler-fig contract — both extract to `Http\` classes in v2.1.7. Test suite: **503 tests, 1,151 assertions, all green** (+25 new unit tests).
+
 ### To 2.1.5
 
 2.1.5 is the Phase 9.9 **review post manager + brand-meta extraction** release. Seven helper methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Frontend/Content/` and `src/Frontend/Render/`. No operator action required, no DB migration, no config change.
@@ -360,6 +378,16 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.6
+- **Phase 9.10 — sync pipeline helpers extraction.** Seven god-class methods leave for dedicated single-responsibility classes under `DataFlair\Toplists\Sync\` and `DataFlair\Toplists\Database\`. The toplist endpoint walker, single-toplist fetcher, row writer, transient sweeper, paginated table delete, JSON CSV value collector, and the logo-sync wrapper all become small, isolated units.
+- Added: `EndpointDiscovery`, `ToplistFetcher`, `LogoSync`, `TransientCleaner` (all under `src/Sync/`). `ToplistDataStore`, `PaginatedDeleter`, `JsonValueCollector` (all under `src/Database/`).
+- Removed inline: `discover_toplist_endpoints()`, `fetch_and_store_toplist()`, `store_toplist_data()`, `download_brand_logo()`, `clear_tracker_transients()`, `delete_all_paginated()`, `collect_distinct_csv_values()` — all now one-line delegators wired through lazy `Container` getters.
+- Phase 0B H10 + H11 invariants preserved: chunked transient sweep with `LIMIT 1000`, `PaginatedDeleter` rejects non-whitelisted tables, `WallClockBudget` cooperative bail-out before the first query when budget is exhausted.
+- Render-time read-only invariant preserved: none of the new classes are reachable from the casino-card render path. `RenderIsReadOnlyTest` continues to enforce this.
+- No public contract change. The dispatch into the seven god-class methods still produces the same side effects (`error_log`, `add_settings_error`) byte-for-byte. `GodClassToplistPersister` still satisfies `ToplistPersisterInterface` via closure-bind onto the now-trivial god-class delegators.
+- Main file size: `dataflair-toplists.php` drops from 1,939 → 1,772 LOC (−167).
+- Tests: 25 new unit tests; full suite **503 tests, 1,151 assertions, all green**.
 
 ### 2.1.5
 - **Phase 9.9 — review post manager + brand-meta extraction.** Seven helper methods leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Frontend\Content\` and `DataFlair\Toplists\Frontend\Render\`. The on-demand review-CPT manager, brand-meta prefetcher (H7), batched review-post finder (H8), and the relative-time admin label all become testable, single-purpose units.
@@ -650,4 +678,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.5 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.6 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
