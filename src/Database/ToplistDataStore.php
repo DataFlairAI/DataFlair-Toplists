@@ -41,15 +41,10 @@ class ToplistDataStore
         require_once DATAFLAIR_PLUGIN_DIR . 'includes/DataIntegrityChecker.php';
         $integrity = \DataFlair_DataIntegrityChecker::validate($toplistData);
 
-        if (!empty($integrity['warnings'])) {
-            error_log(sprintf(
-                '[DataFlair Sync] Toplist #%d (%s): %d warning(s) — %s',
-                $toplistData['id'],
-                $toplistData['name'] ?? 'unknown',
-                count($integrity['warnings']),
-                implode('; ', array_slice($integrity['warnings'], 0, 5))
-            ));
-        }
+        // Warnings are persisted in the sync_warnings column for admin
+        // visibility, but no longer written to error_log — sigma upstream
+        // is known to omit publishedAt/shortcode/etc until backend Phase 1
+        // ships, and the noise drowns out real timing diagnostics.
 
         $apiId = $toplistData['id'];
         $name = $toplistData['name'] ?? '';
