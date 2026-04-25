@@ -71,15 +71,21 @@ final class BrandsPage implements PageInterface
             <p class="description">Fetches all active brands from the DataFlair API in batches of 25. Existing brands will be updated.</p>
             <p class="description">Sync runs only when triggered here or via WP-CLI. <?php echo esc_html(($this->lastSyncLabelFormatter)('dataflair_last_brands_sync')); ?></p>
 
-            <!-- Sync progress bar (shared with ToplistsListPage) -->
-            <div id="dataflair-sync-progress" style="display:none;margin:12px 0;">
-                <div style="background:#f0f0f1;border-radius:4px;height:24px;position:relative;overflow:hidden;border:1px solid #dcdcde;">
-                    <div id="dataflair-progress-bar"
-                         style="background:linear-gradient(90deg,#2271b1,#135e96);height:100%;width:0%;transition:width .3s ease;display:flex;align-items:center;justify-content:center;">
-                        <span id="dataflair-progress-text"
-                              style="color:#fff;font-size:12px;font-weight:600;position:absolute;left:50%;transform:translateX(-50%);"></span>
-                    </div>
+            <!-- Sync console -->
+            <div id="df-brands-sync-console" class="df-sync-console" style="margin-bottom:16px;">
+                <div class="df-sync-console__header">
+                    <span class="df-sync-console__spinner"></span>
+                    <span class="df-sync-console__title">Syncing Brands…</span>
+                    <span class="df-sync-console__eta"></span>
                 </div>
+                <div class="df-sync-console__progress-wrap">
+                    <div class="df-sync-console__bar-track">
+                        <div class="df-sync-console__bar-fill"></div>
+                    </div>
+                    <span class="df-sync-console__pct">0%</span>
+                </div>
+                <div class="df-sync-console__stats"></div>
+                <div class="df-sync-log"></div>
             </div>
             <p class="description" id="dataflair-fetch-brands-message" style="margin-bottom:12px;">
                 <?php echo esc_html(($this->lastSyncLabelFormatter)('dataflair_last_brands_sync')); ?>
