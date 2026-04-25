@@ -3,7 +3,7 @@
         'name' => 'dataflair/toplists',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '1372139b7ce4380d819de6d090bafd22efcbd923',
+        'reference' => '39ad4b900c287fbbc7ea43ff7e416c4baf68fe31',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -22,7 +22,7 @@
         'dataflair/toplists' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '1372139b7ce4380d819de6d090bafd22efcbd923',
+            'reference' => '39ad4b900c287fbbc7ea43ff7e416c4baf68fe31',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

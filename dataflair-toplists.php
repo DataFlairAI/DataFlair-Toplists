@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.5
+ * Version: 2.1.6
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.5');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.6');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -193,6 +193,31 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Frontend\Render\SyncLabelFormatter|null */
     private $sync_label_formatter = null;
+
+    /**
+     * Phase 9.10 — extracted sync-pipeline helpers. Lazy.
+     *
+     * @var \DataFlair\Toplists\Sync\TransientCleaner|null
+     */
+    private $transient_cleaner = null;
+
+    /** @var \DataFlair\Toplists\Database\PaginatedDeleter|null */
+    private $paginated_deleter = null;
+
+    /** @var \DataFlair\Toplists\Database\JsonValueCollector|null */
+    private $json_value_collector = null;
+
+    /** @var \DataFlair\Toplists\Sync\EndpointDiscovery|null */
+    private $endpoint_discovery = null;
+
+    /** @var \DataFlair\Toplists\Database\ToplistDataStore|null */
+    private $toplist_data_store = null;
+
+    /** @var \DataFlair\Toplists\Sync\ToplistFetcher|null */
+    private $toplist_fetcher = null;
+
+    /** @var \DataFlair\Toplists\Sync\LogoSync|null */
+    private $logo_sync = null;
 
     /**
      * Legacy singleton accessor. Continues to function as a strangler-fig
@@ -656,6 +681,74 @@ class DataFlair_Toplists {
         return $this->sync_label_formatter;
     }
 
+    /**
+     * Phase 9.10 — lazy getters for the extracted sync-pipeline helpers.
+     */
+    private function transient_cleaner() {
+        if ($this->transient_cleaner instanceof \DataFlair\Toplists\Sync\TransientCleaner) {
+            return $this->transient_cleaner;
+        }
+        $this->transient_cleaner = new \DataFlair\Toplists\Sync\TransientCleaner();
+        return $this->transient_cleaner;
+    }
+
+    private function paginated_deleter() {
+        if ($this->paginated_deleter instanceof \DataFlair\Toplists\Database\PaginatedDeleter) {
+            return $this->paginated_deleter;
+        }
+        $this->paginated_deleter = new \DataFlair\Toplists\Database\PaginatedDeleter();
+        return $this->paginated_deleter;
+    }
+
+    private function json_value_collector() {
+        if ($this->json_value_collector instanceof \DataFlair\Toplists\Database\JsonValueCollector) {
+            return $this->json_value_collector;
+        }
+        $this->json_value_collector = new \DataFlair\Toplists\Database\JsonValueCollector();
+        return $this->json_value_collector;
+    }
+
+    private function endpoint_discovery() {
+        if ($this->endpoint_discovery instanceof \DataFlair\Toplists\Sync\EndpointDiscovery) {
+            return $this->endpoint_discovery;
+        }
+        $this->endpoint_discovery = new \DataFlair\Toplists\Sync\EndpointDiscovery(
+            $this->api_client(),
+            \Closure::fromCallable([$this, 'get_api_base_url'])
+        );
+        return $this->endpoint_discovery;
+    }
+
+    private function toplist_data_store() {
+        if ($this->toplist_data_store instanceof \DataFlair\Toplists\Database\ToplistDataStore) {
+            return $this->toplist_data_store;
+        }
+        $this->toplist_data_store = new \DataFlair\Toplists\Database\ToplistDataStore();
+        return $this->toplist_data_store;
+    }
+
+    private function toplist_fetcher() {
+        if ($this->toplist_fetcher instanceof \DataFlair\Toplists\Sync\ToplistFetcher) {
+            return $this->toplist_fetcher;
+        }
+        $this->toplist_fetcher = new \DataFlair\Toplists\Sync\ToplistFetcher(
+            $this->api_client(),
+            $this->toplist_data_store(),
+            \Closure::fromCallable([$this, 'build_detailed_api_error'])
+        );
+        return $this->toplist_fetcher;
+    }
+
+    private function logo_sync() {
+        if ($this->logo_sync instanceof \DataFlair\Toplists\Sync\LogoSync) {
+            return $this->logo_sync;
+        }
+        $this->logo_sync = new \DataFlair\Toplists\Sync\LogoSync(
+            $this->logo_downloader()
+        );
+        return $this->logo_sync;
+    }
+
     private function init_hooks() {
         // Phase 9.5: activation/deactivation are now registered at
         // plugin-file load time via the WPPB-style hooks at the top of
@@ -1103,115 +1196,38 @@ class DataFlair_Toplists {
     // now the only way to refresh toplists and brands.
 
     /**
-     * Clear all DataFlair tracker transients.
-     *
-     * Phase 0B H10: chunked DELETE loop with LIMIT 1000 so a site that has
-     * accumulated tens of thousands of tracker transients (seen on Sigma)
-     * can't blow a single-query binlog / replication / MySQL packet ceiling.
-     * Optional WallClockBudget lets a caller bail cleanly when the sync loop
-     * needs to return control to the AJAX admin-JS driver.
+     * Phase 9.10 — chunked tracker-transient cleanup.
+     * Behaviour preserved verbatim; signature unchanged.
      *
      * @param \DataFlair\Toplists\Support\WallClockBudget|null $budget
      * @return int Total number of option rows deleted.
      */
     private function clear_tracker_transients($budget = null) {
-        global $wpdb;
-        $chunk = 1000;
-        $total = 0;
-
-        foreach (
-            array(
-                '_transient_dataflair_tracker_%',
-                '_transient_timeout_dataflair_tracker_%',
-            ) as $pattern
-        ) {
-            while (true) {
-                if ($budget !== null && $budget->exceeded(1.0)) break;
-                $deleted = $wpdb->query(
-                    $wpdb->prepare(
-                        "DELETE FROM {$wpdb->options}
-                         WHERE option_name LIKE %s
-                         ORDER BY option_id
-                         LIMIT %d",
-                        $pattern,
-                        $chunk
-                    )
-                );
-                if ($deleted === false) break;
-                $total += (int) $deleted;
-                if ((int) $deleted < $chunk) break;
-            }
-        }
-
-        error_log('DataFlair: Cleared ' . $total . ' tracker transient rows before sync');
-        return $total;
+        return $this->transient_cleaner()->clear($budget);
     }
-    
+
     /**
-     * Phase 0B H11: Paginated table wipe that replaces TRUNCATE.
-     *
-     * TRUNCATE is implicitly committed (cannot be rolled back), cannot be
-     * replicated under STATEMENT-based binlog, and on some managed MySQL
-     * hosts it forces a metadata lock that blocks concurrent reads for
-     * seconds. A chunked DELETE is binlog-safe, cancellable, and stays
-     * inside the MySQL packet size even on multi-million-row tables.
-     *
-     * Hardens against SQL injection by whitelisting the table against the
-     * plugin's known prefix, since MySQL doesn't allow placeholders in the
-     * identifier position.
+     * Phase 9.10 — paginated table wipe (replaces TRUNCATE).
+     * Behaviour preserved verbatim; signature unchanged.
      *
      * @param string $table Fully-qualified table name.
      * @param int    $chunk Rows to delete per statement (default 500).
      * @return int Total rows deleted across all chunks.
      */
     private function delete_all_paginated($table, $chunk = 500) {
-        global $wpdb;
-
-        $allowed = array(
-            $wpdb->prefix . DATAFLAIR_TABLE_NAME,
-            $wpdb->prefix . DATAFLAIR_BRANDS_TABLE_NAME,
-            $wpdb->prefix . DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME,
-        );
-        if (!in_array($table, $allowed, true)) {
-            return 0;
-        }
-
-        $chunk = max(50, min(5000, (int) $chunk));
-        $total = 0;
-        while (true) {
-            $deleted = $wpdb->query(
-                $wpdb->prepare("DELETE FROM $table LIMIT %d", $chunk)
-            );
-            if ($deleted === false) break;
-            $total += (int) $deleted;
-            if ((int) $deleted < $chunk) break;
-        }
-        return $total;
+        return $this->paginated_deleter()->deleteAll((string) $table, (int) $chunk);
     }
 
     /**
-     * Phase 0B H5: Aggregate DISTINCT values from a comma-separated text
-     * column on the brands table — used to populate filter dropdowns without
-     * parsing every brand's JSON `data` blob in PHP.
+     * Phase 9.10 — aggregate DISTINCT CSV-column values for admin
+     * filter dropdowns. Behaviour preserved verbatim.
      *
      * @param string $brands_table Fully-qualified brands table name.
      * @param string $column       Lean CSV column on the brands table.
      * @return string[]
      */
     private function collect_distinct_csv_values($brands_table, $column) {
-        global $wpdb;
-        $allowed = array('licenses', 'top_geos', 'product_types');
-        if (!in_array($column, $allowed, true)) return array();
-        $rows = $wpdb->get_col("SELECT DISTINCT $column FROM $brands_table WHERE $column IS NOT NULL AND $column != ''");
-        $values = array();
-        foreach ($rows as $csv) {
-            foreach (array_map('trim', explode(',', (string) $csv)) as $v) {
-                if ($v !== '') $values[$v] = true;
-            }
-        }
-        $values = array_keys($values);
-        sort($values);
-        return $values;
+        return $this->json_value_collector()->collect((string) $brands_table, (string) $column);
     }
 
     /**
@@ -1272,10 +1288,11 @@ class DataFlair_Toplists {
      * @return string|false Local URL to saved logo or false on failure
      */
     private function download_brand_logo($brand_data, $brand_slug) {
-        // Phase 2 — delegate to the extracted LogoDownloaderInterface. All
-        // Phase 0B H3 invariants (3 MB size cap, 8 s timeout, HEAD-first,
-        // dataflair_brand_logo_stored hook, 7-day reuse window) preserved.
-        return $this->logo_downloader()->download($brand_data, (string) $brand_slug);
+        // Phase 9.10 — delegate via the LogoSync wrapper. Phase 2 already
+        // moved the heavy lifting (3 MB cap, 8 s timeout, HEAD-first,
+        // dataflair_brand_logo_stored hook, 7-day reuse window) into
+        // LogoDownloader; LogoSync gives the sync side a named seam.
+        return $this->logo_sync()->download((array) $brand_data, (string) $brand_slug);
     }
 
     // NOTE: sync_brands_page() moved to DataFlair\Toplists\Sync\BrandSyncService
@@ -1291,212 +1308,28 @@ class DataFlair_Toplists {
     // classes under DataFlair\Toplists\Admin\Ajax\ in v2.1.3 (Phase 9.7).
 
     /**
-     * Discover all toplist endpoints by paginating through the /toplists index.
+     * Phase 9.10 — discover the full set of toplist show-endpoints.
+     * Behaviour preserved verbatim.
      *
-     * The v2 API paginates (default 15/page). This method walks every page and
-     * collects the full list of toplist show-endpoints. Returns an array of
-     * endpoint URLs, or an empty array on failure.
-     *
-     * @param string $token Bearer token
-     * @return string[] Toplist endpoint URLs
+     * @param string $token Bearer token.
+     * @return string[]     Toplist endpoint URLs.
      */
     private function discover_toplist_endpoints($token) {
-        $base_url = $this->get_api_base_url();
-        $endpoints = array();
-        $current_page = 1;
-        $last_page = 1;
-
-        do {
-            $list_url = $base_url . '/toplists?per_page=15&page=' . $current_page;
-            $response = $this->api_get($list_url, $token);
-
-            if (is_wp_error($response)) {
-                error_log('DataFlair discover_toplist_endpoints error (page ' . $current_page . '): ' . $response->get_error_message());
-                break;
-            }
-
-            $status_code = wp_remote_retrieve_response_code($response);
-            if ($status_code !== 200) {
-                error_log('DataFlair discover_toplist_endpoints: HTTP ' . $status_code . ' on page ' . $current_page);
-                break;
-            }
-
-            $data = json_decode(wp_remote_retrieve_body($response), true);
-            if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data'])) {
-                error_log('DataFlair discover_toplist_endpoints: invalid JSON on page ' . $current_page);
-                break;
-            }
-
-            foreach ($data['data'] as $toplist) {
-                if (isset($toplist['id'])) {
-                    $endpoints[] = $base_url . '/toplists/' . $toplist['id'];
-                }
-            }
-
-            // Laravel paginated response includes meta.last_page
-            if (isset($data['meta']['last_page'])) {
-                $last_page = (int) $data['meta']['last_page'];
-            }
-
-            $current_page++;
-        } while ($current_page <= $last_page);
-
-        return $endpoints;
+        return $this->endpoint_discovery()->discover((string) $token);
     }
 
     /**
-     * Fetch and store single toplist
+     * Phase 9.10 — fetch a single toplist by endpoint and persist.
      */
     private function fetch_and_store_toplist($endpoint, $token) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-
-        $response = $this->api_get($endpoint, $token);
-
-        if (is_wp_error($response)) {
-            $error_message = 'DataFlair API Error for ' . $endpoint . ': ' . $response->get_error_message();
-            error_log($error_message);
-            add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
-            return false;
-        }
-
-        $status_code     = wp_remote_retrieve_response_code($response);
-        $body            = wp_remote_retrieve_body($response);
-        $response_headers = wp_remote_retrieve_headers($response);
-
-        // Log response for debugging
-        error_log('DataFlair API Response Code: ' . $status_code . ' for endpoint: ' . $endpoint);
-
-        if ($status_code !== 200) {
-            $error_message = $this->build_detailed_api_error($status_code, $body, $response_headers, $endpoint);
-            error_log('DataFlair fetch_and_store_toplist error: ' . $error_message);
-            add_settings_error('dataflair_messages', 'dataflair_api_error', $error_message, 'error');
-            return false;
-        }
-
-        $response_data = json_decode($body, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $error_message = 'DataFlair JSON Parse Error: ' . json_last_error_msg() . ' for ' . $endpoint;
-            error_log($error_message);
-            add_settings_error('dataflair_messages', 'dataflair_json_error', $error_message, 'error');
-            return false;
-        }
-
-        if (!isset($response_data['data']['id'])) {
-            $error_message = 'DataFlair API Error: Invalid response format for ' . $endpoint . '. Response: ' . substr($body, 0, 300);
-            error_log($error_message);
-            add_settings_error('dataflair_messages', 'dataflair_format_error', $error_message, 'error');
-            return false;
-        }
-
-        $toplist_data = $response_data['data'];
-
-        return $this->store_toplist_data($toplist_data, $body);
+        return $this->toplist_fetcher()->fetchAndStore((string) $endpoint, (string) $token);
     }
-    
+
     /**
-     * Store toplist data directly (used when full data is already fetched in bulk)
+     * Phase 9.10 — upsert a decoded toplist payload.
      */
     private function store_toplist_data($toplist_data, $body) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-
-        if (!isset($toplist_data['id'])) {
-            $error_message = 'DataFlair API Error: Invalid response format. Response: ' . substr($body, 0, 300);
-            error_log($error_message);
-            add_settings_error('dataflair_messages', 'dataflair_format_error', $error_message, 'error');
-            return false;
-        }
-
-        // ── Run data integrity validation ──
-        require_once DATAFLAIR_PLUGIN_DIR . 'includes/DataIntegrityChecker.php';
-        $integrity = DataFlair_DataIntegrityChecker::validate($toplist_data);
-
-        // Log warnings to PHP error log for monitoring (first 5 only to avoid log spam)
-        if (!empty($integrity['warnings'])) {
-            error_log(sprintf(
-                '[DataFlair Sync] Toplist #%d (%s): %d warning(s) — %s',
-                $toplist_data['id'],
-                $toplist_data['name'] ?? 'unknown',
-                count($integrity['warnings']),
-                implode('; ', array_slice($integrity['warnings'], 0, 5))
-            ));
-        }
-
-        $api_id  = $toplist_data['id'];
-        $name    = $toplist_data['name'] ?? '';
-        $version = $toplist_data['version'] ?? '';
-
-        // Build the full data row (warnings are informational — they NEVER block the sync)
-        $data_row = array(
-            'name'           => $name,
-            'slug'           => $toplist_data['slug'] ?? null,
-            'current_period' => $toplist_data['currentPeriod'] ?? null,
-            'published_at'   => isset($toplist_data['publishedAt']) ? date('Y-m-d H:i:s', strtotime($toplist_data['publishedAt'])) : null,
-            'item_count'     => $integrity['item_count'],
-            'locked_count'   => $integrity['locked_count'],
-            'sync_warnings'  => !empty($integrity['warnings']) ? wp_json_encode($integrity['warnings']) : null,
-            'data'           => $body,
-            'version'        => $version,
-            'last_synced'    => current_time('mysql'),
-        );
-
-        // Insert or update by api_toplist_id (upsert key never changes)
-        $existing = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM $table_name WHERE api_toplist_id = %d",
-            $api_id
-        ));
-
-        // Format types matching $data_row key order:
-        // name(%s), slug(%s), current_period(%s), published_at(%s),
-        // item_count(%d), locked_count(%d), sync_warnings(%s),
-        // data(%s), version(%s), last_synced(%s)
-        $update_formats = array('%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s');
-
-        if ($existing) {
-            $result = $wpdb->update(
-                $table_name,
-                $data_row,
-                array('api_toplist_id' => $api_id),
-                $update_formats,
-                array('%d')
-            );
-
-            if ($result === false) {
-                $error_message = sprintf(
-                    'DataFlair DB Update Error for toplist #%d: %s',
-                    $api_id,
-                    $wpdb->last_error ?: 'Unknown error'
-                );
-                error_log($error_message);
-                add_settings_error('dataflair_messages', 'dataflair_db_error', $error_message, 'error');
-                return false;
-            }
-        } else {
-            $data_row['api_toplist_id'] = $api_id;
-            // Append api_toplist_id format (%d) to the end
-            $insert_formats = array_merge($update_formats, array('%d'));
-
-            $result = $wpdb->insert(
-                $table_name,
-                $data_row,
-                $insert_formats
-            );
-
-            if ($result === false) {
-                $error_message = sprintf(
-                    'DataFlair DB Insert Error for toplist #%d: %s',
-                    $api_id,
-                    $wpdb->last_error ?: 'Unknown error'
-                );
-                error_log($error_message);
-                add_settings_error('dataflair_messages', 'dataflair_db_error', $error_message, 'error');
-                return false;
-            }
-        }
-
-        return true;
+        return $this->toplist_data_store()->store((array) $toplist_data, (string) $body);
     }
 
     /**
