@@ -54,7 +54,7 @@ final class DashboardPage implements PageInterface
                 </div>
             </div>
 
-            <?php $this->renderSyncProgress(); ?>
+            <?php $this->renderSyncConsole(); ?>
 
             <!-- Stat tiles -->
             <div class="df-stat-tiles">
@@ -131,55 +131,170 @@ final class DashboardPage implements PageInterface
 
         <script>
         jQuery(document).ready(function ($) {
-            var ajaxUrl = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
+            var ajaxUrl            = <?php echo json_encode(admin_url('admin-ajax.php')); ?>;
             var fetchBrandsNonce   = <?php echo json_encode(wp_create_nonce('dataflair_fetch_all_brands')); ?>;
             var syncBrandsNonce    = <?php echo json_encode(wp_create_nonce('dataflair_sync_brands_batch')); ?>;
             var fetchToplistsNonce = <?php echo json_encode(wp_create_nonce('dataflair_fetch_all_toplists')); ?>;
             var syncToplistsNonce  = <?php echo json_encode(wp_create_nonce('dataflair_sync_toplists_batch')); ?>;
             var healthNonce        = <?php echo json_encode(wp_create_nonce('dataflair_api_health')); ?>;
 
-            function startBatchSync(type) {
-                var fetchAction = type === 'brands' ? 'dataflair_fetch_all_brands' : 'dataflair_fetch_all_toplists';
-                var fetchNonce  = type === 'brands' ? fetchBrandsNonce : fetchToplistsNonce;
-                var syncAction  = type === 'brands' ? 'dataflair_sync_brands_batch' : 'dataflair_sync_toplists_batch';
-                var syncNonce   = type === 'brands' ? syncBrandsNonce : syncToplistsNonce;
-                var $btn = type === 'brands' ? $('#df-dash-sync-brands') : $('#df-dash-sync-toplists');
-                $btn.prop('disabled', true).text('Fetching…');
+            /* ── Sync console helpers ─────────────────────────── */
+            var $console  = $('#df-sync-console');
+            var $spinner  = $console.find('.df-sync-console__spinner');
+            var $title    = $console.find('.df-sync-console__title');
+            var $eta      = $console.find('.df-sync-console__eta');
+            var $fill     = $console.find('.df-sync-console__bar-fill');
+            var $pct      = $console.find('.df-sync-console__pct');
+            var $stats    = $console.find('.df-sync-console__stats');
+            var $log      = $console.find('.df-sync-log');
 
+            function ts() {
+                var d = new Date();
+                return [d.getHours(), d.getMinutes(), d.getSeconds()]
+                    .map(function(n){ return String(n).padStart(2,'0'); }).join(':');
+            }
+
+            function logLine(msg, type) {
+                type = type || 'default';
+                var icons = { success:'✓', error:'✗', info:'→', done:'✓', muted:'·', default:'·' };
+                var icon  = icons[type] || '·';
+                var $line = $('<div class="df-sync-log-line df-sync-log-line--' + type + '">' +
+                    '<span class="df-sync-log__ts">' + ts() + '</span>' +
+                    '<span class="df-sync-log__icon">' + icon + '</span>' +
+                    '<span class="df-sync-log__msg">' + msg + '</span>' +
+                    '</div>');
+                $log.prepend($line); /* newest first */
+            }
+
+            function setProgress(done, total) {
+                var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                $fill.css('width', pct + '%');
+                $pct.text(pct + '%');
+            }
+
+            function showConsole(label) {
+                $console.attr('data-active', '1');
+                $spinner.attr('data-done', null).removeAttr('data-done');
+                $fill.attr('data-done', null).removeAttr('data-done').css('width', '0%');
+                $pct.text('0%');
+                $title.text(label);
+                $eta.text('');
+                $stats.text('Starting…');
+                $log.empty();
+            }
+
+            function finishConsole(label) {
+                $spinner.attr('data-done', '1');
+                $fill.attr('data-done', '1').css('width', '100%');
+                $pct.text('100%');
+                $title.text(label);
+                $eta.text('');
+            }
+
+            function fmtEta(ms) {
+                if (ms < 2000) return '';
+                var s = Math.round(ms / 1000);
+                return s < 60 ? '~' + s + 's remaining' : '~' + Math.round(s/60) + 'm remaining';
+            }
+
+            /* ── Core sync loop ───────────────────────────────── */
+            function startBatchSync(type) {
+                var label      = type === 'brands' ? 'Brands' : 'Toplists';
+                var fetchAction = type === 'brands' ? 'dataflair_fetch_all_brands'   : 'dataflair_fetch_all_toplists';
+                var fetchNonce  = type === 'brands' ? fetchBrandsNonce               : fetchToplistsNonce;
+                var syncAction  = type === 'brands' ? 'dataflair_sync_brands_batch'  : 'dataflair_sync_toplists_batch';
+                var syncNonce   = type === 'brands' ? syncBrandsNonce                : syncToplistsNonce;
+                var $btn        = type === 'brands' ? $('#df-dash-sync-brands')       : $('#df-dash-sync-toplists');
+
+                $btn.prop('disabled', true).text('Fetching…');
+                showConsole('Syncing ' + label + '…');
+                logLine('Fetching ' + label.toLowerCase() + ' list from API…', 'info');
+
+                var tFetch = Date.now();
                 $.post(ajaxUrl, { action: fetchAction, _ajax_nonce: fetchNonce }, function (res) {
-                    if (!res.success) { $btn.prop('disabled', false).text(type === 'brands' ? 'Sync Brands' : 'Sync Toplists'); return; }
-                    var total = res.data ? (res.data.total || 0) : 0;
-                    var done = 0, page = 1;
-                    $btn.text('Syncing 0/' + total + '…');
+                    var fetchMs = Date.now() - tFetch;
+                    if (!res || !res.success) {
+                        var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Request failed';
+                        logLine('Error fetching list: ' + errMsg, 'error');
+                        $stats.text('Failed to fetch list.');
+                        $btn.prop('disabled', false).text('Sync ' + label);
+                        return;
+                    }
+
+                    var total      = res.data ? (res.data.total || 0) : 0;
+                    var totalPages = res.data ? (res.data.pages || Math.ceil(total / 10) || 1) : 1;
+                    var syncedTotal = 0;
+                    var page       = 1;
+                    var tStart     = Date.now();
+
+                    logLine('Found ' + total + ' ' + label.toLowerCase() + ' across ' + totalPages + ' pages (' + fetchMs + 'ms)', 'info');
+                    $stats.text('Page 1 of ' + totalPages + ' · 0 synced');
+                    $btn.text('Syncing…');
+
                     function nextPage() {
+                        var tPage = Date.now();
                         $.post(ajaxUrl, { action: syncAction, _ajax_nonce: syncNonce, page: page }, function (r) {
-                            if (r && r.data) done += (r.data.synced || 0);
-                            $btn.text('Syncing ' + done + '/' + total + '…');
-                            if (r && r.data && r.data.has_more) { page++; nextPage(); }
-                            else { $btn.prop('disabled', false).text(type === 'brands' ? 'Sync Brands ✓' : 'Sync Toplists ✓'); }
+                            var pageMs  = Date.now() - tPage;
+                            var synced  = (r && r.data) ? (r.data.synced || 0) : 0;
+                            var hasMore = r && r.data && r.data.has_more;
+                            syncedTotal += synced;
+                            setProgress(page, totalPages);
+
+                            var status = (r && r.success) ? 'success' : 'error';
+                            logLine('Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced  ·  ' + pageMs + 'ms', status);
+
+                            /* ETA based on avg ms/page so far */
+                            var elapsed    = Date.now() - tStart;
+                            var avgPerPage = elapsed / page;
+                            var remaining  = (totalPages - page) * avgPerPage;
+                            $stats.text('Page ' + page + ' of ' + totalPages + ' · ' + syncedTotal + ' synced');
+                            $eta.text(hasMore ? fmtEta(remaining) : '');
+
+                            if (hasMore) {
+                                page++;
+                                nextPage();
+                            } else {
+                                var totalSec = ((Date.now() - tStart) / 1000).toFixed(1);
+                                logLine('Done — ' + syncedTotal + ' ' + label.toLowerCase() + ' synced in ' + totalSec + 's', 'done');
+                                $stats.text(syncedTotal + ' ' + label.toLowerCase() + ' synced in ' + totalSec + 's');
+                                finishConsole(label + ' sync complete');
+                                $btn.prop('disabled', false).text('Sync ' + label + ' ✓');
+                            }
+                        }).fail(function () {
+                            logLine('Page ' + page + ' request failed (network error)', 'error');
+                            $stats.text('Stopped on page ' + page + ' — network error.');
+                            $btn.prop('disabled', false).text('Sync ' + label);
                         });
                     }
                     nextPage();
+
+                }).fail(function () {
+                    logLine('Network error fetching list', 'error');
+                    $stats.text('Network error.');
+                    $btn.prop('disabled', false).text('Sync ' + label);
                 });
             }
 
             $('#df-dash-sync-brands').on('click', function () { startBatchSync('brands'); });
             $('#df-dash-sync-toplists').on('click', function () { startBatchSync('toplists'); });
 
-            /* API health refresh */
+            /* ── API health refresh ───────────────────────────── */
             $('#df-health-refresh').on('click', function () {
                 var $tile = $('#df-health-tile');
                 $tile.find('.df-stat-value').text('Checking…');
                 $.post(ajaxUrl, { action: 'dataflair_api_health', _ajax_nonce: healthNonce }, function (res) {
                     if (res.success && res.data) {
-                        var s = res.data.status;
-                        var label = s === 'healthy' ? 'Healthy' : s === 'failing' ? 'Failing' : 'Unknown';
-                        $tile.find('.df-stat-value').text(label + (res.data.ping_ms ? ' (' + res.data.ping_ms + ' ms)' : ''));
+                        var s      = res.data.status;
+                        var labels = { healthy: 'Healthy', failing: 'Failing', unconfigured: 'Not configured' };
+                        var txt    = (labels[s] || 'Unknown') + (res.data.ping_ms ? ' (' + res.data.ping_ms + ' ms)' : '');
+                        $tile.find('.df-stat-value').text(txt);
+                        $tile.removeClass('df-tile--pass df-tile--warn df-tile--error')
+                             .addClass(s === 'healthy' ? 'df-tile--pass' : s === 'failing' ? 'df-tile--error' : 'df-tile--warn');
                     }
                 });
             });
 
-            /* Copy shortcode */
+            /* ── Copy shortcode ───────────────────────────────── */
             $(document).on('click', '.df-copy-shortcode', function () {
                 var $btn = $(this);
                 navigator.clipboard && navigator.clipboard.writeText($btn.data('text')).then(function () {
@@ -192,13 +307,23 @@ final class DashboardPage implements PageInterface
         <?php
     }
 
-    private function renderSyncProgress(): void
+    private function renderSyncConsole(): void
     {
         ?>
-        <div id="df-dash-sync-progress" style="display:none;margin-bottom:16px;max-width:400px;">
-            <div style="background:#f0f0f1;border-radius:3px;height:20px;overflow:hidden;position:relative;">
-                <div id="df-dash-progress-bar" style="background:#2271b1;width:0%;height:100%;transition:width 0.3s;"></div>
+        <div id="df-sync-console" class="df-sync-console">
+            <div class="df-sync-console__header">
+                <span class="df-sync-console__spinner"></span>
+                <span class="df-sync-console__title">Syncing…</span>
+                <span class="df-sync-console__eta"></span>
             </div>
+            <div class="df-sync-console__progress-wrap">
+                <div class="df-sync-console__bar-track">
+                    <div class="df-sync-console__bar-fill"></div>
+                </div>
+                <span class="df-sync-console__pct">0%</span>
+            </div>
+            <div class="df-sync-console__stats">Starting…</div>
+            <div class="df-sync-log"></div>
         </div>
         <?php
     }
