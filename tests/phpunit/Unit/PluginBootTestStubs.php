@@ -51,5 +51,17 @@ if (!class_exists('DataFlair_Toplists', false)) {
         {
             // No-op — MenuRegistrar wires this as a callable reference only.
         }
+
+        public function toplist_shortcode($atts = []): string
+        {
+            // No-op — Phase 9.12 ShortcodeRegistrar accepts this as a deferred
+            // callable; the test never actually fires the shortcode.
+            return '';
+        }
+
+        public function campaign_redirect_handler(): \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler
+        {
+            return new \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler();
+        }
     }
 }

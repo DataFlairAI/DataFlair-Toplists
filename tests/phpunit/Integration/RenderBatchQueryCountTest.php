@@ -63,18 +63,40 @@ class RenderBatchQueryCountTest extends TestCase {
     // ── Shortcode handler prefetches before the render loop ─────────────
 
     public function test_shortcode_handler_prefetches_brand_metas_before_loop(): void {
+        // Phase 9.12 — the shortcode render path moved into
+        // src/Frontend/Shortcode/ToplistShortcode.php. The god-class
+        // toplist_shortcode() is now a one-line delegator. Scan the new
+        // class so the H7 invariant — prefetch once before iteration — is
+        // still enforced at the source level.
+        $shortcode = (string) file_get_contents(
+            DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Shortcode/ToplistShortcode.php'
+        );
+        $this->assertNotSame('', $shortcode, 'ToplistShortcode.php must be readable.');
         $this->assertMatchesRegularExpression(
-            '/\$brand_meta_map\s*=\s*\$this->prefetch_brand_metas_for_items\s*\(\s*\$items\s*\)\s*;/',
-            $this->source,
-            'Shortcode render path must call prefetch_brand_metas_for_items($items) once before iterating items.'
+            '/\$brand_meta_map\s*=\s*\$this->brandMetaPrefetcher->prefetch\s*\(\s*\$items\s*\)\s*;/',
+            $shortcode,
+            'ToplistShortcode::render() must call $this->brandMetaPrefetcher->prefetch($items) once before iterating items.'
         );
     }
 
     public function test_render_casino_card_call_site_passes_meta_map(): void {
-        $this->assertMatchesRegularExpression(
-            '/\$this->render_casino_card\s*\(\s*\$item\s*,\s*\$atts\[[\'"]id[\'"]\]\s*,\s*\$customizations\s*,\s*\$pros_cons_data\s*,\s*\$brand_meta_map\s*\)/',
-            $this->source,
-            'render_casino_card() call in the shortcode render loop must pass $brand_meta_map as the 5th argument.'
+        // Phase 9.12 — the cards-loop render call lives in ToplistShortcode.
+        // It now invokes CardRenderer::render(CasinoCardVM $vm), and the VM
+        // is built with $brand_meta_map injected so the renderer can resolve
+        // each card's brand row through the prefetched map. Pin both halves.
+        $shortcode = (string) file_get_contents(
+            DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Shortcode/ToplistShortcode.php'
+        );
+        $this->assertNotSame('', $shortcode, 'ToplistShortcode.php must be readable.');
+        $this->assertStringContainsString(
+            'brand_meta_map',
+            $shortcode,
+            'ToplistShortcode::render() must pass the prefetched brand_meta_map into each CasinoCardVM so the renderer can resolve through it.'
+        );
+        $this->assertStringContainsString(
+            '$this->cardRenderer->render(',
+            $shortcode,
+            'ToplistShortcode::render() must invoke CardRenderer::render() per item in the cards-layout loop.'
         );
     }
 

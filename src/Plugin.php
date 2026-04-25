@@ -28,6 +28,7 @@ use DataFlair\Toplists\Frontend\Assets\AlpineJsEnqueuer;
 use DataFlair\Toplists\Frontend\Assets\PromoCopyScript;
 use DataFlair\Toplists\Frontend\Assets\StylesEnqueuer;
 use DataFlair\Toplists\Frontend\Assets\WidgetShortcodeDetector;
+use DataFlair\Toplists\Frontend\Shortcode\ShortcodeRegistrar;
 use DataFlair\Toplists\UpdateChecker\GithubUpdateChecker;
 
 final class Plugin
@@ -138,6 +139,15 @@ final class Plugin
         (new WidgetShortcodeDetector())->register();
         (new AlpineJsEnqueuer(new AlpineDeferAttribute()))->register();
         (new PromoCopyScript())->register();
+
+        // Phase 9.12 — public shortcode + `/go/?campaign=…` redirect.
+        // The shortcode callback is the legacy delegator so renderer
+        // resolution stays lazy: `toplist_shortcode($atts)` calls
+        // `toplist_shortcode_instance()` on first invocation, which is
+        // *after* every other plugin has had a chance to register a
+        // `dataflair_card_renderer` / `dataflair_table_renderer` filter.
+        (new ShortcodeRegistrar([$this->legacy, 'toplist_shortcode']))->register();
+        $this->legacy->campaign_redirect_handler()->register();
     }
 
     private function buildContainer(): Container

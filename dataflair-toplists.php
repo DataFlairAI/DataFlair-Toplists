@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.1.7
+ * Version: 2.1.8
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.7');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.1.8');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -243,6 +243,12 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Support\RelativeTimeFormatter|null */
     private $relative_time_formatter = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Shortcode\ToplistShortcode|null */
+    private $toplist_shortcode_instance = null;
+
+    /** @var \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler|null */
+    private $campaign_redirect_handler = null;
 
     /**
      * Legacy singleton accessor. Continues to function as a strangler-fig
@@ -833,6 +839,42 @@ class DataFlair_Toplists {
         return $this->relative_time_formatter;
     }
 
+    /**
+     * Phase 9.12 — lazy getter for the public-shortcode orchestrator. Public
+     * because `\DataFlair\Toplists\Plugin::registerHooks()` constructs the
+     * `ShortcodeRegistrar` against this instance so the legacy delegator
+     * (`toplist_shortcode($atts)`) and the registrar share one object.
+     *
+     * @return \DataFlair\Toplists\Frontend\Shortcode\ToplistShortcode
+     */
+    public function toplist_shortcode_instance() {
+        if ($this->toplist_shortcode_instance instanceof \DataFlair\Toplists\Frontend\Shortcode\ToplistShortcode) {
+            return $this->toplist_shortcode_instance;
+        }
+        $this->toplist_shortcode_instance = new \DataFlair\Toplists\Frontend\Shortcode\ToplistShortcode(
+            $this->toplists_repo(),
+            $this->card_renderer(),
+            $this->table_renderer(),
+            $this->brand_meta_prefetcher()
+        );
+        return $this->toplist_shortcode_instance;
+    }
+
+    /**
+     * Phase 9.12 — lazy getter for the campaign redirect handler. Public so
+     * `Plugin::registerHooks()` can register its `template_redirect` hook
+     * without touching the legacy method.
+     *
+     * @return \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler
+     */
+    public function campaign_redirect_handler() {
+        if ($this->campaign_redirect_handler instanceof \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler) {
+            return $this->campaign_redirect_handler;
+        }
+        $this->campaign_redirect_handler = new \DataFlair\Toplists\Frontend\Redirect\CampaignRedirectHandler();
+        return $this->campaign_redirect_handler;
+    }
+
     private function init_hooks() {
         // Phase 9.5: activation/deactivation are now registered at
         // plugin-file load time via the WPPB-style hooks at the top of
@@ -862,10 +904,15 @@ class DataFlair_Toplists {
         // `ajax_*` methods on this class still exist (kept until Phase 8) so
         // external callers that invoked them directly continue to work.
         $this->admin_bootstrap()->boot();
-        
-        // Shortcode
-        add_shortcode('dataflair_toplist', array($this, 'toplist_shortcode'));
-        
+
+        // Phase 9.12 — `add_shortcode('dataflair_toplist', ...)` and the
+        // `template_redirect` action for `/go/?campaign=…` are registered by
+        // `Plugin::registerHooks()` via `Frontend\Shortcode\ShortcodeRegistrar`
+        // and `Frontend\Redirect\CampaignRedirectHandler`. The legacy
+        // `toplist_shortcode()` / `handle_campaign_redirect()` methods on this
+        // class survive as thin delegators because the block editor render
+        // callback still binds to `[$this, 'toplist_shortcode']`.
+
         // Phase 7 — Gutenberg block registration + editor assets now live in
         // DataFlair\Toplists\Block\{BlockRegistrar, ToplistBlock, EditorAssets}.
         // BlockRegistrar::register() wires the `init` and
@@ -874,9 +921,6 @@ class DataFlair_Toplists {
 
         // REST API for block editor
         add_action('rest_api_init', array($this, 'register_rest_routes'));
-
-        // Redirect handler for /go/ campaign links
-        add_action('template_redirect', array($this, 'handle_campaign_redirect'));
 
         // Cron registration was removed in v1.11.0 (Phase 0B H1). DataFlair
         // sync now runs only when an operator triggers it from the admin
@@ -1261,125 +1305,16 @@ class DataFlair_Toplists {
     }
 
     /**
-     * Shortcode handler
+     * Phase 9.12 — delegates to `Frontend\Shortcode\ToplistShortcode::render()`.
+     * Kept as a public seam because the Gutenberg block render callback
+     * (and any downstream code that bound to `[$plugin, 'toplist_shortcode']`)
+     * still references this method.
+     *
+     * @param array|string $atts
+     * @return string
      */
     public function toplist_shortcode($atts) {
-        // Phase 1 — observability: capture render wall time + item count.
-        $render_t0 = microtime(true);
-
-        // Extract shortcode-specific attributes
-        $shortcode_defaults = array(
-            'id'    => '',  // Primary — looks up by api_toplist_id
-            'slug'  => '',  // Optional — looks up by slug column
-            'title' => '',
-            'limit' => 0,
-            'layout' => 'cards',
-        );
-
-        // Merge with defaults but preserve all other attributes (for customization)
-        $atts = wp_parse_args($atts, $shortcode_defaults);
-
-        do_action('dataflair_render_started', array(
-            'toplist_id' => (int) ($atts['id'] ?? 0),
-            'slug'       => (string) ($atts['slug'] ?? ''),
-            'layout'     => (string) ($atts['layout'] ?? 'cards'),
-        ));
-
-        if (empty($atts['id']) && empty($atts['slug'])) {
-            return '<p style="color: red;">DataFlair Error: Toplist ID or slug is required</p>';
-        }
-
-        global $wpdb;
-        $table_name = $wpdb->prefix . DATAFLAIR_TABLE_NAME;
-
-        // Look up toplist by slug first, then by API ID
-        if (!empty($atts['slug'])) {
-            $toplist = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM $table_name WHERE slug = %s LIMIT 1",
-                $atts['slug']
-            ));
-        } else {
-            $toplist = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM $table_name WHERE api_toplist_id = %d",
-                intval($atts['id'])
-            ));
-        }
-        
-        if (!$toplist) {
-            $identifier = !empty($atts['slug'])
-                ? 'slug "' . esc_html($atts['slug']) . '"'
-                : 'ID ' . esc_html($atts['id']);
-            return '<p style="color: red;">DataFlair Error: Toplist ' . $identifier . ' not found. Please sync first.</p>';
-        }
-        
-        $data = json_decode($toplist->data, true);
-        
-        if (!isset($data['data']['items'])) {
-            return '<p style="color: red;">DataFlair Error: Invalid toplist data</p>';
-        }
-        
-        // Check if data is stale (older than 3 days)
-        $last_synced = strtotime($toplist->last_synced);
-        $is_stale = (time() - $last_synced) > (3 * 24 * 60 * 60);
-        
-        $items = $data['data']['items'];
-        
-        // Apply limit
-        if ($atts['limit'] > 0) {
-            $items = array_slice($items, 0, $atts['limit']);
-        }
-        
-        // Use custom title or default
-        $title = !empty($atts['title']) ? $atts['title'] : $data['data']['name'];
-        
-        // Extract customization attributes (all attributes except shortcode-specific ones)
-        $customizations = $atts;
-        $pros_cons_data = isset($customizations['prosCons']) ? $customizations['prosCons'] : array();
-        unset($customizations['id'], $customizations['title'], $customizations['limit'], $customizations['layout'], $customizations['prosCons']);
-
-        if (isset($atts['layout']) && $atts['layout'] === 'table') {
-            $table_html = $this->render_toplist_table($items, $title, $is_stale, $last_synced, $pros_cons_data);
-            do_action('dataflair_render_finished', array(
-                'toplist_id'  => (int) ($atts['id'] ?? 0),
-                'item_count'  => count($items),
-                'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
-                'layout'      => 'table',
-            ));
-            return $table_html;
-        }
-
-        ob_start();
-        ?>
-        <div class="dataflair-toplist">
-            <?php if ($is_stale): ?>
-                <div class="dataflair-notice">
-                    ⚠️ This data was last updated on <?php echo date('M d, Y', $last_synced); ?>. Using cached version.
-                </div>
-            <?php endif; ?>
-            
-            <?php if (!empty($title)): ?>
-            <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
-            <?php endif; ?>
-            
-                        <?php
-            // Phase 0B H7: prefetch every card's brand row in one (or at most
-            // three) SQL round-trip instead of 5 cascading per-card queries.
-            $brand_meta_map = $this->prefetch_brand_metas_for_items($items);
-            foreach ($items as $item):
-                echo $this->render_casino_card($item, $atts['id'], $customizations, $pros_cons_data, $brand_meta_map);
-            endforeach; ?>
-        </div>
-        <?php
-        $html = ob_get_clean();
-
-        do_action('dataflair_render_finished', array(
-            'toplist_id'  => (int) ($atts['id'] ?? 0),
-            'item_count'  => count($items),
-            'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
-            'layout'      => 'cards',
-        ));
-
-        return $html;
+        return $this->toplist_shortcode_instance()->render($atts);
     }
 
     /**
@@ -1537,48 +1472,12 @@ class DataFlair_Toplists {
     }
     
     /**
-     * Handle campaign redirect from /go/?campaign=campaign-name
-     * Performs 301 redirect to tracker URL stored in transient
+     * Phase 9.12 — delegates to `Frontend\Redirect\CampaignRedirectHandler::handle()`.
+     * Kept as a public seam for any downstream code that may have bound a
+     * filter or replacement directly to `[$plugin, 'handle_campaign_redirect']`.
      */
     public function handle_campaign_redirect() {
-        // Check if this is a /go/ request with campaign parameter
-        if (!isset($_GET['campaign']) || empty($_GET['campaign'])) {
-            return;
-        }
-        
-        // Only handle if URL path is /go/ or contains /go
-        $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
-        $parsed_url = parse_url($request_uri);
-        $path = isset($parsed_url['path']) ? $parsed_url['path'] : '';
-        
-        // Check if path contains /go (handles /go/, /go, /go?campaign=, etc.)
-        if (strpos($path, '/go') === false) {
-            return;
-        }
-        
-        $campaign_name = sanitize_text_field($_GET['campaign']);
-        
-        if (empty($campaign_name)) {
-            // Invalid campaign name, return 404
-            status_header(404);
-            nocache_headers();
-            return;
-        }
-        
-        // Look up tracker URL from transient
-        $transient_key = 'dataflair_tracker_' . md5($campaign_name);
-        $tracker_url = get_transient($transient_key);
-        
-        if (empty($tracker_url) || !filter_var($tracker_url, FILTER_VALIDATE_URL)) {
-            // Campaign not found or invalid URL, return 404
-            status_header(404);
-            nocache_headers();
-            return;
-        }
-        
-        // Perform 301 redirect to tracker URL
-        wp_redirect($tracker_url, 301);
-        exit;
+        $this->campaign_redirect_handler()->handle();
     }
     
     /**

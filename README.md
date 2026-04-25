@@ -178,6 +178,28 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.8
+
+2.1.8 is the Phase 9.12 **shortcode + campaign redirect extraction** release. The two remaining public entry points leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Frontend/Shortcode/` and `src/Frontend/Redirect/`. No operator action required, no DB migration, no config change.
+
+What moved out of `dataflair-toplists.php`:
+
+- `Frontend\Shortcode\ToplistShortcode` — replaces inline `toplist_shortcode()`. Validates attrs, performs the slug-or-id `ToplistsRepository` lookup, runs the H7 batched `BrandMetaPrefetcher` once before iterating items, then dispatches each item to `CardRenderer::render(CasinoCardVM)` (cards layout) or to `TableRenderer::render(ToplistTableVM)` (table layouts).
+- `Frontend\Shortcode\ShortcodeRegistrar` — owns the `add_shortcode('dataflair_toplist', …)` registration. Wired through a generic `callable` so heavy-weight orchestrator construction is deferred to first shortcode invocation — every other plugin has had a chance to register its `dataflair_card_renderer` / `dataflair_table_renderer` filters before the renderer resolves.
+- `Frontend\Redirect\CampaignRedirectHandler` — replaces inline `handle_campaign_redirect()`. Hooks `template_redirect`, validates the campaign param, increments the per-campaign hit-counter transient, then `wp_safe_redirect()`s to the brand affiliate URL.
+
+What stays the same:
+
+- The shortcode HTML output is byte-identical on tier-S, tier-Sigma, and tier-L fixtures.
+- `[dataflair_toplist]` shortcode name, attribute schema, and DOM markup unchanged.
+- Campaign redirect URL pattern (`/go/?campaign=…`) and hit-counter transient unchanged.
+- Phase 0B invariants (render-time read-only, H7 prefetch ordering, no cron) untouched.
+- No public option, table, AJAX action, or REST route changed.
+
+Tests: 21 new unit tests pin attribute validation, repository lookup, prefetch ordering, dispatch, the registrar's `function_exists` guard, the campaign happy path, the invalid-campaign 404, the already-redirected guard, and the per-campaign hit-counter transient. Suite size 553 → 574 tests, 1,270 assertions, all green. `dataflair-toplists.php` LOC drops by ~177.
+
+The two extracted god-class methods remain as one-line delegators through v2.1.x. They are deleted in **v3.0.0 (Phase 9.13 — god-class symbol removal)**.
+
 ### To 2.1.7
 
 2.1.7 is the Phase 9.11 **HTTP / URL / Support utility extraction** release. Seven stateless helpers leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Http/` and `src/Support/`. No operator action required, no DB migration, no config change.
@@ -402,6 +424,16 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.8
+- **Phase 9.12 — shortcode + campaign redirect extraction.** The two remaining public entry points leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Frontend\Shortcode\` and `DataFlair\Toplists\Frontend\Redirect\`.
+- Added: `ToplistShortcode`, `ShortcodeRegistrar` (`src/Frontend/Shortcode/`), `CampaignRedirectHandler` (`src/Frontend/Redirect/`).
+- Refactored: `toplist_shortcode()` and `handle_campaign_redirect()` on the god-class are now one-line delegators. `add_shortcode('dataflair_toplist', …)` and `add_action('template_redirect', …)` registrations move to `Plugin::registerHooks()` via dedicated registrars.
+- Deferred-callable wiring: the shortcode is registered through a generic `callable` so heavy-weight orchestrator construction is deferred to first invocation — every other plugin has had a chance to register its `dataflair_card_renderer` / `dataflair_table_renderer` filters before the renderer resolves through the lazy `Container`.
+- Render-time read-only invariant preserved: `ToplistShortcode::render()` still passes the H7 prefetched brand-meta map into every `CasinoCardVM`. `RenderIsReadOnlyTest` + `RenderBatchQueryCountTest` continue to enforce this — both H* invariants now point to the new class file at the source-scan layer.
+- No public contract change: shortcode HTML is byte-identical, campaign redirect URL pattern (`/go/?campaign=…`) and per-campaign hit-counter transient unchanged.
+- Tests: 21 new unit tests pin attribute validation, repository lookup-by-slug-or-id, H7 prefetch ordering, dispatch into table vs cards rendering, the registrar's `function_exists` guard, the campaign happy path, the invalid-campaign 404, the already-redirected guard, and the per-campaign hit-counter transient. Total suite: **574 tests, 1,270 assertions, all green**.
+- LOC: `dataflair-toplists.php` drops by ~177.
 
 ### 2.1.7
 - **Phase 9.11 — HTTP / URL / Support utility extraction.** Seven stateless helpers leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Http\` and `DataFlair\Toplists\Support\`.
@@ -710,4 +742,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.7 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
