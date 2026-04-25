@@ -6,7 +6,7 @@ Living index of all parked plans for this plugin. New plans go in `to-be-impleme
 
 | # | Plan | Touches | Owner | Created | Notes |
 |---|------|---------|-------|---------|-------|
-| 01 | [DataFlair ↔ WP Plugin Sync Architecture](to-be-implemented/01-dataflair-sync-architecture.md) | dataflair.ai-v2 + plugin | Mex | 2026-04-25 | Phase A (delta endpoint) → B (tombstones) → C (webhooks). Coordinated cross-repo work. |
+| 01 | [DataFlair → WordPress Webhooks Sync Architecture](to-be-implemented/01-dataflair-to-wordpress-webhooks-sync-architecture.md) | dataflair.ai-v2 + plugin | Mex | 2026-04-25 | Phase A (delta endpoint) → B (tombstones) → C (webhooks). Coordinated cross-repo work. |
 
 ## In progress
 
