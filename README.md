@@ -63,9 +63,11 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - Set per-country or per-market alternatives in the admin panel
 
 ### Admin Interface
-- **DataFlair → Toplists:** view all synced toplists, trigger manual sync, preview before committing
-- **DataFlair → Brands:** full brand table with review URL override editing
-- **DataFlair → Settings:** configure API endpoint, API key, sync frequency, and feature flags
+- **DataFlair → Dashboard:** API health tile, stat tiles (brands synced, toplists, last sync + next-run), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. One-click Sync Brands and Sync Toplists buttons with live toast feedback.
+- **DataFlair → Toplists:** search + sort, bulk re-sync and bulk delete, per-row accordion showing Items (position/brand/offer/status pill), Raw JSON (copy + download), and Alt Geos tabs.
+- **DataFlair → Brands:** full brand table with review URL override inline-edit cell.
+- **DataFlair → Tools:** Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered `[DataFlair]` debug.log entries with severity colouring + Download), API Preview tab.
+- **DataFlair → Settings:** API Connection (bearer token + Test Connection), Customizations (colour pickers with live preview), Sync Schedule (cadence, retry count, alert email — reschedules WP-Cron on save). Dirty-state amber pill + `beforeunload` guard.
 - REST API endpoints for the block editor (`/wp-json/dataflair/v1/toplists`, `/wp-json/dataflair/v1/casinos`)
 
 ### Security
@@ -424,6 +426,16 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.2.0
+- **Admin UX redesign — five-page layout.** Dashboard, Toplists, Brands, Tools, and Settings. Each page is a dedicated `PageInterface` class; nonce + capability gating stays centralised in `AjaxRouter`.
+- **Dashboard.** API health tile (60 s transient), stat tiles, recent sync activity feed (`dataflair_sync_history`), scheduled jobs, shortcode usage count + copy button. Sync Brands + Sync Toplists buttons with live progress toast.
+- **Toplists list.** Search, sort, bulk re-sync + bulk delete. Per-row accordion: Items tab (position / resolved brand name / offer / synced-or-partial pill), Raw JSON tab (pretty-printed blob + copy + download), Alt Geos tab. New `ToplistsQuery` + `ToplistsPage` DTOs; `findPaginated`, `findItemSummaryByApiToplistId`, `findRawDataByApiToplistId` added to the repository.
+- **Tools page.** Per-test Run + Run All (results persist to `dataflair_test_results`, no auto-run). Logs tab: `[DataFlair]` lines from `debug.log`, severity colouring, 200-line tail newest-first, Download. API Preview tab moved here from Settings.
+- **Settings polish.** Dirty-state amber pill + `beforeunload` guard (`dirty-state.js`). Colour pickers with instant live preview (`color-picker.js`). Test Connection button in API Connection tab. Sync Schedule tab: cadence selects, retry count, alert email — reschedules WP-Cron on save.
+- **15 new AJAX handlers** (all `AjaxHandlerInterface`): `ApiHealthHandler`, `ToplistUsageHandler`, `TestApiConnectionHandler`, `BulkResyncToplistsHandler`, `BulkDeleteToplistsHandler`, `ToplistAccordionDetailsHandler`, `ToplistRawJsonHandler`, `RunTestHandler`, `RunAllTestsHandler`, `LogsTailHandler`, `LogsDownloadHandler`.
+- **Schema 1.12.** `is_disabled TINYINT(1) NOT NULL DEFAULT 0` on `wp_dataflair_brands`. Disabled brands excluded from front-end shortcode output.
+- Tests: 8 new test files; 7 updated for expanded `ToplistsRepositoryInterface`.
 
 ### 2.1.8
 - **Phase 9.12 — shortcode + campaign redirect extraction.** The two remaining public entry points leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Frontend\Shortcode\` and `DataFlair\Toplists\Frontend\Redirect\`.
