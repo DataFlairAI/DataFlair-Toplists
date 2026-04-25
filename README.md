@@ -178,6 +178,30 @@ dataflair-toplists/
 
 ## Upgrading
 
+### To 2.1.7
+
+2.1.7 is the Phase 9.11 **HTTP / URL / Support utility extraction** release. Seven stateless helpers leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Http/` and `src/Support/`. No operator action required, no DB migration, no config change.
+
+What moved out of `dataflair-toplists.php`:
+
+- `Support\UrlValidator` — replaces inline `is_local_url()`. Classifies hosts as local-dev (`.test`, `.local`, `.localhost`, `.invalid`, `.example`, plus `localhost` / `127.0.0.1`).
+- `Support\UrlTransformer` — replaces inline `maybe_force_https()`. Rewrites `http://` → `https://` for non-local URLs (the production redirect strips `Authorization` headers; up-front HTTPS avoids the rewrite).
+- `Support\EnvironmentDetector` — replaces inline `is_running_in_docker()`. Three-way detection: `/.dockerenv`, `/proc/1/cgroup` keywords, `host.docker.internal` DNS resolution. Currently unused after Phase 0A but kept as a discrete unit.
+- `Http\ApiBaseUrlDetector` — replaces inline `get_api_base_url()`. Three-tier resolution: stored option → endpoints option (with cache-back) → `https://sigma.dataflair.ai/api/v1` fallback. Strips trailing path beyond `/api/vN`.
+- `Http\BrandsApiUrlBuilder` — replaces inline `get_brands_api_url()`. Respects `dataflair_brands_api_version` (v1 default, v2 opt-in); appends `?page=N`.
+- `Http\ApiErrorFormatter` — replaces inline `build_detailed_api_error()`. Owns the long status-code switch (401 Basic vs Bearer vs HTML, 403/404/419/429/500/502-504/default), producing actionable admin-UI guidance.
+- `Support\RelativeTimeFormatter` — replaces inline `time_ago()` and `time_until()`. Emits `"3 minutes ago"` / `"in 3 minutes"` labels.
+
+What stays the same:
+
+- The eight extracted god-class methods remain as one-line delegators — call sites and behaviour unchanged.
+- Phase 0B invariants (HTTPS-force, render-time read-only, no cron) untouched.
+- No public option, table, shortcode, AJAX action, or REST route changed.
+
+Tests: 50 new unit tests pin behaviour at the boundary. Suite size 503 → 553 tests, 1,213 assertions, all green. `dataflair-toplists.php` LOC drops 1,772 → 1,700.
+
+The eight god-class delegators stay in place through v2.1.x. They are deleted in **v3.0.0 (Phase 9.13 — god-class symbol removal)**.
+
 ### To 2.1.6
 
 2.1.6 is the Phase 9.10 **sync pipeline helpers extraction** release. Seven helper methods leave `dataflair-toplists.php` for dedicated single-responsibility classes under `src/Sync/` and `src/Database/`. No operator action required, no DB migration, no config change.
@@ -378,6 +402,14 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.1.7
+- **Phase 9.11 — HTTP / URL / Support utility extraction.** Seven stateless helpers leave the god-class for dedicated single-responsibility classes under `DataFlair\Toplists\Http\` and `DataFlair\Toplists\Support\`.
+- Added: `UrlValidator`, `UrlTransformer`, `EnvironmentDetector`, `RelativeTimeFormatter` (all under `src/Support/`). `ApiBaseUrlDetector`, `BrandsApiUrlBuilder`, `ApiErrorFormatter` (all under `src/Http/`).
+- Refactored: `is_local_url()`, `maybe_force_https()`, `is_running_in_docker()`, `get_api_base_url()`, `get_brands_api_url()`, `build_detailed_api_error()`, `time_ago()`, `time_until()` are now one-line delegators wired through lazy `Container` getters. Closure-based DI from Phase 9.10 continues to resolve through these delegators.
+- Phase 0B invariants preserved: render is still read-only; cron is still removed; HTTPS-force, Docker detection, and human-readable error formatting all behave exactly as before.
+- Tests: 50 new unit tests pin behaviour at the boundary (`UrlValidatorTest`, `UrlTransformerTest`, `EnvironmentDetectorTest`, `ApiBaseUrlDetectorTest`, `BrandsApiUrlBuilderTest`, `ApiErrorFormatterTest`, `RelativeTimeFormatterTest`). Total suite: 553 tests, 1,213 assertions, all green.
+- LOC: `dataflair-toplists.php` drops 1,772 → 1,700.
 
 ### 2.1.6
 - **Phase 9.10 — sync pipeline helpers extraction.** Seven god-class methods leave for dedicated single-responsibility classes under `DataFlair\Toplists\Sync\` and `DataFlair\Toplists\Database\`. The toplist endpoint walker, single-toplist fetcher, row writer, transient sweeper, paginated table delete, JSON CSV value collector, and the logo-sync wrapper all become small, isolated units.
@@ -678,4 +710,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.6 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.1.7 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
