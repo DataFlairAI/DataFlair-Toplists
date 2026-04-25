@@ -65,18 +65,21 @@ final class ToplistsListPage implements PageInterface
                 </div>
             </div>
 
-            <!-- Sync console (same UX as Dashboard) -->
-            <div id="df-tl-sync-console" class="df-sync-console" data-active="0" style="display:none;margin-bottom:16px;">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-                    <span id="df-tl-spinner" style="animation:df-spin 1s linear infinite;display:inline-block;">↻</span>
-                    <strong id="df-tl-title">Syncing Toplists…</strong>
-                    <span id="df-tl-eta" style="margin-left:auto;color:#646970;font-size:12px;"></span>
+            <!-- Sync console -->
+            <div id="df-tl-sync-console" class="df-sync-console" style="margin-bottom:16px;">
+                <div class="df-sync-console__header">
+                    <span class="df-sync-console__spinner"></span>
+                    <span class="df-sync-console__title">Syncing Toplists…</span>
+                    <span class="df-sync-console__eta"></span>
                 </div>
-                <div style="height:6px;background:#ddd;border-radius:3px;margin-bottom:8px;">
-                    <div id="df-tl-progress-bar" style="height:100%;background:#2271b1;width:0;border-radius:3px;transition:width 0.3s;"></div>
+                <div class="df-sync-console__progress-wrap">
+                    <div class="df-sync-console__bar-track">
+                        <div class="df-sync-console__bar-fill"></div>
+                    </div>
+                    <span class="df-sync-console__pct">0%</span>
                 </div>
-                <div id="df-tl-stats" style="font-size:12px;color:#646970;margin-bottom:6px;">Starting…</div>
-                <div id="df-tl-log" style="font-family:monospace;font-size:11px;background:#1e1e1e;color:#d4d4d4;padding:10px 12px;border-radius:4px;max-height:200px;overflow-y:auto;"></div>
+                <div class="df-sync-console__stats"></div>
+                <div class="df-sync-log"></div>
             </div>
             <p class="description"><?php echo esc_html(($this->lastSyncLabelFormatter)('dataflair_last_toplists_sync')); ?></p>
             <hr>
@@ -385,9 +388,10 @@ final class ToplistsListPage implements PageInterface
 
             /* ── Per-row Re-sync ─────────────────────────────────── */
             $(document).on('click', '.df-acc-resync', function () {
-                var $btn = $(this);
-                $btn.prop('disabled', true).text('Syncing…');
-                startToplistBatchSync($btn, function () { $btn.prop('disabled', false).text('↻ Re-sync'); });
+                var $rowBtn = $(this).prop('disabled', true).text('Syncing…');
+                toplistConsole.start(function () {
+                    $rowBtn.prop('disabled', false).text('↻ Re-sync');
+                });
             });
 
             /* ── Select all / Bulk bar ───────────────────────────── */
@@ -448,124 +452,20 @@ final class ToplistsListPage implements PageInterface
             });
 
             /* ── Fetch All Toplists + Sync Console ───────────────── */
-            var $tlConsole   = $('#df-tl-sync-console');
-            var $tlBar       = $('#df-tl-progress-bar');
-            var $tlStats     = $('#df-tl-stats');
-            var $tlLog       = $('#df-tl-log');
-            var $tlEta       = $('#df-tl-eta');
-
-            function tlLog(msg, type) {
-                var colors = { success:'#4ec94e', error:'#f4736a', info:'#7ecfff', done:'#f0e68c', muted:'#888' };
-                var icons  = { success:'✓', error:'✗', info:'→', done:'★', muted:'-' };
-                var now = new Date();
-                var ts = now.toTimeString().slice(0,8);
-                var c  = colors[type] || colors.info;
-                var ic = icons[type]  || icons.info;
-                $tlLog.append('<div style="color:' + c + ';margin-bottom:2px;">' + ts + ' <span>' + ic + '</span> ' + $('<span>').text(msg).html() + '</div>');
-                $tlLog.scrollTop($tlLog[0].scrollHeight);
-            }
-            function tlProgress(page, total) {
-                if (!total) return;
-                var pct = Math.min(100, Math.round((page / total) * 100));
-                $tlBar.css('width', pct + '%');
-            }
-            function tlFmtEta(ms) {
-                if (ms < 60000) return Math.round(ms / 1000) + 's remaining';
-                return Math.round(ms / 60000) + 'min remaining';
-            }
-
-            function startToplistBatchSync($triggerBtn, onDone) {
-                $tlConsole.show();
-                $tlLog.empty();
-                $tlBar.css('width', '0');
-                $tlStats.text('Validating token…');
-                $tlEta.text('');
-                tlLog('Validating API token…', 'info');
-
-                $.post(ajaxUrl, { action: 'dataflair_fetch_all_toplists', _ajax_nonce: nonces.fetchAll }, function (res) {
-                    if (!res || !res.success) {
-                        var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Token validation failed';
-                        tlLog('Error: ' + errMsg, 'error');
-                        $tlStats.text('Failed — ' + errMsg);
-                        if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
-                        if (onDone) onDone(false);
-                        return;
-                    }
-                    tlLog('Token OK — starting page sync…', 'info');
-
-                    var page = 1, totalPages = null, syncedTotal = 0, tStart = Date.now();
-
-                    function nextPage() {
-                        var tPage = Date.now();
-                        $.post(ajaxUrl, { action: 'dataflair_sync_toplists_batch', _ajax_nonce: nonces.syncBatch, page: page }, function (r) {
-                            var pageMs     = Date.now() - tPage;
-                            var data       = (r && r.data) ? r.data : {};
-
-                            if (!r || !r.success) {
-                                var eMsg = data.message || 'Server error on page ' + page;
-                                tlLog('Error on page ' + page + ': ' + eMsg, 'error');
-                                $tlStats.text('Stopped — ' + eMsg);
-                                if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
-                                if (onDone) onDone(false);
-                                return;
-                            }
-
-                            var synced     = data.synced     || 0;
-                            var errors     = data.errors     || 0;
-                            var isComplete = data.is_complete || false;
-                            var lastPage   = data.last_page  || page;
-                            var nextPageNo = data.next_page  || (page + 1);
-                            syncedTotal   += synced;
-
-                            if (totalPages === null) {
-                                totalPages = lastPage;
-                                tlLog('API reports ' + totalPages + ' page(s) to sync', 'info');
-                                $tlStats.text('Page 1 of ' + totalPages + ' · 0 synced');
-                            }
-
-                            tlProgress(page, totalPages);
-                            var lineType = errors > 0 ? 'error' : 'success';
-                            var lineMsg  = 'Page ' + page + '/' + totalPages + '  ·  +' + synced + ' synced';
-                            if (errors > 0) lineMsg += '  ·  ⚠ ' + errors + ' errors';
-                            if (synced === 0 && errors === 0) lineMsg += '  ·  (skipped)';
-                            lineMsg += '  ·  ' + pageMs + 'ms';
-                            tlLog(lineMsg, lineType);
-
-                            var elapsed = Date.now() - tStart;
-                            var avg     = elapsed / page;
-                            $tlStats.text('Page ' + page + ' of ' + totalPages + ' · ' + syncedTotal + ' synced');
-                            $tlEta.text(!isComplete ? tlFmtEta((totalPages - page) * avg) : '');
-
-                            if (!isComplete) {
-                                page = nextPageNo;
-                                nextPage();
-                            } else {
-                                var totalSec = ((Date.now() - tStart) / 1000).toFixed(1);
-                                tlLog('Done — ' + syncedTotal + ' toplists synced in ' + totalSec + 's', 'done');
-                                $tlStats.text(syncedTotal + ' toplists synced in ' + totalSec + 's');
-                                $tlEta.text('');
-                                if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API ✓');
-                                if (onDone) onDone(true);
-                            }
-                        }).fail(function () {
-                            tlLog('Page ' + page + ' request failed (network error)', 'error');
-                            $tlStats.text('Network error on page ' + page);
-                            if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
-                            if (onDone) onDone(false);
-                        });
-                    }
-                    nextPage();
-                }).fail(function () {
-                    tlLog('Network error during token validation', 'error');
-                    $tlStats.text('Network error.');
-                    if ($triggerBtn) $triggerBtn.prop('disabled', false).text('Fetch All Toplists from API');
-                    if (onDone) onDone(false);
-                });
-            }
+            var toplistConsole = new window.DFSyncConsole({
+                consoleId:   'df-tl-sync-console',
+                btnId:       'dataflair-fetch-all-toplists',
+                btnLabel:    'Fetch All Toplists from API',
+                titleLabel:  'Syncing Toplists…',
+                ajaxUrl:     ajaxUrl,
+                fetchAction: 'dataflair_fetch_all_toplists',
+                batchAction: 'dataflair_sync_toplists_batch',
+                fetchNonce:  nonces.fetchAll,
+                batchNonce:  nonces.syncBatch,
+            });
 
             $('#dataflair-fetch-all-toplists').on('click', function () {
-                var $btn = $(this).prop('disabled', true).text('Syncing…');
-                startToplistBatchSync($btn, null);
+                toplistConsole.start(null);
             });
 
             /* ── Search + filter ─────────────────────────────────── */

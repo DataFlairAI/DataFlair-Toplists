@@ -446,73 +446,29 @@
         });
     });
 
-    // ── Sync Brands batch flow (shared with ToplistsListPage) ───────────────
+    // ── Sync Brands batch flow ───────────────────────────────────────────────
 
-    function startBrandsBatchSync() {
-        var $btn      = $('#dataflair-fetch-all-brands');
-        var $progress = $('#dataflair-sync-progress');
-        var $bar      = $('#dataflair-progress-bar');
-        var $text     = $('#dataflair-progress-text');
-        var $msg      = $('#dataflair-fetch-brands-message');
-
-        $btn.prop('disabled', true).text('Syncing…');
-        $progress.show();
-        $bar.css('width', '0%');
-        $text.text('');
-        $msg.text('Starting sync…');
-
-        function runBatch(page, total, done) {
-            $.post(cfg.ajaxUrl, {
-                action:      'dataflair_sync_brands_batch',
-                _ajax_nonce: cfg.nonces.syncBrandsBatch,
-                page:        page,
-            }, function (res) {
-                if (!res.success) {
-                    $btn.prop('disabled', false).text('Sync Brands from API');
-                    $msg.text('Error: ' + (res.data && res.data.message ? res.data.message : 'Sync failed.'));
-                    DFAdmin.toast('error', 'Brands sync failed.');
-                    return;
-                }
-                var d      = res.data;
-                var newTotal = d.total_brands || total;
-                var pct    = newTotal > 0 ? Math.round((done + (d.synced_count || 0)) / newTotal * 100) : 100;
-                $bar.css('width', pct + '%');
-                $text.text(pct + '%');
-                $msg.text('Synced page ' + page + ' — ' + (done + (d.synced_count || 0)) + ' of ' + newTotal);
-
-                if (d.has_more) {
-                    runBatch(page + 1, newTotal, done + (d.synced_count || 0));
-                } else {
-                    $btn.prop('disabled', false).text('Sync Brands from API');
-                    $msg.text('Sync complete — ' + (done + (d.synced_count || 0)) + ' brands updated.');
-                    DFAdmin.toast('success', 'Brands synced successfully.');
-                    doQuery();
-                }
-            }).fail(function () {
-                $btn.prop('disabled', false).text('Sync Brands from API');
-                DFAdmin.toast('error', 'Network error during sync.');
-            });
-        }
-
-        $.post(cfg.ajaxUrl, {
-            action:      'dataflair_fetch_all_brands',
-            _ajax_nonce: cfg.nonces.fetchBrands,
-        }, function (res) {
-            if (res.success && res.data.start_batch) {
-                runBatch(1, 0, 0);
-            } else {
-                $btn.prop('disabled', false).text('Sync Brands from API');
-                $msg.text(res.data && res.data.message ? res.data.message : 'Failed to start sync.');
-                DFAdmin.toast('error', 'Could not start brands sync.');
-            }
-        }).fail(function () {
-            $btn.prop('disabled', false).text('Sync Brands from API');
-            DFAdmin.toast('error', 'Network error.');
-        });
-    }
+    var brandsConsole = new window.DFSyncConsole({
+        consoleId:   'df-brands-sync-console',
+        btnId:       'dataflair-fetch-all-brands',
+        btnLabel:    'Sync Brands from API',
+        titleLabel:  'Syncing Brands…',
+        ajaxUrl:     cfg.ajaxUrl,
+        fetchAction: 'dataflair_fetch_all_brands',
+        batchAction: 'dataflair_sync_brands_batch',
+        fetchNonce:  cfg.nonces.fetchBrands,
+        batchNonce:  cfg.nonces.syncBrandsBatch,
+    });
 
     $(document).on('click', '#dataflair-fetch-all-brands', function () {
-        startBrandsBatchSync();
+        brandsConsole.start(function (success) {
+            if (success) {
+                DFAdmin.toast('success', 'Brands synced successfully.');
+                doQuery();
+            } else {
+                DFAdmin.toast('error', 'Brands sync failed.');
+            }
+        });
     });
 
     // ── Utilities ────────────────────────────────────────────────────────────

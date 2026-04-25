@@ -57,6 +57,16 @@ final class AdminAssetsRegistrar
             true
         );
 
+        $syncJsPath = DATAFLAIR_PLUGIN_DIR . 'assets/admin/sync-console.js';
+        $syncJsVer  = file_exists($syncJsPath) ? (string) filemtime($syncJsPath) : DATAFLAIR_VERSION;
+        wp_enqueue_script(
+            'dataflair-sync-console',
+            DATAFLAIR_PLUGIN_URL . 'assets/admin/sync-console.js',
+            ['jquery', 'dataflair-admin-ui'],
+            $syncJsVer,
+            true
+        );
+
         // Legacy assets (Select2 + admin.js) only on the original two screens.
         if (in_array($hook, self::ADMIN_HOOKS, true)) {
 
@@ -103,7 +113,7 @@ final class AdminAssetsRegistrar
             wp_enqueue_script(
                 'dataflair-brands',
                 DATAFLAIR_PLUGIN_URL . 'assets/admin/brands.js',
-                ['jquery', 'dataflair-admin-ui'],
+                ['jquery', 'dataflair-admin-ui', 'dataflair-sync-console'],
                 $brands_js_ver,
                 true
             );
