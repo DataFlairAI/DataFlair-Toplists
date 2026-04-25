@@ -12,6 +12,10 @@ namespace DataFlair\Toplists\Admin;
 
 use DataFlair\Toplists\Admin\Assets\AdminAssetsRegistrar;
 use DataFlair\Toplists\Admin\Ajax\ApiPreviewHandler;
+use DataFlair\Toplists\Admin\Ajax\BrandsQueryHandler;
+use DataFlair\Toplists\Admin\Ajax\BulkApplyReviewPatternHandler;
+use DataFlair\Toplists\Admin\Ajax\BulkDisableBrandsHandler;
+use DataFlair\Toplists\Admin\Ajax\BulkResyncBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\DeleteAlternativeToplistHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllToplistsHandler;
@@ -106,6 +110,26 @@ final class AdminBootstrap
             'dataflair_save_review_url',
             new SaveReviewUrlHandler($this->brands_repo),
             'dataflair_save_review_url'
+        );
+        $router->register(
+            'dataflair_brands_query',
+            new BrandsQueryHandler($this->brands_repo),
+            'dataflair_brands_query'
+        );
+        $router->register(
+            'dataflair_bulk_apply_review_pattern',
+            new BulkApplyReviewPatternHandler($this->brands_repo),
+            'dataflair_bulk_apply_review_pattern'
+        );
+        $router->register(
+            'dataflair_bulk_disable_brands',
+            new BulkDisableBrandsHandler($this->brands_repo),
+            'dataflair_bulk_disable_brands'
+        );
+        $router->register(
+            'dataflair_bulk_resync_brands',
+            new BulkResyncBrandsHandler(),
+            'dataflair_bulk_resync_brands'
         );
 
         return $router;

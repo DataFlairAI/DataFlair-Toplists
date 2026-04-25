@@ -646,7 +646,7 @@ class DataFlair_Toplists {
             return $this->brands_page_obj;
         }
         $this->brands_page_obj = new \DataFlair\Toplists\Admin\Pages\BrandsPage(
-            \Closure::fromCallable([$this, 'collect_distinct_csv_values']),
+            $this->brands_repo(),
             \Closure::fromCallable([$this, 'format_last_sync_label'])
         );
         return $this->brands_page_obj;

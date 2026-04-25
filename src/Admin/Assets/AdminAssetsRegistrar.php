@@ -95,5 +95,18 @@ final class AdminAssetsRegistrar
             'fetchBrandsNonce'       => wp_create_nonce('dataflair_fetch_all_brands'),
             'syncBrandsBatchNonce'   => wp_create_nonce('dataflair_sync_brands_batch'),
         ]);
+
+        // Phase 9.6 (admin UX redesign) — brands.js only on the Brands page.
+        if (strpos($hook, 'dataflair-brands') !== false) {
+            $brands_js_path = DATAFLAIR_PLUGIN_DIR . 'assets/admin/brands.js';
+            $brands_js_ver  = file_exists($brands_js_path) ? (string) filemtime($brands_js_path) : DATAFLAIR_VERSION;
+            wp_enqueue_script(
+                'dataflair-brands',
+                DATAFLAIR_PLUGIN_URL . 'assets/admin/brands.js',
+                ['jquery', 'dataflair-admin-ui'],
+                $brands_js_ver,
+                true
+            );
+        }
     }
 }

@@ -14,6 +14,7 @@ namespace DataFlair\Toplists\Tests\Unit\Admin;
 use DataFlair\Toplists\Admin\MenuRegistrar;
 use DataFlair\Toplists\Admin\Pages\BrandsPage;
 use DataFlair\Toplists\Admin\Pages\DashboardPage;
+use DataFlair\Toplists\Database\BrandsRepositoryInterface;
 use DataFlair\Toplists\Admin\Pages\SettingsPage;
 use DataFlair\Toplists\Admin\Pages\ToolsPage;
 use DataFlair\Toplists\Admin\Pages\ToplistsListPage;
@@ -22,6 +23,9 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/AdminTestStubs.php';
 require_once __DIR__ . '/MenuRegistrarTestStubs.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepositoryInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsPage.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsQuery.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/PageInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/DashboardPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/ToplistsListPage.php';
@@ -84,7 +88,7 @@ final class MenuRegistrarTest extends TestCase
             new DashboardPage(),
             new ToplistsListPage(static fn(string $option) => 'never'),
             new BrandsPage(
-                static fn(string $table, string $column): array => [],
+                $this->createStub(BrandsRepositoryInterface::class),
                 static fn(string $option) => 'never'
             ),
             new ToolsPage(
