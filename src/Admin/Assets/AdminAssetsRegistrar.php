@@ -58,9 +58,7 @@ final class AdminAssetsRegistrar
         );
 
         // Legacy assets (Select2 + admin.js) only on the original two screens.
-        if (!in_array($hook, self::ADMIN_HOOKS, true)) {
-            return;
-        }
+        if (in_array($hook, self::ADMIN_HOOKS, true)) {
 
         wp_enqueue_style(
             'select2',
@@ -95,6 +93,8 @@ final class AdminAssetsRegistrar
             'fetchBrandsNonce'       => wp_create_nonce('dataflair_fetch_all_brands'),
             'syncBrandsBatchNonce'   => wp_create_nonce('dataflair_sync_brands_batch'),
         ]);
+
+        } // end legacy-only guard
 
         // Phase 9.6 (admin UX redesign) — brands.js only on the Brands page.
         if (strpos($hook, 'dataflair-brands') !== false) {
