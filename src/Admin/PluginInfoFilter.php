@@ -155,6 +155,12 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.1</h4>
+<ul>
+  <li><strong>Fixed: API token / base URL / colour fields silently failing to save on the new Settings page.</strong> The legacy <code>admin.js</code> contains the click handler that intercepts the Settings form submit and POSTs to <code>wp_ajax_dataflair_save_settings</code>. After the IA restructure moved Settings to its own submenu (<code>dataflair-settings</code>), the asset registrar\'s <code>ADMIN_HOOKS</code> list was never updated — admin.js stopped enqueuing on the Settings hook, the click handler never bound, and the form fell back to a native POST to <code>options.php</code> which knows nothing about these custom-named options. Added <code>dataflair_page_dataflair-settings</code> to the hook list.</li>
+  <li><strong>Fixed: Dashboard API Health tile resetting to "Unknown" after the 60-second transient expired.</strong> The handler now persists every ping result to a permanent <code>dataflair_api_health_last</code> option in addition to the throttling transient. The Dashboard reads the transient first, falls back to the option, and renders a "Checked X ago" subline below the status — so the last known health stays visible across page loads. The Refresh button preserves the previous status if the AJAX call fails and surfaces the error on the timestamp line instead of blanking the tile.</li>
+</ul>
+
 <h4>2.2.0</h4>
 <ul>
   <li><strong>Admin UX redesign — five-page layout.</strong> The flat single-page admin becomes a five-page suite: Dashboard, Toplists, Brands, Tools, and Settings. Each page is a dedicated <code>PageInterface</code> class; nonce + capability gating remains centralised in <code>AjaxRouter</code>.</li>

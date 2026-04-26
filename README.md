@@ -427,6 +427,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.1
+- **Fixed: API token / base URL / colour fields silently failing to save on the new Settings page.** The legacy `admin.js` contains the click handler that intercepts the Settings form submit and POSTs to `wp_ajax_dataflair_save_settings`. After the IA restructure moved Settings to its own submenu, the asset registrar's `ADMIN_HOOKS` list was never updated — admin.js stopped enqueuing on the Settings hook, the click handler never bound, and the form fell back to a native POST to `options.php`. Added `dataflair_page_dataflair-settings` to the hook list.
+- **Fixed: Dashboard API Health tile resetting to "Unknown" after the 60-second transient expired.** The handler now persists every ping result to a permanent `dataflair_api_health_last` option in addition to the throttling transient. The Dashboard reads the transient first, falls back to the option, and renders a "Checked X ago" subline below the status. Refresh keeps the previous status visible if the AJAX call fails.
+
 ### 2.2.0
 - **Admin UX redesign — five-page layout.** Dashboard, Toplists, Brands, Tools, and Settings. Each page is a dedicated `PageInterface` class; nonce + capability gating stays centralised in `AjaxRouter`.
 - **Dashboard.** API health tile (60 s transient), stat tiles, recent sync activity feed (`dataflair_sync_history`), scheduled jobs, shortcode usage count + copy button. Sync Brands + Sync Toplists buttons with live progress toast.
@@ -754,4 +758,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.1.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.2.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
