@@ -28,9 +28,16 @@ final class DashboardPage implements PageInterface
         $last_toplists_sync = (int) get_option('dataflair_last_toplists_sync', 0);
         $last_sync_ts       = max($last_brands_sync, $last_toplists_sync);
 
+        // Prefer the throttling transient (most recent ping); fall back to the
+        // persisted last-known result so the tile keeps showing the previous
+        // status with "checked X ago" instead of resetting to Unknown after
+        // the 60s transient expires.
         $api_health = get_transient('dataflair_api_health');
         if (!is_array($api_health)) {
-            $api_health = ['status' => 'unknown', 'ping_ms' => 0, 'error' => ''];
+            $api_health = get_option('dataflair_api_health_last', null);
+        }
+        if (!is_array($api_health)) {
+            $api_health = ['status' => 'unknown', 'ping_ms' => 0, 'error' => '', 'checked_at' => 0];
         }
 
         $history = get_option('dataflair_sync_history', []);
@@ -308,17 +315,34 @@ final class DashboardPage implements PageInterface
 
             /* ── API health refresh ───────────────────────────── */
             $('#df-health-refresh').on('click', function () {
-                var $tile = $('#df-health-tile');
-                $tile.find('.df-stat-value').text('Checking…');
+                var $tile     = $('#df-health-tile');
+                var $checked  = $tile.find('.df-health-checked');
+                var prevTxt   = $tile.find('.df-stat-value').text();
+                var $btn      = $(this);
+
+                $btn.prop('disabled', true).text('↻ Checking…');
+
                 $.post(ajaxUrl, { action: 'dataflair_api_health', _ajax_nonce: healthNonce, force: 1 }, function (res) {
-                    if (res.success && res.data) {
+                    if (res && res.success && res.data) {
                         var s      = res.data.status;
                         var labels = { healthy: 'Healthy', failing: 'Failing', unconfigured: 'Not configured' };
-                        var txt    = (labels[s] || 'Unknown') + (res.data.ping_ms ? ' (' + res.data.ping_ms + ' ms)' : '');
+                        var label  = labels[s] || 'Unknown';
+                        var txt    = label + (res.data.ping_ms ? ' (' + res.data.ping_ms + ' ms)' : '');
                         $tile.find('.df-stat-value').text(txt);
+                        $checked.text('Checked just now');
                         $tile.removeClass('df-tile--pass df-tile--warn df-tile--error')
                              .addClass(s === 'healthy' ? 'df-tile--pass' : s === 'failing' ? 'df-tile--error' : 'df-tile--warn');
+                    } else {
+                        // Keep previous status visible; surface the failure on the timestamp line.
+                        var msg = (res && res.data && res.data.message) ? res.data.message : 'Refresh failed';
+                        $tile.find('.df-stat-value').text(prevTxt);
+                        $checked.text('Refresh failed: ' + msg);
                     }
+                }).fail(function () {
+                    $tile.find('.df-stat-value').text(prevTxt);
+                    $checked.text('Refresh failed: network error');
+                }).always(function () {
+                    $btn.prop('disabled', false).text('↻ Refresh');
                 });
             });
 
@@ -398,13 +422,16 @@ final class DashboardPage implements PageInterface
             'healthy'      => 'Healthy',
             'failing'      => 'Failing',
             'unconfigured' => 'Not configured',
-            default        => 'Unknown',
+            default        => 'Not yet checked',
         };
-        $ping = $health['ping_ms'] > 0 ? ' (' . $health['ping_ms'] . ' ms)' : '';
+        $ping       = ($health['ping_ms'] ?? 0) > 0 ? ' (' . (int) $health['ping_ms'] . ' ms)' : '';
+        $checked_at = (int) ($health['checked_at'] ?? 0);
+        $checked    = $checked_at > 0 ? 'Checked ' . human_time_diff($checked_at) . ' ago' : 'Never checked';
         ?>
         <div id="df-health-tile" class="df-stat-tile <?php echo esc_attr($cls); ?>">
             <span class="df-tile-label">API Health</span>
             <span class="df-stat-value df-tile-value"><?php echo esc_html($label . $ping); ?></span>
+            <span class="df-tile-sub df-health-checked"><?php echo esc_html($checked); ?></span>
             <button type="button" id="df-health-refresh" class="button button-small df-tile-refresh">↻ Refresh</button>
         </div>
         <?php
