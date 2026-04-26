@@ -61,10 +61,7 @@
 
 /* Page header (title + action cluster). */
 .df-page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    display: block;
     margin: 12px 0 18px;
 }
 .df-page-header__title { margin: 0; font-size: 1.4em; }
