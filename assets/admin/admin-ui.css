@@ -65,7 +65,7 @@
     margin: 12px 0 18px;
 }
 .df-page-header__title { margin: 0; font-size: 1.4em; }
-.df-page-header__actions { display: flex; gap: 8px; align-items: center; }
+.df-page-header__actions { display: block; text-align: right; }
 
 /* Filter chip + popover skeleton — JS owns open/close state. */
 .df-filter-chip {
