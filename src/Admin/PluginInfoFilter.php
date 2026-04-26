@@ -155,6 +155,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.2</h4>
+<ul>
+  <li><strong>UX: Admin page header layout fixes.</strong> <code>.df-page-header</code> set to <code>display:block</code> and <code>.df-page-header__actions</code> always right-aligned via <code>display:block; text-align:right</code> — prevents the action buttons from collapsing on narrower admin widths.</li>
+</ul>
+
 <h4>2.2.1</h4>
 <ul>
   <li><strong>Fixed: API token / base URL / colour fields silently failing to save on the new Settings page.</strong> The legacy <code>admin.js</code> contains the click handler that intercepts the Settings form submit and POSTs to <code>wp_ajax_dataflair_save_settings</code>. After the IA restructure moved Settings to its own submenu (<code>dataflair-settings</code>), the asset registrar\'s <code>ADMIN_HOOKS</code> list was never updated — admin.js stopped enqueuing on the Settings hook, the click handler never bound, and the form fell back to a native POST to <code>options.php</code> which knows nothing about these custom-named options. Added <code>dataflair_page_dataflair-settings</code> to the hook list.</li>
