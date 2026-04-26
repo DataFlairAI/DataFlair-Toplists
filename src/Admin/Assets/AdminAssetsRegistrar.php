@@ -14,10 +14,18 @@ namespace DataFlair\Toplists\Admin\Assets;
 
 final class AdminAssetsRegistrar
 {
-    /** Hook screens where DataFlair admin assets should load. */
+    /**
+     * Hook screens where DataFlair admin assets should load.
+     *
+     * Settings is included so admin.js binds the save-button click handler
+     * (it intercepts the form submit and POSTs to wp_ajax_dataflair_save_settings).
+     * Without this the form falls back to a native POST to options.php and
+     * the API token / base URL / colors silently fail to persist.
+     */
     private const ADMIN_HOOKS = [
         'toplevel_page_dataflair-toplists',
         'dataflair_page_dataflair-brands',
+        'dataflair_page_dataflair-settings',
     ];
 
     public function register(): void
