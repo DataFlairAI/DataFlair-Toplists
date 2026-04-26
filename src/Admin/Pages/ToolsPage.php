@@ -332,6 +332,19 @@ final class ToolsPage implements PageInterface
                     $idRow.toggle(v === 'toplists/custom');
                 });
 
+                // Render an admin-ajax error response into a single readable string.
+                // Handles: rate-limit payloads (with retry_after), structured {message},
+                // bare strings, and unknown shapes.
+                function formatPreviewError(data) {
+                    if (!data) { return 'Unknown error'; }
+                    if (typeof data === 'string') { return data; }
+                    if (data.retry_after) {
+                        return 'Rate limit reached — try again in ' + data.retry_after + 's';
+                    }
+                    if (data.message) { return data.message; }
+                    return 'Unknown error';
+                }
+
                 $fetch.on('click', function(){
                     var ep = $endpoint.val();
                     var resourceId = $idInput.val().trim();
@@ -356,7 +369,7 @@ final class ToolsPage implements PageInterface
                             $json.text(res.data.body);
                             $result.show();
                         } else {
-                            $status.css('color','red').text('✖ ' + (res.data || 'Unknown error'));
+                            $status.css('color','red').text('✖ ' + formatPreviewError(res.data));
                         }
                     }).fail(function(){
                         $fetch.prop('disabled', false);
@@ -403,7 +416,7 @@ final class ToolsPage implements PageInterface
                         action: 'dataflair_api_preview', _ajax_nonce: nonce, endpoint: 'brands'
                     }, function(v1res){
                         if (!v1res.success) {
-                            $status.css('color','red').text('✖ V1 failed: ' + (v1res.data || 'error'));
+                            $status.css('color','red').text('✖ V1 failed: ' + formatPreviewError(v1res.data));
                             $btn.prop('disabled', false);
                             return;
                         }
@@ -413,7 +426,7 @@ final class ToolsPage implements PageInterface
                         }, function(v2res){
                             $btn.prop('disabled', false);
                             if (!v2res.success) {
-                                $status.css('color','red').text('✖ V2 failed: ' + (v2res.data || 'error'));
+                                $status.css('color','red').text('✖ V2 failed: ' + formatPreviewError(v2res.data));
                                 return;
                             }
                             var v1elapsed = v1res.data.elapsed ? '  ' + v1res.data.elapsed : '';

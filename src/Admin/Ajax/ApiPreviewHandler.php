@@ -18,6 +18,9 @@ use DataFlair\Toplists\Http\HttpClientInterface;
 
 final class ApiPreviewHandler implements AjaxHandlerInterface
 {
+    private const RATE_LIMIT_MAX     = 5;   // calls
+    private const RATE_LIMIT_WINDOW  = 60;  // seconds
+
     public function __construct(
         private HttpClientInterface $client,
         private \Closure $baseUrlResolver
@@ -25,6 +28,18 @@ final class ApiPreviewHandler implements AjaxHandlerInterface
 
     public function handle(array $request): array
     {
+        $rl = $this->checkRateLimit();
+        if ($rl !== null) {
+            return ['success' => false, 'data' => [
+                'message'     => sprintf(
+                    'Rate limit reached: max %d API previews per minute. Try again in %ds.',
+                    self::RATE_LIMIT_MAX,
+                    $rl
+                ),
+                'retry_after' => $rl,
+            ]];
+        }
+
         $token = trim((string) get_option('dataflair_api_token', ''));
         if ($token === '') {
             return ['success' => false, 'data' => ['message' => 'No API token configured.']];
@@ -82,6 +97,36 @@ final class ApiPreviewHandler implements AjaxHandlerInterface
             default:
                 return null;
         }
+    }
+
+    /**
+     * Sliding-window rate limit: max RATE_LIMIT_MAX calls per RATE_LIMIT_WINDOW
+     * seconds, scoped per WP user. Returns the seconds remaining until the
+     * oldest call ages out when the limit is reached, or null when the call
+     * is allowed (and the new timestamp has been recorded).
+     */
+    private function checkRateLimit(): ?int
+    {
+        $user_id = get_current_user_id();
+        $key     = 'dataflair_api_preview_rl_' . $user_id;
+        $now     = time();
+        $cutoff  = $now - self::RATE_LIMIT_WINDOW;
+
+        $stamps = get_transient($key);
+        if (!is_array($stamps)) {
+            $stamps = [];
+        }
+        $stamps = array_values(array_filter($stamps, static fn($ts) => (int) $ts > $cutoff));
+
+        if (count($stamps) >= self::RATE_LIMIT_MAX) {
+            $oldest = (int) $stamps[0];
+            return max(1, ($oldest + self::RATE_LIMIT_WINDOW) - $now);
+        }
+
+        $stamps[] = $now;
+        set_transient($key, $stamps, self::RATE_LIMIT_WINDOW);
+
+        return null;
     }
 
     /** Rewrite any /api/vN segment to /api/v2 so single-resource endpoints resolve. */
