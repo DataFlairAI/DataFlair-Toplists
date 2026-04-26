@@ -2,10 +2,14 @@
 /**
  * Phase 9.6 (admin UX redesign) — Ping the configured API base URL.
  *
- * Result is cached in transient `dataflair_api_health` for 60 seconds so
- * the Dashboard tile doesn't hammer the API on every page load.
+ * Two-layer storage:
+ *   - Transient `dataflair_api_health` (60s) throttles re-pings.
+ *   - Option   `dataflair_api_health_last` persists the last result indefinitely
+ *     so the Dashboard tile keeps showing the last known status with a
+ *     "checked X ago" timestamp instead of falling back to "Unknown".
  *
- * Output: { status: 'healthy'|'failing'|'unconfigured', ping_ms: int, error: string }
+ * Output: { status: 'healthy'|'failing'|'unconfigured', ping_ms: int,
+ *           error: string, checked_at: int }
  */
 
 declare(strict_types=1);
@@ -16,8 +20,9 @@ use DataFlair\Toplists\Admin\AjaxHandlerInterface;
 
 final class ApiHealthHandler implements AjaxHandlerInterface
 {
-    private const TRANSIENT = 'dataflair_api_health';
-    private const TTL       = 60;
+    private const TRANSIENT     = 'dataflair_api_health';
+    private const LAST_OPTION   = 'dataflair_api_health_last';
+    private const TTL           = 60;
 
     public function handle(array $request): array
     {
@@ -33,9 +38,11 @@ final class ApiHealthHandler implements AjaxHandlerInterface
         $base_url = trim((string) get_option('dataflair_api_base_url', ''));
 
         if ($token === '' || $base_url === '') {
-            $data = ['status' => 'unconfigured', 'ping_ms' => 0, 'error' => 'API token or base URL not configured.'];
-            set_transient(self::TRANSIENT, $data, self::TTL);
-            return ['success' => true, 'data' => $data];
+            return $this->persist([
+                'status'  => 'unconfigured',
+                'ping_ms' => 0,
+                'error'   => 'API token or base URL not configured.',
+            ]);
         }
 
         $probe_url = rtrim($base_url, '/') . '/toplists?per_page=1';
@@ -48,9 +55,11 @@ final class ApiHealthHandler implements AjaxHandlerInterface
         $ping_ms = (int) round((microtime(true) - $start) * 1000);
 
         if (is_wp_error($resp)) {
-            $data = ['status' => 'failing', 'ping_ms' => $ping_ms, 'error' => $resp->get_error_message()];
-            set_transient(self::TRANSIENT, $data, self::TTL);
-            return ['success' => true, 'data' => $data];
+            return $this->persist([
+                'status'  => 'failing',
+                'ping_ms' => $ping_ms,
+                'error'   => $resp->get_error_message(),
+            ]);
         }
 
         $code = (int) wp_remote_retrieve_response_code($resp);
@@ -65,8 +74,24 @@ final class ApiHealthHandler implements AjaxHandlerInterface
             $error  = "HTTP {$code}";
         }
 
-        $data = ['status' => $status, 'ping_ms' => $ping_ms, 'error' => $error];
+        return $this->persist([
+            'status'  => $status,
+            'ping_ms' => $ping_ms,
+            'error'   => $error,
+        ]);
+    }
+
+    /**
+     * Stamp checked_at, write to both the throttling transient and the
+     * persistent last-known option, return the success envelope.
+     *
+     * @param array{status:string,ping_ms:int,error:string} $data
+     */
+    private function persist(array $data): array
+    {
+        $data['checked_at'] = time();
         set_transient(self::TRANSIENT, $data, self::TTL);
+        update_option(self::LAST_OPTION, $data, false);
         return ['success' => true, 'data' => $data];
     }
 }
