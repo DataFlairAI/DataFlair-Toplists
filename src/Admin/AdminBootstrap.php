@@ -29,12 +29,8 @@ use DataFlair\Toplists\Admin\Ajax\ToplistRawJsonHandler;
 use DataFlair\Toplists\Admin\Ajax\ToplistUsageHandler;
 use DataFlair\Toplists\Admin\Ajax\RunTestHandler;
 use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
-use DataFlair\Toplists\Admin\Ajax\DeleteAlternativeToplistHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllBrandsHandler;
 use DataFlair\Toplists\Admin\Ajax\FetchAllToplistsHandler;
-use DataFlair\Toplists\Admin\Ajax\GetAlternativeToplistsHandler;
-use DataFlair\Toplists\Admin\Ajax\GetAvailableGeosHandler;
-use DataFlair\Toplists\Admin\Ajax\SaveAlternativeToplistHandler;
 use DataFlair\Toplists\Admin\Ajax\SaveReviewUrlHandler;
 use DataFlair\Toplists\Admin\Ajax\SaveSettingsHandler;
 use DataFlair\Toplists\Admin\Ajax\SyncBrandsBatchHandler;
@@ -53,6 +49,9 @@ final class AdminBootstrap
         private LoggerInterface $logger,
         private BrandsRepositoryInterface $brands_repo,
         private ToplistsRepositoryInterface $toplists_repo,
+        // Phase 3 (geo-targeting) retired this repo's AJAX routes — the
+        // manual "Alt Geos" mechanism is superseded by GeoFamilySelector.
+        // Kept wired (no data loss) per the plan; not called from boot().
         private AlternativesRepositoryInterface $alternatives_repo,
         private HttpClientInterface $api_client,
         private ToplistSyncServiceInterface $toplist_sync,
@@ -93,26 +92,6 @@ final class AdminBootstrap
             'dataflair_sync_brands_batch',
             new SyncBrandsBatchHandler($this->brand_sync),
             'dataflair_sync_brands_batch'
-        );
-        $router->register(
-            'dataflair_get_alternative_toplists',
-            new GetAlternativeToplistsHandler($this->alternatives_repo),
-            'dataflair_save_settings'
-        );
-        $router->register(
-            'dataflair_save_alternative_toplist',
-            new SaveAlternativeToplistHandler($this->alternatives_repo),
-            'dataflair_save_settings'
-        );
-        $router->register(
-            'dataflair_delete_alternative_toplist',
-            new DeleteAlternativeToplistHandler($this->alternatives_repo),
-            'dataflair_save_settings'
-        );
-        $router->register(
-            'dataflair_get_available_geos',
-            new GetAvailableGeosHandler($this->toplists_repo),
-            'dataflair_save_settings'
         );
         $router->register(
             'dataflair_api_preview',

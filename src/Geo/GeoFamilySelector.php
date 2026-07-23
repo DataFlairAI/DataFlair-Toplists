@@ -18,6 +18,11 @@ namespace DataFlair\Toplists\Geo;
  *  3. Explicit global — else, a geo_type=global row in the family.
  *  4. Otherwise — no candidate.
  *
+ * When the visitor's country can't be resolved, steps 1-2 can never match
+ * (they require a real code to compare), but step 3 still applies — a
+ * global row is GeoRenderGate's one visitor-independent case, so an
+ * unresolved visitor must still be able to reach it here.
+ *
  * Whatever this picks (if anything) still passes through GeoRenderGate
  * before rendering — this class only narrows *which* row to check, it never
  * bypasses the check itself.
@@ -34,10 +39,6 @@ final class GeoFamilySelector
      */
     public function select(array $familyRows, ?string $visitorCountryAlpha2): ?array
     {
-        if ($visitorCountryAlpha2 === null) {
-            return null;
-        }
-
         $candidates = [];
         foreach ($familyRows as $row) {
             $decoded = json_decode((string) ($row['data'] ?? ''), true);
@@ -45,6 +46,16 @@ final class GeoFamilySelector
             if (is_array($geo)) {
                 $candidates[] = ['row' => $row, 'geo' => $geo];
             }
+        }
+
+        if ($visitorCountryAlpha2 === null) {
+            foreach ($candidates as $candidate) {
+                if (($candidate['geo']['geo_type'] ?? null) === 'global') {
+                    return $candidate['row'];
+                }
+            }
+
+            return null;
         }
 
         foreach ($candidates as $candidate) {

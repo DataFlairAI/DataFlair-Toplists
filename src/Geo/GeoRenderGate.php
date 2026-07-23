@@ -33,20 +33,49 @@ final class GeoRenderGate
             return true;
         }
 
+        $visitorCountryAlpha2 = $this->normalizeCode($visitorCountryAlpha2);
+
         if ($visitorCountryAlpha2 === null) {
             return false;
         }
 
         if ($geoType === 'country') {
-            return ($geo['code'] ?? null) === $visitorCountryAlpha2;
+            return $this->normalizeCode($geo['code'] ?? null) === $visitorCountryAlpha2;
         }
 
         if ($geoType === 'market') {
             $covered = $geo['coveredCountries'] ?? null;
 
-            return is_array($covered) && in_array($visitorCountryAlpha2, $covered, true);
+            if (!is_array($covered)) {
+                return false;
+            }
+
+            foreach ($covered as $coveredCode) {
+                if ($this->normalizeCode($coveredCode) === $visitorCountryAlpha2) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         return false;
+    }
+
+    /**
+     * Same uppercase+trim normalization VisitorGeoResolver applies to the
+     * detected visitor country — mirrored here so a mixed-case stored code
+     * (manual edit, import) can't silently fail to match an otherwise
+     * correct visitor match.
+     */
+    private function normalizeCode(mixed $code): ?string
+    {
+        if (!is_string($code) || $code === '') {
+            return null;
+        }
+
+        $normalized = strtoupper(trim($code));
+
+        return $normalized === '' ? null : $normalized;
     }
 }

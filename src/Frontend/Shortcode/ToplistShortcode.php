@@ -62,6 +62,9 @@ final class ToplistShortcode
             'title'  => '',
             'limit'  => 0,
             'layout' => 'cards',
+            'ctaMode' => 'single',
+            'cta_mode' => '',
+            'ctamode' => '',
             'template' => '',
             'auto_geo' => 'false',
         ];
@@ -69,9 +72,10 @@ final class ToplistShortcode
         $atts = wp_parse_args(is_array($atts) ? $atts : [], $shortcode_defaults);
 
         do_action('dataflair_render_started', [
-            'toplist_id' => (int) ($atts['id'] ?? 0),
-            'slug'       => (string) ($atts['slug'] ?? ''),
-            'layout'     => (string) ($atts['layout'] ?? 'cards'),
+            'toplist_id'  => (int) ($atts['id'] ?? 0),
+            'template_id' => (int) ($atts['template'] ?? 0),
+            'slug'        => (string) ($atts['slug'] ?? ''),
+            'layout'      => (string) ($atts['layout'] ?? 'cards'),
         ]);
 
         $visitor_country = $this->visitorGeoResolver->resolve();
@@ -108,7 +112,8 @@ final class ToplistShortcode
 
         $this->signalUncacheable();
 
-        if (!$this->geoRenderGate->shouldRender($data['data']['geo'] ?? null, $visitor_country)) {
+        $geo = $data['data']['geo'] ?? null;
+        if (!$this->geoRenderGate->shouldRender(is_array($geo) ? $geo : null, $visitor_country)) {
             return '';
         }
 
@@ -149,10 +154,11 @@ final class ToplistShortcode
             );
 
             do_action('dataflair_render_finished', [
-                'toplist_id' => $resolved_toplist_id,
-                'item_count' => count($items),
-                'elapsed_ms' => (int) round((microtime(true) - $render_t0) * 1000),
-                'layout'     => 'table',
+                'toplist_id'  => $resolved_toplist_id,
+                'template_id' => (int) ($atts['template'] ?? 0),
+                'item_count'  => count($items),
+                'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+                'layout'      => 'table',
             ]);
 
             return $table_html;
@@ -189,10 +195,11 @@ final class ToplistShortcode
         $html = ob_get_clean();
 
         do_action('dataflair_render_finished', [
-            'toplist_id' => $resolved_toplist_id,
-            'item_count' => count($items),
-            'elapsed_ms' => (int) round((microtime(true) - $render_t0) * 1000),
-            'layout'     => 'cards',
+            'toplist_id'  => $resolved_toplist_id,
+            'template_id' => (int) ($atts['template'] ?? 0),
+            'item_count'  => count($items),
+            'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+            'layout'      => 'cards',
         ]);
 
         return $html;

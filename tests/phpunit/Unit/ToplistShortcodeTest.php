@@ -287,6 +287,18 @@ final class ToplistShortcodeTest extends TestCase
         $this->assertCount(2, $card->calls);
     }
 
+    public function test_cta_mode_aliases_are_normalized_to_cta_mode(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $card  = $this->stubCardRenderer('<div class="card"></div>');
+        $sc    = $this->shortcode($this->stubRepo($this->buildToplistRow($items)), $card);
+
+        $sc->render(['id' => 42, 'cta_mode' => 'dual_app']);
+        $vm = $card->calls[0];
+        $customizations = $vm->customizations;
+        $this->assertSame('dual_app', $customizations['ctaMode']);
+    }
+
     public function test_title_attribute_overrides_stored_name(): void
     {
         $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
@@ -470,8 +482,34 @@ final class ToplistShortcodeTest extends TestCase
         $this->assertSame('GlobalBrand', $card->calls[0]->item['brand']['name']);
     }
 
+    public function test_auto_geo_selects_global_when_visitor_country_unresolved(): void
+    {
+        $family = [
+            $this->buildFamilyRow(1, ['geo_type' => 'country', 'code' => 'IN'], [['brand' => ['name' => 'IndiaBrand'], 'position' => 1]]),
+            $this->buildFamilyRow(2, ['geo_type' => 'global'], [['brand' => ['name' => 'GlobalBrand'], 'position' => 1]]),
+        ];
+        $card = $this->stubCardRenderer();
+        $sc   = $this->shortcode($this->stubRepo(null, $family), $card, null, $this->stubGeoResolver(null));
+
+        $sc->render(['template' => 5, 'auto_geo' => 'true']);
+
+        $this->assertCount(1, $card->calls);
+        $this->assertSame('GlobalBrand', $card->calls[0]->item['brand']['name']);
+    }
+
     public function test_render_defines_donotcachepage_constant(): void
     {
+        // Re-declares the setUp() stub locally rather than layering
+        // Functions\expect() on top of it: when() reconfigures the same
+        // stub target (last call wins), so this safely overrides the
+        // blanket justReturn(null) for this test only. Mixing in expect()
+        // here would race against setUp's catch-all under Mockery's
+        // registration-order matching instead of asserting cleanly.
+        $nocache_headers_called = false;
+        Functions\when('nocache_headers')->alias(function () use (&$nocache_headers_called) {
+            $nocache_headers_called = true;
+        });
+
         $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
         $sc    = $this->shortcode($this->stubRepo($this->buildToplistRow($items)));
 
@@ -479,5 +517,6 @@ final class ToplistShortcodeTest extends TestCase
 
         $this->assertTrue(defined('DONOTCACHEPAGE'));
         $this->assertTrue(DONOTCACHEPAGE);
+        $this->assertTrue($nocache_headers_called);
     }
 }
