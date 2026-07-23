@@ -6,7 +6,12 @@
  *   - Search input + template filter chip
  *   - Bulk action bar (Re-sync selected, Delete selected)
  *   - Sortable columns, pagination
- *   - Per-row accordion with Items tab (lazy AJAX) + Raw JSON tab + Alt Geos tab
+ *   - Per-row accordion with Items tab (lazy AJAX) + Raw JSON tab
+ *
+ * The legacy "Alt Geos" tab (hand-curated AlternativesRepository overrides)
+ * was retired from this UI in favor of automatic render-time geo-targeting
+ * (see docs/contracts/geo-targeting.md). The underlying repository/service/
+ * table are untouched — only the admin presentation was removed.
  */
 
 declare(strict_types=1);
@@ -35,16 +40,11 @@ final class ToplistsListPage implements PageInterface
                     current_period,
                     JSON_UNQUOTE(JSON_EXTRACT(data, '$.data.template.name')) AS template_name
              FROM $table_name
-             ORDER BY api_toplist_id ASC
+             ORDER BY last_synced DESC, id DESC
              LIMIT %d OFFSET %d",
             $per_page,
             $offset
         ));
-
-        // All rows for the Alt Geos dropdown (name + IDs only).
-        $all_toplists_for_select = $wpdb->get_results(
-            "SELECT id, api_toplist_id, name FROM $table_name ORDER BY name ASC"
-        );
 
         // Template filter built from every row, not just current page.
         $template_rows = $wpdb->get_col(
@@ -126,7 +126,7 @@ final class ToplistsListPage implements PageInterface
                                 <a href="#" class="toplist-sort-link" data-sort="items">Items <span class="toplist-sort-indicator"></span></a>
                             </th>
                             <th class="sortable-toplist">
-                                <a href="#" class="toplist-sort-link" data-sort="last_synced">Last Synced <span class="toplist-sort-indicator"></span></a>
+                                <a href="#" class="toplist-sort-link" data-sort="last_synced">Last Synced <span class="toplist-sort-indicator"> ▼</span></a>
                             </th>
                         </tr>
                     </thead>
@@ -176,7 +176,6 @@ final class ToplistsListPage implements PageInterface
                                     <nav class="df-accordion-tabs">
                                         <button type="button" class="df-acc-tab df-acc-tab--active" data-tab="items">Items</button>
                                         <button type="button" class="df-acc-tab" data-tab="json">Raw JSON</button>
-                                        <button type="button" class="df-acc-tab" data-tab="altgeos">Alt Geos</button>
                                         <span class="df-acc-meta">Last synced: <strong><?php echo esc_html($toplist->last_synced ?: '—'); ?></strong></span>
                                         <button type="button" class="button button-small df-acc-resync" data-api-id="<?php echo esc_attr($toplist->api_toplist_id); ?>" style="margin-left:auto;">↻ Re-sync</button>
                                     </nav>
@@ -199,39 +198,6 @@ final class ToplistsListPage implements PageInterface
                                         </div>
                                         <div class="df-acc-json-loading">Loading JSON…</div>
                                         <pre class="df-acc-json-code" style="display:none;"></pre>
-                                    </div>
-
-                                    <!-- Alt Geos tab -->
-                                    <div class="df-acc-panel" data-panel="altgeos" style="display:none;">
-                                        <div class="alternative-toplists-list"></div>
-                                        <div class="add-alternative-toplist" style="margin-top:16px;padding:15px;background:#fff;border:1px solid #ddd;">
-                                            <h4 style="margin-top:0;">Add Alternative Toplist</h4>
-                                            <table class="form-table" style="margin:0;">
-                                                <tr>
-                                                    <th><label>Geo / Market</label></th>
-                                                    <td>
-                                                        <select class="alt-geo-select" style="min-width:200px;">
-                                                            <option value="">Select a geo…</option>
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <th><label>Alternative Toplist</label></th>
-                                                    <td>
-                                                        <select class="alt-toplist-select" style="min-width:300px;">
-                                                            <option value="">Select a toplist…</option>
-                                                            <?php foreach ($all_toplists_for_select as $alt): ?>
-                                                                <option value="<?php echo esc_attr($alt->id); ?>">
-                                                                    <?php echo esc_html($alt->name); ?> (#<?php echo esc_html($alt->api_toplist_id); ?>)
-                                                                </option>
-                                                            <?php endforeach; ?>
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                            </table>
-                                            <button type="button" class="button button-primary save-alternative-toplist">Add Alternative</button>
-                                            <span class="alt-save-message" style="margin-left:10px;"></span>
-                                        </div>
                                     </div>
                                 </div>
                             </td>
@@ -495,7 +461,7 @@ final class ToplistsListPage implements PageInterface
             });
 
             /* ── Sort ────────────────────────────────────────────── */
-            var sortCol = '', sortDir = 'asc';
+            var sortCol = 'last_synced', sortDir = 'desc';
             $(document).on('click', '.toplist-sort-link', function (e) {
                 e.preventDefault();
                 var col = $(this).data('sort');
