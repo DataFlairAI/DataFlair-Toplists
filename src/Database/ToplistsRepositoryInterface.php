@@ -78,4 +78,13 @@ interface ToplistsRepositoryInterface
      * @return array<string,mixed>|null
      */
     public function findRawDataByApiToplistId(int $api_toplist_id): ?array;
+
+    /**
+     * Every row sharing one template family — every market/country/global
+     * variant of the same `ListTemplate`, used by the Layer 2 auto-select
+     * cascade (`\DataFlair\Toplists\Geo\GeoFamilySelector`).
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function findFamilyByTemplateId(int $templateId): array;
 }

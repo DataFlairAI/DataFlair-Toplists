@@ -251,6 +251,20 @@ class DataFlair_Toplists {
     private $campaign_redirect_handler = null;
 
     /**
+     * Geo-targeting collaborators — docs/contracts/geo-targeting.md on the
+     * main DataFlair repo is the source of truth these mirror. Lazy.
+     *
+     * @var \DataFlair\Toplists\Geo\VisitorGeoResolverInterface|null
+     */
+    private $visitor_geo_resolver = null;
+
+    /** @var \DataFlair\Toplists\Geo\GeoRenderGate|null */
+    private $geo_render_gate = null;
+
+    /** @var \DataFlair\Toplists\Geo\GeoFamilySelector|null */
+    private $geo_family_selector = null;
+
+    /**
      * Legacy singleton accessor. Continues to function as a strangler-fig
      * shim through the v2.x line because the god-class still owns hook
      * registrations for the methods Phases 2–8 did not fully extract.
@@ -422,6 +436,56 @@ class DataFlair_Toplists {
             ? $maybe
             : $default;
         return $this->alternatives_repo;
+    }
+
+    /**
+     * Lazy accessor for the visitor geo resolver.
+     * Filterable via `dataflair_visitor_geo_resolver` — the seam a site
+     * uses to plug in a GeoIP library the default header-based resolver
+     * doesn't have on its own.
+     *
+     * @return \DataFlair\Toplists\Geo\VisitorGeoResolverInterface
+     */
+    private function visitor_geo_resolver() {
+        if ($this->visitor_geo_resolver instanceof \DataFlair\Toplists\Geo\VisitorGeoResolverInterface) {
+            return $this->visitor_geo_resolver;
+        }
+        $default = new \DataFlair\Toplists\Geo\VisitorGeoResolver();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_visitor_geo_resolver', $default)
+            : $default;
+        $this->visitor_geo_resolver = ($maybe instanceof \DataFlair\Toplists\Geo\VisitorGeoResolverInterface)
+            ? $maybe
+            : $default;
+        return $this->visitor_geo_resolver;
+    }
+
+    /**
+     * Lazy accessor for the Layer 1 render-safety gate. Not filterable —
+     * compliance-mandated algorithm logic, not a swappable I/O boundary.
+     *
+     * @return \DataFlair\Toplists\Geo\GeoRenderGate
+     */
+    private function geo_render_gate() {
+        if ($this->geo_render_gate instanceof \DataFlair\Toplists\Geo\GeoRenderGate) {
+            return $this->geo_render_gate;
+        }
+        $this->geo_render_gate = new \DataFlair\Toplists\Geo\GeoRenderGate();
+        return $this->geo_render_gate;
+    }
+
+    /**
+     * Lazy accessor for the Layer 2 auto-select cascade. Not filterable,
+     * same reasoning as geo_render_gate().
+     *
+     * @return \DataFlair\Toplists\Geo\GeoFamilySelector
+     */
+    private function geo_family_selector() {
+        if ($this->geo_family_selector instanceof \DataFlair\Toplists\Geo\GeoFamilySelector) {
+            return $this->geo_family_selector;
+        }
+        $this->geo_family_selector = new \DataFlair\Toplists\Geo\GeoFamilySelector();
+        return $this->geo_family_selector;
     }
 
     /**
@@ -857,7 +921,10 @@ class DataFlair_Toplists {
             $this->toplists_repo(),
             $this->card_renderer(),
             $this->table_renderer(),
-            $this->brand_meta_prefetcher()
+            $this->brand_meta_prefetcher(),
+            $this->visitor_geo_resolver(),
+            $this->geo_render_gate(),
+            $this->geo_family_selector()
         );
         return $this->toplist_shortcode_instance;
     }

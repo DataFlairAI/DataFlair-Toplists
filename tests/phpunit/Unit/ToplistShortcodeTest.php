@@ -31,6 +31,9 @@ use DataFlair\Toplists\Frontend\Render\TableRendererInterface;
 use DataFlair\Toplists\Frontend\Render\ViewModels\CasinoCardVM;
 use DataFlair\Toplists\Frontend\Render\ViewModels\ToplistTableVM;
 use DataFlair\Toplists\Frontend\Shortcode\ToplistShortcode;
+use DataFlair\Toplists\Geo\GeoFamilySelector;
+use DataFlair\Toplists\Geo\GeoRenderGate;
+use DataFlair\Toplists\Geo\VisitorGeoResolverInterface;
 use PHPUnit\Framework\TestCase;
 
 // Production classes load via composer's PSR-4 map (DataFlair\Toplists\
@@ -47,6 +50,13 @@ final class ToplistShortcodeTest extends TestCase
         // esc_html / wp_parse_args are declared as plain global functions in
         // ToplistShortcodeTestStubs.php so Patchwork doesn't throw DefinedTooEarly
         // when another test in the suite already declared them.
+
+        // signalUncacheable() calls nocache_headers() on every successful render.
+        // Unlike esc_html/wp_parse_args this can't be a plain guarded global: once
+        // any other test in the full suite registers it with Patchwork first,
+        // function_exists() reports true here too, so we need our own expectation
+        // regardless of suite run order rather than relying on function_exists().
+        Functions\when('nocache_headers')->justReturn(null);
 
         // BrandMetaPrefetcher accesses `global $wpdb` for the table prefix and
         // may fall through to `$wpdb->prepare()` + `$wpdb->get_results()` when
@@ -71,14 +81,26 @@ final class ToplistShortcodeTest extends TestCase
     private function shortcode(
         ToplistsRepositoryInterface $repo,
         ?CardRendererInterface $card = null,
-        ?TableRendererInterface $table = null
+        ?TableRendererInterface $table = null,
+        ?VisitorGeoResolverInterface $geoResolver = null
     ): ToplistShortcode {
         return new ToplistShortcode(
             $repo,
             $card  ?? $this->stubCardRenderer(),
             $table ?? $this->stubTableRenderer(),
-            new BrandMetaPrefetcher($this->stubEmptyBrandsRepo())
+            new BrandMetaPrefetcher($this->stubEmptyBrandsRepo()),
+            $geoResolver ?? $this->stubGeoResolver(null),
+            new GeoRenderGate(),
+            new GeoFamilySelector()
         );
+    }
+
+    private function stubGeoResolver(?string $country): VisitorGeoResolverInterface
+    {
+        return new class($country) implements VisitorGeoResolverInterface {
+            public function __construct(private ?string $country) {}
+            public function resolve(): ?string { return $this->country; }
+        };
     }
 
     private function stubCardRenderer(string $output = '<div class="card"></div>'): CardRendererInterface
@@ -129,10 +151,10 @@ final class ToplistShortcodeTest extends TestCase
         };
     }
 
-    private function stubRepo(?array $row): ToplistsRepositoryInterface
+    private function stubRepo(?array $row, array $family = []): ToplistsRepositoryInterface
     {
-        return new class($row) implements ToplistsRepositoryInterface {
-            public function __construct(private ?array $row) {}
+        return new class($row, $family) implements ToplistsRepositoryInterface {
+            public function __construct(private ?array $row, private array $family) {}
             public function findByApiToplistId(int $api_toplist_id): ?array { return $this->row; }
             public function findBySlug(string $slug): ?array { return $this->row; }
             public function upsert(array $row) { return false; }
@@ -143,21 +165,30 @@ final class ToplistShortcodeTest extends TestCase
             public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
             public function findItemSummaryByApiToplistId(int $id): array { return []; }
             public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return $this->family; }
         };
     }
 
-    private function buildToplistRow(array $items, string $name = 'Top Casinos', ?int $last_synced_ts = null): array
+    private function buildToplistRow(array $items, string $name = 'Top Casinos', ?int $last_synced_ts = null, ?array $geo = null): array
     {
         $payload = [
             'data' => [
                 'name'  => $name,
                 'items' => $items,
+                'geo'   => $geo ?? ['geo_type' => 'global'],
             ],
         ];
         return [
             'data'        => json_encode($payload),
             'last_synced' => date('Y-m-d H:i:s', $last_synced_ts ?? time()),
         ];
+    }
+
+    private function buildFamilyRow(int $apiToplistId, array $geo, array $items = [['brand' => ['name' => 'Acme'], 'position' => 1]]): array
+    {
+        $row = $this->buildToplistRow($items, 'Top Casinos', null, $geo);
+        $row['api_toplist_id'] = $apiToplistId;
+        return $row;
     }
 
     public function test_returns_error_when_neither_id_nor_slug_given(): void
@@ -315,7 +346,7 @@ final class ToplistShortcodeTest extends TestCase
             ['brand' => ['name' => 'Acme'], 'position' => 1],
             ['brand' => ['name' => 'Beta'], 'position' => 2],
         ];
-        $sc = $this->shortcode($this->stubRepo($this->buildToplistRow($items)));
+        $sc = $this->shortcode($this->stubRepo($this->buildFamilyRow(7, ['geo_type' => 'global'], $items)));
         $sc->render(['id' => 7, 'layout' => 'cards']);
 
         $this->assertSame(7, $captured['toplist_id']);
@@ -346,5 +377,107 @@ final class ToplistShortcodeTest extends TestCase
 
         $this->assertSame('table', $captured['layout']);
         $this->assertSame(1, $captured['item_count']);
+    }
+
+    public function test_pinned_country_toplist_renders_nothing_for_mismatched_visitor(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('GB'));
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertSame('', $html);
+    }
+
+    public function test_pinned_country_toplist_renders_for_matching_visitor(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('IN'));
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertStringContainsString('India Casinos', $html);
+    }
+
+    public function test_pinned_toplist_renders_nothing_when_visitor_country_unresolved(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver(null));
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertSame('', $html);
+    }
+
+    public function test_auto_geo_selects_exact_country_match_from_family(): void
+    {
+        $family = [
+            $this->buildFamilyRow(1, ['geo_type' => 'country', 'code' => 'IN'], [['brand' => ['name' => 'IndiaBrand'], 'position' => 1]]),
+            $this->buildFamilyRow(2, ['geo_type' => 'country', 'code' => 'GB'], [['brand' => ['name' => 'UkBrand'], 'position' => 1]]),
+        ];
+        $card = $this->stubCardRenderer();
+        $sc   = $this->shortcode($this->stubRepo(null, $family), $card, null, $this->stubGeoResolver('GB'));
+
+        $sc->render(['template' => 5, 'auto_geo' => 'true']);
+
+        $this->assertCount(1, $card->calls);
+        $this->assertSame('UkBrand', $card->calls[0]->item['brand']['name']);
+    }
+
+    public function test_auto_geo_falls_back_to_covering_market_when_no_exact_country(): void
+    {
+        $family = [
+            $this->buildFamilyRow(1, ['geo_type' => 'country', 'code' => 'IN'], [['brand' => ['name' => 'IndiaBrand'], 'position' => 1]]),
+            $this->buildFamilyRow(2, ['geo_type' => 'market', 'code' => 'EU', 'coveredCountries' => ['DE', 'FR', 'GB']], [['brand' => ['name' => 'EuroBrand'], 'position' => 1]]),
+        ];
+        $card = $this->stubCardRenderer();
+        $sc   = $this->shortcode($this->stubRepo(null, $family), $card, null, $this->stubGeoResolver('GB'));
+
+        $sc->render(['template' => 5, 'auto_geo' => 'true']);
+
+        $this->assertCount(1, $card->calls);
+        $this->assertSame('EuroBrand', $card->calls[0]->item['brand']['name']);
+    }
+
+    public function test_auto_geo_ambiguous_covering_markets_yields_no_render(): void
+    {
+        $family = [
+            $this->buildFamilyRow(1, ['geo_type' => 'market', 'code' => 'EU', 'coveredCountries' => ['GB', 'DE']], [['brand' => ['name' => 'EuroBrand'], 'position' => 1]]),
+            $this->buildFamilyRow(2, ['geo_type' => 'market', 'code' => 'NW', 'coveredCountries' => ['GB', 'IE']], [['brand' => ['name' => 'NorthWestBrand'], 'position' => 1]]),
+        ];
+        $sc = $this->shortcode($this->stubRepo(null, $family), null, null, $this->stubGeoResolver('GB'));
+
+        $html = $sc->render(['template' => 5, 'auto_geo' => 'true']);
+
+        $this->assertSame('', $html);
+    }
+
+    public function test_auto_geo_falls_back_to_global_when_no_country_or_market_match(): void
+    {
+        $family = [
+            $this->buildFamilyRow(1, ['geo_type' => 'country', 'code' => 'IN'], [['brand' => ['name' => 'IndiaBrand'], 'position' => 1]]),
+            $this->buildFamilyRow(2, ['geo_type' => 'global'], [['brand' => ['name' => 'GlobalBrand'], 'position' => 1]]),
+        ];
+        $card = $this->stubCardRenderer();
+        $sc   = $this->shortcode($this->stubRepo(null, $family), $card, null, $this->stubGeoResolver('GB'));
+
+        $sc->render(['template' => 5, 'auto_geo' => 'true']);
+
+        $this->assertCount(1, $card->calls);
+        $this->assertSame('GlobalBrand', $card->calls[0]->item['brand']['name']);
+    }
+
+    public function test_render_defines_donotcachepage_constant(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $sc    = $this->shortcode($this->stubRepo($this->buildToplistRow($items)));
+
+        $sc->render(['id' => 42]);
+
+        $this->assertTrue(defined('DONOTCACHEPAGE'));
+        $this->assertTrue(DONOTCACHEPAGE);
     }
 }

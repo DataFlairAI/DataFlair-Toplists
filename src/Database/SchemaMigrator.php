@@ -43,7 +43,7 @@ final class SchemaMigrator
      * changes; the upgrade path (`upgradeDatabase`) will run once per
      * site on the next request after the bump.
      */
-    public const CURRENT_VERSION = '1.12';
+    public const CURRENT_VERSION = '1.13';
 
     /**
      * Hook into `plugins_loaded` to run `checkDatabaseUpgrade` on every
@@ -129,6 +129,7 @@ final class SchemaMigrator
         dbDelta($alternatives_sql);
 
         $this->ensureBrandsExternalIdIndex();
+        $this->ensureToplistsGeoVirtualColumns();
     }
 
     /**
@@ -210,6 +211,7 @@ final class SchemaMigrator
 
         if (!$missing) {
             $this->ensureBrandsExternalIdIndex();
+            $this->ensureToplistsGeoVirtualColumns();
             return;
         }
 
@@ -258,6 +260,7 @@ final class SchemaMigrator
         dbDelta($sql);
         dbDelta($brands_sql);
         $this->ensureBrandsExternalIdIndex();
+        $this->ensureToplistsGeoVirtualColumns();
 
         error_log('DataFlair: ensureTablesExist() ran dbDelta — tables were missing.');
     }
@@ -396,6 +399,7 @@ final class SchemaMigrator
 
         $this->ensureBrandsExternalIdIndex();
         $this->ensureAlternativeToplistsTable();
+        $this->ensureToplistsGeoVirtualColumns();
     }
 
     /**
@@ -426,6 +430,52 @@ final class SchemaMigrator
             $wpdb->query("CREATE INDEX idx_external_id_virtual ON $brands_table_name (external_id_virtual)");
             if ($wpdb->last_error) {
                 error_log('DataFlair: Failed creating idx_external_id_virtual index: ' . $wpdb->last_error);
+            }
+        }
+    }
+
+    /**
+     * Ensure toplists table has generated columns + indexes for geo-family
+     * lookups — docs/contracts/geo-targeting.md on the main DataFlair repo
+     * is the source of truth this mirrors. Mirrors the
+     * ensureBrandsExternalIdIndex() pattern above: JSON_EXTRACT into a
+     * STORED generated column so the Layer 2 auto-select cascade
+     * (ToplistsRepository::findFamilyByTemplateId()) can filter by an
+     * indexed column instead of scanning the JSON blob.
+     */
+    public function ensureToplistsGeoVirtualColumns(): void
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . \DATAFLAIR_TABLE_NAME;
+
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+            return;
+        }
+
+        $columns = [
+            'list_template_id_virtual' => '$.data.template.id',
+            'geo_type_virtual'         => '$.data.geo.geo_type',
+            'geo_code_virtual'         => '$.data.geo.code',
+        ];
+
+        foreach ($columns as $column => $jsonPath) {
+            if (!$wpdb->get_var("SHOW COLUMNS FROM $table_name LIKE '$column'")) {
+                $wpdb->query(
+                    "ALTER TABLE $table_name
+                     ADD COLUMN $column VARCHAR(50)
+                     GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$jsonPath'))) STORED"
+                );
+                if ($wpdb->last_error) {
+                    error_log("DataFlair: Failed adding $column column: " . $wpdb->last_error);
+                }
+            }
+
+            $index = 'idx_' . $column;
+            if (!$wpdb->get_var("SHOW INDEX FROM $table_name WHERE Key_name = '$index'")) {
+                $wpdb->query("CREATE INDEX $index ON $table_name ($column)");
+                if ($wpdb->last_error) {
+                    error_log("DataFlair: Failed creating $index index: " . $wpdb->last_error);
+                }
             }
         }
     }
