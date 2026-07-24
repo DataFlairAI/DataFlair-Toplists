@@ -147,4 +147,38 @@ final class ToplistsRepositoryTest extends TestCase
         $repo = new ToplistsRepository($wpdb);
         $this->assertSame(42, $repo->countAll());
     }
+
+    // ── Geo-targeting additions (Phase 3) ───────────────────────────────
+
+    public function test_find_family_by_template_id_filters_on_virtual_column(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_results')
+            ->once()
+            ->with(
+                \Mockery::on(function (string $sql) {
+                    return str_contains($sql, 'list_template_id_virtual = 5');
+                }),
+                ARRAY_A
+            )
+            ->andReturn([
+                ['id' => '1', 'api_toplist_id' => '10', 'geo_type_virtual' => 'country', 'geo_code_virtual' => 'IN'],
+                ['id' => '2', 'api_toplist_id' => '11', 'geo_type_virtual' => 'global', 'geo_code_virtual' => null],
+            ]);
+
+        $repo   = new ToplistsRepository($wpdb);
+        $family = $repo->findFamilyByTemplateId(5);
+
+        $this->assertCount(2, $family);
+        $this->assertSame('IN', $family[0]['geo_code_virtual']);
+    }
+
+    public function test_find_family_by_template_id_returns_empty_array_when_wpdb_errors(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_results')->once()->andReturn(null);
+
+        $repo = new ToplistsRepository($wpdb);
+        $this->assertSame([], $repo->findFamilyByTemplateId(5));
+    }
 }

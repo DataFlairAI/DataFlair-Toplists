@@ -211,4 +211,16 @@ final class ToplistsRepository implements ToplistsRepositoryInterface
         $decoded = json_decode((string) ($row['data'] ?? ''), true);
         return is_array($decoded) ? $decoded : null;
     }
+
+    public function findFamilyByTemplateId(int $templateId): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE list_template_id_virtual = %d",
+                $templateId
+            ),
+            ARRAY_A
+        );
+        return is_array($rows) ? $rows : [];
+    }
 }

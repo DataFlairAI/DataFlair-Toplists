@@ -29,6 +29,9 @@ use DataFlair\Toplists\Frontend\Render\CardRendererInterface;
 use DataFlair\Toplists\Frontend\Render\TableRendererInterface;
 use DataFlair\Toplists\Frontend\Render\ViewModels\CasinoCardVM;
 use DataFlair\Toplists\Frontend\Render\ViewModels\ToplistTableVM;
+use DataFlair\Toplists\Geo\GeoFamilySelector;
+use DataFlair\Toplists\Geo\GeoRenderGate;
+use DataFlair\Toplists\Geo\VisitorGeoResolverInterface;
 
 final class ToplistShortcode
 {
@@ -38,7 +41,10 @@ final class ToplistShortcode
         private readonly ToplistsRepositoryInterface $toplistsRepo,
         private readonly CardRendererInterface $cardRenderer,
         private readonly TableRendererInterface $tableRenderer,
-        private readonly BrandMetaPrefetcher $brandMetaPrefetcher
+        private readonly BrandMetaPrefetcher $brandMetaPrefetcher,
+        private readonly VisitorGeoResolverInterface $visitorGeoResolver,
+        private readonly GeoRenderGate $geoRenderGate,
+        private readonly GeoFamilySelector $geoFamilySelector
     ) {
     }
 
@@ -56,24 +62,39 @@ final class ToplistShortcode
             'title'  => '',
             'limit'  => 0,
             'layout' => 'cards',
+            'ctaMode' => 'single',
+            'cta_mode' => '',
+            'ctamode' => '',
+            'template' => '',
+            'auto_geo' => 'false',
         ];
 
         $atts = wp_parse_args(is_array($atts) ? $atts : [], $shortcode_defaults);
 
         do_action('dataflair_render_started', [
-            'toplist_id' => (int) ($atts['id'] ?? 0),
-            'slug'       => (string) ($atts['slug'] ?? ''),
-            'layout'     => (string) ($atts['layout'] ?? 'cards'),
+            'toplist_id'  => (int) ($atts['id'] ?? 0),
+            'template_id' => (int) ($atts['template'] ?? 0),
+            'slug'        => (string) ($atts['slug'] ?? ''),
+            'layout'      => (string) ($atts['layout'] ?? 'cards'),
         ]);
 
-        if (empty($atts['id']) && empty($atts['slug'])) {
-            return '<p style="color: red;">DataFlair Error: Toplist ID or slug is required</p>';
-        }
+        $visitor_country = $this->visitorGeoResolver->resolve();
+        $auto_geo        = filter_var($atts['auto_geo'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-        if (!empty($atts['slug'])) {
+        if ($auto_geo && !empty($atts['template'])) {
+            $family  = $this->toplistsRepo->findFamilyByTemplateId((int) $atts['template']);
+            $toplist = $this->geoFamilySelector->select($family, $visitor_country);
+
+            if (!$toplist) {
+                $this->signalUncacheable();
+                return '';
+            }
+        } elseif (!empty($atts['slug'])) {
             $toplist = $this->toplistsRepo->findBySlug((string) $atts['slug']);
-        } else {
+        } elseif (!empty($atts['id'])) {
             $toplist = $this->toplistsRepo->findByApiToplistId((int) $atts['id']);
+        } else {
+            return '<p style="color: red;">DataFlair Error: Toplist ID or slug is required</p>';
         }
 
         if (!$toplist) {
@@ -88,6 +109,15 @@ final class ToplistShortcode
         if (!isset($data['data']['items'])) {
             return '<p style="color: red;">DataFlair Error: Invalid toplist data</p>';
         }
+
+        $this->signalUncacheable();
+
+        $geo = $data['data']['geo'] ?? null;
+        if (!$this->geoRenderGate->shouldRender(is_array($geo) ? $geo : null, $visitor_country)) {
+            return '';
+        }
+
+        $resolved_toplist_id = (int) ($toplist['api_toplist_id'] ?? 0);
 
         $last_synced = strtotime((string) ($toplist['last_synced'] ?? ''));
         $is_stale    = (time() - (int) $last_synced) > self::STALE_AFTER_SECONDS;
@@ -107,7 +137,9 @@ final class ToplistShortcode
             $customizations['title'],
             $customizations['limit'],
             $customizations['layout'],
-            $customizations['prosCons']
+            $customizations['prosCons'],
+            $customizations['template'],
+            $customizations['auto_geo']
         );
 
         if (isset($atts['layout']) && $atts['layout'] === 'table') {
@@ -122,10 +154,11 @@ final class ToplistShortcode
             );
 
             do_action('dataflair_render_finished', [
-                'toplist_id' => (int) ($atts['id'] ?? 0),
-                'item_count' => count($items),
-                'elapsed_ms' => (int) round((microtime(true) - $render_t0) * 1000),
-                'layout'     => 'table',
+                'toplist_id'  => $resolved_toplist_id,
+                'template_id' => (int) ($atts['template'] ?? 0),
+                'item_count'  => count($items),
+                'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+                'layout'      => 'table',
             ]);
 
             return $table_html;
@@ -150,7 +183,7 @@ final class ToplistShortcode
                 echo $this->cardRenderer->render(
                     new CasinoCardVM(
                         (array) $item,
-                        (int) ($atts['id'] ?? 0),
+                        $resolved_toplist_id,
                         (array) $customizations,
                         (array) $pros_cons_data,
                         $brand_meta_map
@@ -162,12 +195,31 @@ final class ToplistShortcode
         $html = ob_get_clean();
 
         do_action('dataflair_render_finished', [
-            'toplist_id' => (int) ($atts['id'] ?? 0),
-            'item_count' => count($items),
-            'elapsed_ms' => (int) round((microtime(true) - $render_t0) * 1000),
-            'layout'     => 'cards',
+            'toplist_id'  => $resolved_toplist_id,
+            'template_id' => (int) ($atts['template'] ?? 0),
+            'item_count'  => count($items),
+            'elapsed_ms'  => (int) round((microtime(true) - $render_t0) * 1000),
+            'layout'      => 'cards',
         ]);
 
         return $html;
+    }
+
+    /**
+     * Signal to WP-level full-page-cache plugins that this response must
+     * not be cached and replayed to a different visitor's geo. Does not
+     * cover edge/CDN caching in front of the whole site — that layer never
+     * runs this code on a cache hit, so it needs separate infra-level
+     * exclusion regardless of anything here.
+     */
+    private function signalUncacheable(): void
+    {
+        if (!defined('DONOTCACHEPAGE')) {
+            define('DONOTCACHEPAGE', true);
+        }
+
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
     }
 }

@@ -360,4 +360,31 @@ class SyncToplistTest extends TestCase {
         $stored = json_decode($row['data'], true);
         $this->assertSame('toplist-ext-42', $stored['data']['ExternalId'] ?? null);
     }
+
+    /**
+     * Test 12: template.id and geo.geo_type/geo.code are preserved verbatim
+     * in the stored JSON blob, at the exact paths SchemaMigrator's generated
+     * columns (list_template_id_virtual, geo_type_virtual, geo_code_virtual)
+     * extract from. This SQLite fixture can't execute MySQL's
+     * GENERATED ALWAYS AS (...) STORED itself, so this pins the JSON-shape
+     * contract those columns depend on — a path mismatch here would
+     * silently leave the real generated columns NULL in production.
+     */
+    public function test_geo_and_template_fields_are_preserved_at_generated_column_paths(): void {
+        $raw  = $this->loadFixture('api-toplist-complete.json');
+        $data = json_decode($raw, true);
+
+        $data['data']['template']['id'] = 9;
+        $data['data']['geo'] = ['geo_type' => 'market', 'code' => 'EU', 'name' => 'Europe', 'coveredCountries' => ['DE', 'FR']];
+        $raw_modified = json_encode($data);
+
+        $this->simulateSync($data['data'], $raw_modified);
+
+        $row    = $this->fetchRow(42);
+        $stored = json_decode($row['data'], true);
+
+        $this->assertSame(9, $stored['data']['template']['id'] ?? null);
+        $this->assertSame('market', $stored['data']['geo']['geo_type'] ?? null);
+        $this->assertSame('EU', $stored['data']['geo']['code'] ?? null);
+    }
 }

@@ -83,6 +83,7 @@ final class ToplistsControllerTest extends TestCase
             public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
             public function findItemSummaryByApiToplistId(int $id): array { return []; }
             public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return []; }
         };
 
         $result = (new ToplistsController($repo, new NullLogger()))->list();
@@ -110,6 +111,7 @@ final class ToplistsControllerTest extends TestCase
             public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
             public function findItemSummaryByApiToplistId(int $id): array { return []; }
             public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return []; }
         };
     }
 }
