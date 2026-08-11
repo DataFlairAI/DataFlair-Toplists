@@ -427,6 +427,11 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.3
+- **Added: Visitor geo-targeting on toplist render path.** `VisitorGeoResolver` detects visitor location from Cloudflare headers and applies the appropriate geo-rule to filter and rank toplist items. Integrates seamlessly with the existing toplist render pipeline.
+- **Refactored: Retired Alt Geos tab in admin.** The legacy manual geo-override interface replaced by automatic visitor-based geo-detection. Simplifies the Toplists admin page and reduces manual intervention.
+- **Tests: Added comprehensive geo-targeting coverage.** New test suite validates `VisitorGeoResolver` header parsing, filter cascading, and geo-rule application. All tests green with hardened code-review fixes.
+
 ### 2.2.2
 - **UX: Admin page header layout fixes.** `.df-page-header` set to `display:block` and `.df-page-header__actions` always right-aligned — prevents action buttons collapsing on narrower admin widths.
 
@@ -761,4 +766,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.2.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
