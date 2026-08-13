@@ -155,6 +155,12 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.9</h4>
+<ul>
+  <li><strong>Added: the debug/testing accordion table (<code>layout=table</code>) now surfaces the full API item payload.</strong> Offer type, max bonus amount, free spins, sticky bonus, bonus expiry, currencies, offer-level geo targeting, restricted countries, game types, game providers, supported languages, brand logo thumbnail, and the tracker/campaign list. Sportsbook/poker-only fields (minimum odds, free bet value, stake returned, bet type, tournament ticket value, rakeback, free tickets) render as their own section only when populated.</li>
+  <li><strong>Fixed: removed 2 dead fields with no backing API data</strong> (<code>Payout Time</code>, <code>Games Count</code>) and fixed <code>Product Type</code>, which read a field the API never returns, to source from the real <code>classificationTypes</code> field instead.</li>
+</ul>
+
 <h4>2.2.8</h4>
 <ul>
   <li><strong>Fixed: the Gutenberg block never appeared in the block inserter search.</strong> 2.2.5/2.2.6 replaced the <code>register_block_type()</code> call with only a <code>register_block_type_args</code> filter, on the mistaken assumption that WordPress auto-discovers plugin <code>block.json</code> files &mdash; it doesn\'t, so the filter had nothing to attach to and the block\'s <code>editorScript</code> (<code>index.js</code>) never got enqueued. Restored the real <code>register_block_type()</code> call (render callback + version in args) alongside the double-registration guard, combining the 2.2.4 and 2.2.5 fixes correctly this time.</li>

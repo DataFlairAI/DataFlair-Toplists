@@ -427,6 +427,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.9
+- **Added: the debug/testing accordion table (`layout=table`) now surfaces the full API item payload.** Offer type, max bonus amount, free spins, sticky bonus, bonus expiry, currencies, offer-level geo targeting, restricted countries, game types, game providers, supported languages, brand logo thumbnail, and the tracker/campaign list. Sportsbook/poker-only fields (minimum odds, free bet value, stake returned, bet type, tournament ticket value, rakeback, free tickets) render as their own section only when populated.
+- **Fixed: removed 2 dead fields with no backing API data** (`Payout Time`, `Games Count`) and fixed `Product Type`, which read a field the API never returns, to source from the real `classificationTypes` field instead.
+
 ### 2.2.8
 - **Fixed: the Gutenberg block never appeared in the block inserter search.** 2.2.5/2.2.6 replaced the `register_block_type()` call with only a `register_block_type_args` filter, on the mistaken assumption that WordPress auto-discovers plugin `block.json` files — it doesn't, so the filter had nothing to attach to and the block's `editorScript` (`index.js`) never got enqueued. Restored the real `register_block_type()` call (render callback + version in args) alongside the double-registration guard, combining the 2.2.4 and 2.2.5 fixes correctly this time.
 
@@ -777,4 +781,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.2.9 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
