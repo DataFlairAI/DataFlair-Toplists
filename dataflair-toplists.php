@@ -924,7 +924,8 @@ class DataFlair_Toplists {
             $this->brand_meta_prefetcher(),
             $this->visitor_geo_resolver(),
             $this->geo_render_gate(),
-            $this->geo_family_selector()
+            $this->geo_family_selector(),
+            \Closure::fromCallable('get_option')
         );
         return $this->toplist_shortcode_instance;
     }

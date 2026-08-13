@@ -65,6 +65,7 @@ final class SettingsRegistrarTest extends TestCase
             'dataflair_ribbon_text_color',
             'dataflair_cta_bg_color',
             'dataflair_cta_text_color',
+            'dataflair_geo_targeting_enabled',
         ];
         foreach ($expected as $name) {
             $this->assertContains($name, $options, "must register `$name`");

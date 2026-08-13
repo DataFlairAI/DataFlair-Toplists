@@ -44,7 +44,8 @@ final class ToplistShortcode
         private readonly BrandMetaPrefetcher $brandMetaPrefetcher,
         private readonly VisitorGeoResolverInterface $visitorGeoResolver,
         private readonly GeoRenderGate $geoRenderGate,
-        private readonly GeoFamilySelector $geoFamilySelector
+        private readonly GeoFamilySelector $geoFamilySelector,
+        private readonly \Closure $optionReader
     ) {
     }
 
@@ -70,6 +71,16 @@ final class ToplistShortcode
         ];
 
         $atts = wp_parse_args(is_array($atts) ? $atts : [], $shortcode_defaults);
+
+        // WP's shortcode-attribute parser lowercases attribute names, so an
+        // author-written `ctaMode="x"` arrives here as `ctamode`; `cta_mode`
+        // is the snake_case spelling some content already uses. Normalize
+        // both into the canonical `ctaMode` key CasinoCardVM reads.
+        if (!empty($atts['cta_mode'])) {
+            $atts['ctaMode'] = $atts['cta_mode'];
+        } elseif (!empty($atts['ctamode'])) {
+            $atts['ctaMode'] = $atts['ctamode'];
+        }
 
         do_action('dataflair_render_started', [
             'toplist_id'  => (int) ($atts['id'] ?? 0),
@@ -112,9 +123,11 @@ final class ToplistShortcode
 
         $this->signalUncacheable();
 
-        $geo = $data['data']['geo'] ?? null;
-        if (!$this->geoRenderGate->shouldRender(is_array($geo) ? $geo : null, $visitor_country)) {
-            return '';
+        if ($this->geoTargetingEnabled()) {
+            $geo = $data['data']['geo'] ?? null;
+            if (!$this->geoRenderGate->shouldRender(is_array($geo) ? $geo : null, $visitor_country)) {
+                return '';
+            }
         }
 
         $resolved_toplist_id = (int) ($toplist['api_toplist_id'] ?? 0);
@@ -139,7 +152,9 @@ final class ToplistShortcode
             $customizations['layout'],
             $customizations['prosCons'],
             $customizations['template'],
-            $customizations['auto_geo']
+            $customizations['auto_geo'],
+            $customizations['cta_mode'],
+            $customizations['ctamode']
         );
 
         if (isset($atts['layout']) && $atts['layout'] === 'table') {
@@ -203,6 +218,17 @@ final class ToplistShortcode
         ]);
 
         return $html;
+    }
+
+    /**
+     * Site-level kill switch for the Layer 1 render gate (GeoRenderGate).
+     * Defaults to enabled — an admin must explicitly opt out via
+     * Settings → Geo-Targeting. Does not affect the Layer 2 auto_geo
+     * family-selection cascade (GeoFamilySelector).
+     */
+    private function geoTargetingEnabled(): bool
+    {
+        return ($this->optionReader)('dataflair_geo_targeting_enabled', '1') !== '0';
     }
 
     /**

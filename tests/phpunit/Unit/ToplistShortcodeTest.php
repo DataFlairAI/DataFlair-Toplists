@@ -82,7 +82,8 @@ final class ToplistShortcodeTest extends TestCase
         ToplistsRepositoryInterface $repo,
         ?CardRendererInterface $card = null,
         ?TableRendererInterface $table = null,
-        ?VisitorGeoResolverInterface $geoResolver = null
+        ?VisitorGeoResolverInterface $geoResolver = null,
+        ?string $geoTargetingEnabledOption = '1'
     ): ToplistShortcode {
         return new ToplistShortcode(
             $repo,
@@ -91,8 +92,17 @@ final class ToplistShortcodeTest extends TestCase
             new BrandMetaPrefetcher($this->stubEmptyBrandsRepo()),
             $geoResolver ?? $this->stubGeoResolver(null),
             new GeoRenderGate(),
-            new GeoFamilySelector()
+            new GeoFamilySelector(),
+            $this->stubOptionReader(['dataflair_geo_targeting_enabled' => $geoTargetingEnabledOption])
         );
+    }
+
+    /**
+     * @param array<string,mixed> $overrides option_name => stored value
+     */
+    private function stubOptionReader(array $overrides = []): \Closure
+    {
+        return static fn(string $name, $default = false) => $overrides[$name] ?? $default;
     }
 
     private function stubGeoResolver(?string $country): VisitorGeoResolverInterface
@@ -422,6 +432,39 @@ final class ToplistShortcodeTest extends TestCase
         $html = $sc->render(['id' => 42]);
 
         $this->assertSame('', $html);
+    }
+
+    public function test_geo_gate_is_bypassed_when_geo_targeting_disabled(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('GB'), '0');
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertStringContainsString('India Casinos', $html);
+    }
+
+    public function test_geo_gate_still_applies_when_geo_targeting_enabled_explicitly(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('GB'), '1');
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertSame('', $html);
+    }
+
+    public function test_geo_gate_applies_by_default_when_option_unset(): void
+    {
+        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
+        $row   = $this->buildToplistRow($items, 'India Casinos', null, ['geo_type' => 'country', 'code' => 'IN']);
+        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('GB'), null);
+
+        $html = $sc->render(['id' => 42]);
+
+        $this->assertSame('', $html, 'an unset option (fresh install/upgrade) must preserve current gated behaviour');
     }
 
     public function test_auto_geo_selects_exact_country_match_from_family(): void

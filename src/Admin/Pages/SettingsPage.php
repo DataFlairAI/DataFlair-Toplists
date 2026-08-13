@@ -51,6 +51,9 @@ final class SettingsPage implements PageInterface
                 <a href="?page=dataflair-settings&tab=sync_schedule" class="nav-tab <?php echo $current_tab === 'sync_schedule' ? 'nav-tab-active' : ''; ?>">
                     Sync
                 </a>
+                <a href="?page=dataflair-settings&tab=geo_targeting" class="nav-tab <?php echo $current_tab === 'geo_targeting' ? 'nav-tab-active' : ''; ?>">
+                    Geo-Targeting
+                </a>
             </nav>
 
             <form id="dataflair-settings-form" method="post" action="options.php">
@@ -223,6 +226,42 @@ final class SettingsPage implements PageInterface
                         <span id="dataflair-save-message-custom" style="margin-left: 10px;"></span>
                     </div>
 
+                <?php elseif ($current_tab === 'geo_targeting'): ?>
+                    <!-- Geo-Targeting Tab -->
+                    <div class="tab-content" style="padding-top:16px;">
+                        <h2>Geo-Targeting</h2>
+
+                        <table class="form-table">
+                            <tr>
+                                <th scope="row">Enable geo-targeting</th>
+                                <td>
+                                    <input type="hidden" name="dataflair_geo_targeting_enabled" value="0">
+                                    <label>
+                                        <input type="checkbox"
+                                               id="dataflair_geo_targeting_enabled"
+                                               name="dataflair_geo_targeting_enabled"
+                                               value="1"
+                                               <?php checked(get_option('dataflair_geo_targeting_enabled', '1'), '1'); ?>>
+                                        Enable geo-targeting
+                                    </label>
+                                    <p class="description">
+                                        When enabled, each toplist only renders for visitors whose country
+                                        matches its configured geo rules (country / market / global).
+                                        Visitors outside the match see nothing for that placement &mdash;
+                                        no error, just empty output.
+                                    </p>
+                                    <p class="description" style="color:#b32d2e;">
+                                        <strong>&#9888; Turning this off shows every toplist to every
+                                        visitor</strong>, regardless of the operator licensing/geo
+                                        restrictions configured in DataFlair. Only disable this on
+                                        non-production, test, or demo sites.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <?php submit_button('Save Settings', 'primary', 'submit', false, ['id' => 'dataflair-save-geo-targeting']); ?>
+                    </div>
                 <?php else: ?>
                     <!-- Sync Tab -->
                     <div class="tab-content" style="padding-top:16px;">

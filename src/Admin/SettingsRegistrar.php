@@ -42,6 +42,8 @@ final class SettingsRegistrar
         'dataflair_toplists_sync_cadence',
         'dataflair_sync_retry_count',
         'dataflair_sync_alert_email',
+        // Phase 3 (geo-targeting) — site-level kill switch for GeoRenderGate.
+        'dataflair_geo_targeting_enabled',
     ];
 
     public function register(): void
