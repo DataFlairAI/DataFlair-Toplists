@@ -427,6 +427,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.10
+- **Added: `?dataflair_geo=GB` admin QA override.** A logged-in admin (`manage_options`) can preview any country's geo-gated content from a plain browser URL — no VPN or custom headers needed. Ignored entirely for anyone without the capability, so it can never be used to bypass the compliance-driven restriction the gate exists to enforce.
+- **Added: "these brands aren't available in your country or region" notice for unmatched `auto_geo` families.** Scoped to only the `auto_geo`/`GeoFamilySelector` path — fixed `id`/`slug` blocks (the common pattern of several region-locked blocks side by side on one page) stay silent as before, since showing "unavailable" on a block that was simply never meant for that visitor would be wrong.
+
 ### 2.2.9
 - **Added: the debug/testing accordion table (`layout=table`) now surfaces the full API item payload.** Offer type, max bonus amount, free spins, sticky bonus, bonus expiry, currencies, offer-level geo targeting, restricted countries, game types, game providers, supported languages, brand logo thumbnail, and the tracker/campaign list. Sportsbook/poker-only fields (minimum odds, free bet value, stake returned, bet type, tournament ticket value, rakeback, free tickets) render as their own section only when populated.
 - **Fixed: removed 2 dead fields with no backing API data** (`Payout Time`, `Games Count`) and fixed `Product Type`, which read a field the API never returns, to source from the real `classificationTypes` field instead.
@@ -781,4 +785,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.9 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.2.10 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0

@@ -155,6 +155,12 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.10</h4>
+<ul>
+  <li><strong>Added: <code>?dataflair_geo=GB</code> admin QA override.</strong> A logged-in admin (<code>manage_options</code>) can preview any country\'s geo-gated content from a plain browser URL &mdash; no VPN or custom headers needed. Ignored entirely for anyone without the capability.</li>
+  <li><strong>Added: "these brands aren\'t available in your country or region" notice for unmatched <code>auto_geo</code> families.</strong> Scoped to only the <code>auto_geo</code>/<code>GeoFamilySelector</code> path &mdash; fixed <code>id</code>/<code>slug</code> blocks stay silent as before.</li>
+</ul>
+
 <h4>2.2.9</h4>
 <ul>
   <li><strong>Added: the debug/testing accordion table (<code>layout=table</code>) now surfaces the full API item payload.</strong> Offer type, max bonus amount, free spins, sticky bonus, bonus expiry, currencies, offer-level geo targeting, restricted countries, game types, game providers, supported languages, brand logo thumbnail, and the tracker/campaign list. Sportsbook/poker-only fields (minimum odds, free bet value, stake returned, bet type, tournament ticket value, rakeback, free tickets) render as their own section only when populated.</li>
