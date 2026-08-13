@@ -52,7 +52,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         });
 
         $this->assertSame(
-            'https://tenant.dataflair.ai/api/v1/brands?page=2',
+            'https://tenant.dataflair.ai/api/v1/brands?per_page=25&page=2',
             $this->builder()->buildPageUrl(2)
         );
     }
@@ -66,7 +66,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         });
 
         $this->assertSame(
-            'https://tenant.dataflair.ai/api/v2/brands?page=5',
+            'https://tenant.dataflair.ai/api/v2/brands?per_page=25&page=5',
             $this->builder()->buildPageUrl(5)
         );
     }
@@ -80,7 +80,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         });
 
         $this->assertSame(
-            'https://tenant.dataflair.ai/api/v1/brands?page=1',
+            'https://tenant.dataflair.ai/api/v1/brands?per_page=25&page=1',
             $this->builder()->buildPageUrl(1)
         );
     }
@@ -92,7 +92,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         });
 
         $this->assertSame(
-            'https://sigma.dataflair.ai/api/v1/brands?page=1',
+            'https://sigma.dataflair.ai/api/v1/brands?per_page=25&page=1',
             $this->builder()->buildPageUrl(1)
         );
     }
