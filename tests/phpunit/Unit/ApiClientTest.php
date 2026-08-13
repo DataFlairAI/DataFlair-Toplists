@@ -42,6 +42,11 @@ final class ApiClientTest extends TestCase
             ->andReturnUsing(static fn() => new NullLogger());
         Filters\expectApplied('dataflair_logger_level')
             ->andReturnUsing(static fn($default) => $default);
+        // Force the legacy wp_remote_get() path so the mocked transport below
+        // is actually exercised — PersistentCurlTransport bypasses it entirely
+        // and would otherwise attempt a real curl request in this test.
+        Filters\expectApplied('dataflair_use_persistent_curl')
+            ->andReturn(false);
 
         Functions\when('get_option')->alias(static function ($key, $default = '') {
             return $default;

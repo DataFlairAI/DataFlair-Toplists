@@ -3,7 +3,7 @@
  * Phase 1 — LoggerFactory contract pin.
  *
  * Locks in:
- *  - default implementation is ErrorLogLogger
+ *  - default implementation is FileLogger (writes wp-content/dataflair-sync.log)
  *  - `dataflair_logger` filter swaps the implementation
  *  - a non-LoggerInterface filter return is rejected and the default kept
  *  - the factory caches per-request (filter runs once per reset)
@@ -17,6 +17,7 @@ namespace DataFlair\Toplists\Tests\Unit\Logging;
 use Brain\Monkey;
 use Brain\Monkey\Filters;
 use DataFlair\Toplists\Logging\ErrorLogLogger;
+use DataFlair\Toplists\Logging\FileLogger;
 use DataFlair\Toplists\Logging\LoggerFactory;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Logging\NullLogger;
@@ -25,6 +26,7 @@ use PHPUnit\Framework\TestCase;
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/NullLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/ErrorLogLogger.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/FileLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/SentryLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerFactory.php';
 
@@ -44,7 +46,7 @@ final class LoggerFactoryTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_default_is_error_log_logger(): void
+    public function test_default_is_file_logger(): void
     {
         Filters\expectApplied('dataflair_logger')
             ->once()
@@ -54,7 +56,7 @@ final class LoggerFactoryTest extends TestCase
             ->andReturnUsing(static fn($default) => $default);
 
         $logger = LoggerFactory::get();
-        $this->assertInstanceOf(ErrorLogLogger::class, $logger);
+        $this->assertInstanceOf(FileLogger::class, $logger);
     }
 
     public function test_filter_swaps_implementation(): void
@@ -80,7 +82,7 @@ final class LoggerFactoryTest extends TestCase
             ->andReturn('not-a-logger');
 
         $logger = LoggerFactory::get();
-        $this->assertInstanceOf(ErrorLogLogger::class, $logger);
+        $this->assertInstanceOf(FileLogger::class, $logger);
     }
 
     public function test_factory_caches_per_request(): void

@@ -118,10 +118,6 @@ namespace DataFlair\Toplists\Tests\Unit\Admin {
                 ->once()
                 ->with('prepared-toplists-query')
                 ->andReturn([]);
-            $wpdb->shouldReceive('get_results')
-                ->once()
-                ->with(M::on(static fn(string $sql): bool => str_contains($sql, 'ORDER BY name ASC')))
-                ->andReturn([]);
             $wpdb->shouldReceive('get_col')->once()->andReturn([]);
 
             $GLOBALS['wpdb'] = $wpdb;

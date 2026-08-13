@@ -44,6 +44,7 @@ final class ToplistSyncServiceTest extends TestCase
     {
         parent::setUp();
         Monkey\setUp();
+        \SyncFunctionStubsStore::reset();
 
         $this->http      = new ToplistFakeHttp();
         $this->persister = new ToplistFakePersister();
@@ -76,6 +77,17 @@ final class ToplistSyncServiceTest extends TestCase
     {
         $svc = $this->makeService();
         $this->assertInstanceOf(ToplistSyncServiceInterface::class, $svc);
+    }
+
+    public function test_setup_resets_the_shared_stub_store(): void
+    {
+        // ToplistSyncService does real read-after-write set_transient()/
+        // get_transient() calls through SyncFunctionStubsStore (a store
+        // shared with every other test file that requires SyncFunctionStubs.php).
+        // Without a reset() here, a value left behind by an earlier test
+        // method could leak into this one's SUT calls.
+        $this->assertSame([], \SyncFunctionStubsStore::$transients);
+        $this->assertSame([], \SyncFunctionStubsStore::$options);
     }
 
     public function test_happy_path_persists_every_item_in_bulk_response(): void
