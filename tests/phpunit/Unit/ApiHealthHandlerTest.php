@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/ApiHealthHandler.php';
+require_once __DIR__ . '/ApiHealthHandlerTestStubs.php';
 
 final class ApiHealthHandlerTest extends TestCase
 {

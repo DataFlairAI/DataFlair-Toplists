@@ -25,10 +25,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/ProsConsResolver.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/TableRendererInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/TableRenderer.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/ViewModels/ToplistTableVM.php';
-
-if (!function_exists('esc_html')) {
-    function esc_html($value) { return (string) $value; }
-}
+require_once __DIR__ . '/TableRendererTestStubs.php';
 
 final class TableRendererTest extends TestCase
 {
