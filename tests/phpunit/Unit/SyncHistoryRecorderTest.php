@@ -6,8 +6,14 @@
  * `dataflair_sync_history` option in response to the existing sync action
  * hooks emitted by Brand/Toplist sync services. Since 0772bfd, per-page
  * totals accumulate in a `dataflair_sync_acc_{type}` transient and only
- * flush to a single history entry once the payload reports
- * `is_complete` (or `partial`) — not one entry per page.
+ * flush to a single history entry once the payload reports `is_complete`
+ * (or `partial`) — not one entry per page.
+ *
+ * get_option/update_option/*_transient are stubbed via the shared
+ * SyncFunctionStubs.php (see its docblock) rather than Brain Monkey:
+ * RenderReadOnlyStubs.php (Integration suite) declares real global versions
+ * of these, and once loaded in the same process Patchwork can no longer
+ * redefine them for global stubbing.
  */
 
 declare(strict_types=1);
@@ -19,54 +25,17 @@ use Brain\Monkey\Functions;
 use DataFlair\Toplists\Sync\SyncHistoryRecorder;
 use PHPUnit\Framework\TestCase;
 
+require_once __DIR__ . '/SyncFunctionStubs.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncHistoryRecorder.php';
 
 final class SyncHistoryRecorderTest extends TestCase
 {
-    /** @var array<string, mixed> */
-    public static array $store = [];
-
-    /** @var array<string, mixed> */
-    public static array $transients = [];
-
-    public static function peek(string $key, $default)
-    {
-        return self::$store[$key] ?? $default;
-    }
-
-    public static function poke(string $key, $value): void
-    {
-        self::$store[$key] = $value;
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
         Monkey\setUp();
-        self::$store = [];
-        self::$transients = [];
-        Functions\when('get_option')->alias(function ($key, $default = []) {
-            return SyncHistoryRecorderTest::peek($key, $default);
-        });
-        Functions\when('update_option')->alias(function ($key, $value, $autoload = null) {
-            SyncHistoryRecorderTest::poke($key, $value);
-            return true;
-        });
+        \SyncFunctionStubsStore::reset();
         Functions\when('add_action')->justReturn(true);
-        // Real in-memory transient store — SyncHistoryRecorder accumulates
-        // per-page totals here between dataflair_sync_batch_finished calls
-        // until the batch reports is_complete/partial.
-        Functions\when('get_transient')->alias(function ($key) {
-            return SyncHistoryRecorderTest::$transients[$key] ?? false;
-        });
-        Functions\when('set_transient')->alias(function ($key, $value, $ttl = 0) {
-            SyncHistoryRecorderTest::$transients[$key] = $value;
-            return true;
-        });
-        Functions\when('delete_transient')->alias(function ($key) {
-            unset(SyncHistoryRecorderTest::$transients[$key]);
-            return true;
-        });
     }
 
     protected function tearDown(): void
@@ -88,7 +57,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'elapsed_seconds' => 4.21,
         ]);
 
-        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY] ?? [];
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY] ?? [];
         $this->assertCount(1, $entries);
         $this->assertSame('success', $entries[0]['status']);
         $this->assertSame('brands', $entries[0]['source']);
@@ -111,7 +80,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'elapsed_seconds' => 2.0,
         ]);
         // Still mid-batch — accumulator persisted to a transient, no history entry yet.
-        $this->assertArrayNotHasKey(SyncHistoryRecorder::OPTION_KEY, self::$store);
+        $this->assertArrayNotHasKey(SyncHistoryRecorder::OPTION_KEY, \SyncFunctionStubsStore::$options);
 
         $rec->onBatchFinished([
             'type'            => 'brands',
@@ -123,7 +92,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'elapsed_seconds' => 1.5,
         ]);
 
-        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
         $this->assertCount(1, $entries);
         // Totals span both pages: 10+5 synced, 1+0 errors, 2 pages.
         $this->assertSame('partial', $entries[0]['status']);
@@ -145,7 +114,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'elapsed_seconds' => 1.0,
         ]);
 
-        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
         $this->assertSame('partial', $entries[0]['status']);
         $this->assertStringContainsString('2 errors', $entries[0]['detail']);
     }
@@ -159,7 +128,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'error' => 'HTTP 500: upstream',
         ]);
 
-        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
         $this->assertCount(1, $entries);
         $this->assertSame('error', $entries[0]['status']);
         $this->assertSame('HTTP 500: upstream', $entries[0]['detail']);
@@ -171,7 +140,7 @@ final class SyncHistoryRecorderTest extends TestCase
         $rec->onBatchFinished(['type' => 'unknown', 'page' => 1]);
         $rec->onItemFailed(['type' => 'unknown', 'page' => 1, 'error' => 'x']);
 
-        $this->assertSame([], self::$store[SyncHistoryRecorder::OPTION_KEY] ?? []);
+        $this->assertSame([], \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY] ?? []);
     }
 
     public function test_history_is_capped_fifo_newest_first(): void
@@ -195,7 +164,7 @@ final class SyncHistoryRecorderTest extends TestCase
             ]);
         }
 
-        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
         $this->assertCount($cap, $entries);
         // Newest first — last pushed had items_done = (cap+5).
         $this->assertStringContainsString(($cap + 5) . ' synced', $entries[0]['title']);
