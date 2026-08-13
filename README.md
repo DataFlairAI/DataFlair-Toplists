@@ -427,6 +427,9 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.8
+- **Fixed: the Gutenberg block never appeared in the block inserter search.** 2.2.5/2.2.6 replaced the `register_block_type()` call with only a `register_block_type_args` filter, on the mistaken assumption that WordPress auto-discovers plugin `block.json` files — it doesn't, so the filter had nothing to attach to and the block's `editorScript` (`index.js`) never got enqueued. Restored the real `register_block_type()` call (render callback + version in args) alongside the double-registration guard, combining the 2.2.4 and 2.2.5 fixes correctly this time.
+
 ### 2.2.7
 - **Added: site-level "Enable geo-targeting" toggle.** New Settings → Geo-Targeting tab controls `dataflair_geo_targeting_enabled` (default on). Disabling it makes every toplist render for every visitor, bypassing country/market restrictions — intended for non-production/test sites only, since it removes the compliance-driven visibility gate.
 - **Fixed: `cta_mode` / `ctamode` shortcode-attribute aliases were declared but never normalized** into the canonical `ctaMode` key, so `cta_mode="dual_app"` silently had no effect.
@@ -774,4 +777,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.7 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.2.8 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0

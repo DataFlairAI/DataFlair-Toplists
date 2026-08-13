@@ -155,6 +155,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.8</h4>
+<ul>
+  <li><strong>Fixed: the Gutenberg block never appeared in the block inserter search.</strong> 2.2.5/2.2.6 replaced the <code>register_block_type()</code> call with only a <code>register_block_type_args</code> filter, on the mistaken assumption that WordPress auto-discovers plugin <code>block.json</code> files &mdash; it doesn\'t, so the filter had nothing to attach to and the block\'s <code>editorScript</code> (<code>index.js</code>) never got enqueued. Restored the real <code>register_block_type()</code> call (render callback + version in args) alongside the double-registration guard, combining the 2.2.4 and 2.2.5 fixes correctly this time.</li>
+</ul>
+
 <h4>2.2.7</h4>
 <ul>
   <li><strong>Added: site-level "Enable geo-targeting" toggle</strong> in Settings &rarr; Geo-Targeting (default on). Disabling it makes every toplist render for every visitor, bypassing country/market restrictions &mdash; intended for non-production/test sites only, since it removes the compliance-driven visibility gate.</li>
