@@ -21,16 +21,39 @@
  * SaveSettingsHandlerTestStubs.php's recording depending on load order (which
  * this file would always win, since PHPUnit discovers "ApiHealthHandlerTest.php"
  * before "SaveSettingsHandlerTest.php"). Only set_transient() is new here.
+ *
+ * set_transient() records into ApiHealthHandlerTestStubs::$transients (same
+ * recorder pattern as SaveSettingsHandlerTestStubs::$options) so tests can
+ * assert what ApiHealthHandler::persist() actually wrote, not just what
+ * handle() returned — a plain `return true;` no-op left that write path
+ * completely uncovered.
  */
 
 declare(strict_types=1);
 
 namespace {
     require_once __DIR__ . '/SaveSettingsHandlerTestStubs.php';
+
+    if (!class_exists('ApiHealthHandlerTestStubs')) {
+        final class ApiHealthHandlerTestStubs
+        {
+            /** @var array<string,array{value:mixed,expiration:int}> */
+            public static array $transients = [];
+
+            public static function reset(): void
+            {
+                self::$transients = [];
+            }
+        }
+    }
 }
 
 namespace DataFlair\Toplists\Admin\Ajax {
     if (!function_exists(__NAMESPACE__ . '\\set_transient')) {
-        function set_transient($key, $value, $expiration = 0) { return true; }
+        function set_transient($key, $value, $expiration = 0)
+        {
+            \ApiHealthHandlerTestStubs::$transients[$key] = ['value' => $value, 'expiration' => $expiration];
+            return true;
+        }
     }
 }
