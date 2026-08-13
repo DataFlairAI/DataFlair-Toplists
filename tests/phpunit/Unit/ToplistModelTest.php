@@ -205,6 +205,11 @@ class ToplistModelTest extends TestCase {
         $this->assertTrue($t->isStale());
     }
 
+    public function test_is_stale_returns_true_when_last_synced_is_not_a_date_string(): void {
+        $this->assertTrue($this->makeToplist(['last_synced' => ''])->isStale());
+        $this->assertTrue($this->makeToplist(['last_synced' => 0])->isStale());
+    }
+
     public function test_is_stale_custom_days_parameter(): void {
         $fourDaysAgo = date('Y-m-d H:i:s', strtotime('-4 days'));
         $t           = $this->makeToplist(['last_synced' => $fourDaysAgo]);
