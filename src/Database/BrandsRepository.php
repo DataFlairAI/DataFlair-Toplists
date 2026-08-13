@@ -206,8 +206,11 @@ final class BrandsRepository implements BrandsRepositoryInterface
             ? $this->wpdb->get_var($countSql)
             : $this->wpdb->get_var($this->wpdb->prepare($countSql, ...$params)));
 
-        // SECURITY: sortBy is whitelisted in BrandsQuery::normalizeSort().
-        $orderBy = $query->sortBy . ' ' . $query->sortDir;
+        // SECURITY: sortBy is whitelisted in BrandsQuery::normalizeSort();
+        // sortDir is normalized to ASC|DESC in BrandsQuery::fromArray().
+        // id tie-breaker keeps pagination stable when many rows share the
+        // same sortBy value (e.g. last_synced timestamps from one sync batch).
+        $orderBy = $query->sortBy . ' ' . $query->sortDir . ', id ' . $query->sortDir;
 
         $rowsSql = "SELECT * FROM {$this->table} {$where} ORDER BY {$orderBy} LIMIT %d OFFSET %d";
         $rowsParams = array_merge($params, [$query->perPage, $query->offset()]);
