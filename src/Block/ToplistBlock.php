@@ -76,12 +76,7 @@ final class ToplistBlock
             'prosCons'          => $attributes['prosCons'] ?? [],
         ];
 
-        $result = (string) ($this->shortcodeRenderer)($shortcode_atts);
-        file_put_contents('/tmp/dataflair-block-render.log', '[' . date('Y-m-d H:i:s') . '] toplist_id=' . $toplist_id . ', result_len=' . strlen($result) . PHP_EOL, FILE_APPEND);
-        if (empty($result)) {
-            file_put_contents('/tmp/dataflair-block-render.log', '[' . date('Y-m-d H:i:s') . '] Block render returned EMPTY for toplist ID: ' . $toplist_id . PHP_EOL, FILE_APPEND);
-        }
-        return $result;
+        return (string) ($this->shortcodeRenderer)($shortcode_atts);
     }
 
     /**
