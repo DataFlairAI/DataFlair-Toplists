@@ -76,7 +76,11 @@ final class ToplistBlock
             'prosCons'          => $attributes['prosCons'] ?? [],
         ];
 
-        return (string) ($this->shortcodeRenderer)($shortcode_atts);
+        $result = (string) ($this->shortcodeRenderer)($shortcode_atts);
+        if (empty($result)) {
+            error_log('[DataFlair] Block render returned empty for toplist ID: ' . $toplist_id);
+        }
+        return $result;
     }
 
     /**
