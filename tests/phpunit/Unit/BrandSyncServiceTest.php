@@ -48,6 +48,7 @@ final class BrandSyncServiceTest extends TestCase
     {
         parent::setUp();
         Monkey\setUp();
+        \SyncFunctionStubsStore::reset();
 
         $this->brands         = new FakeBrandsRepo();
         $this->logoDownloader = new FakeLogoDownloader();
@@ -79,6 +80,16 @@ final class BrandSyncServiceTest extends TestCase
     {
         $svc = $this->makeService();
         $this->assertInstanceOf(BrandSyncServiceInterface::class, $svc);
+    }
+
+    public function test_setup_resets_the_shared_stub_store(): void
+    {
+        // Defensive: BrandSyncService doesn't currently call get_option/
+        // update_option/*_transient, but this file shares SyncFunctionStubsStore
+        // with ToplistSyncServiceTest — reset() must run here too so that
+        // never becomes an accidental cross-test leak vector.
+        $this->assertSame([], \SyncFunctionStubsStore::$transients);
+        $this->assertSame([], \SyncFunctionStubsStore::$options);
     }
 
     public function test_http_wp_error_returns_failure_result(): void
