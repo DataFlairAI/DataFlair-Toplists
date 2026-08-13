@@ -54,6 +54,9 @@ final class LogsCommandTest extends TestCase
         if (is_file($this->tmp)) {
             @unlink($this->tmp);
         }
+        if (is_file($this->tmp . '.1')) {
+            @unlink($this->tmp . '.1');
+        }
         LoggerFactory::reset();
         Monkey\tearDown();
         parent::tearDown();
@@ -182,6 +185,57 @@ final class LogsCommandTest extends TestCase
         $this->assertMatchesRegularExpression('/event-8\b/', $out);
         $this->assertMatchesRegularExpression('/event-9\b/', $out);
         $this->assertMatchesRegularExpression('/event-10\b/', $out);
+    }
+
+    public function test_drops_partial_first_line_after_mid_file_seek(): void
+    {
+        Filters\expectApplied('dataflair_logger_level')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_logger')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_sync_log_path')->andReturn($this->tmp);
+        Filters\expectApplied('dataflair_logs_tail')->andReturn(null);
+
+        // Comfortably exceed the 512 KB tail-read window so the seek lands
+        // mid-line rather than at byte 0 — a garbled leading fragment would
+        // be missing its "[" prefix and must not appear in the output.
+        $now = gmdate('Y-m-d H:i:s') . ' UTC';
+        $lines = [];
+        $size = 0;
+        for ($i = 0; $size < 600 * 1024; $i++) {
+            $line = "[$now][NOTICE] event-$i " . str_repeat('x', 80);
+            $lines[] = $line;
+            $size += strlen($line) + 1;
+        }
+        file_put_contents($this->tmp, implode("\n", $lines) . "\n");
+
+        $out = $this->captureOutput(static function () {
+            (new LogsCommand())([], ['since' => '1h', 'limit' => '5000']);
+        });
+
+        foreach (explode("\n", trim($out)) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $this->assertStringStartsWith('[', $line, "A truncated fragment leaked into the output: $line");
+        }
+    }
+
+    public function test_reads_rotated_generation_when_active_file_alone_fits_the_window(): void
+    {
+        Filters\expectApplied('dataflair_logger_level')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_logger')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_sync_log_path')->andReturn($this->tmp);
+        Filters\expectApplied('dataflair_logs_tail')->andReturn(null);
+
+        $now = gmdate('Y-m-d H:i:s') . ' UTC';
+        file_put_contents($this->tmp . '.1', "[$now][NOTICE] rotated-event\n");
+        file_put_contents($this->tmp, "[$now][NOTICE] active-event\n");
+
+        $out = $this->captureOutput(static function () {
+            (new LogsCommand())([], ['since' => '1h']);
+        });
+
+        $this->assertStringContainsString('rotated-event', $out);
+        $this->assertStringContainsString('active-event', $out);
     }
 
     private function captureOutput(callable $fn): string

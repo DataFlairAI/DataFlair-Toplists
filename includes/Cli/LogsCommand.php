@@ -89,24 +89,13 @@ final class LogsCommand
             return [];
         }
 
-        // Stream-read the last ~512 KB to avoid loading massive logs into memory.
-        $size = filesize($path);
-        $read_bytes = min($size ?: 0, 512 * 1024);
-        $fp = fopen($path, 'rb');
-        if (!$fp) {
-            return [];
-        }
-        if ($read_bytes > 0) {
-            fseek($fp, -$read_bytes, SEEK_END);
-        }
-        $buf = stream_get_contents($fp);
-        fclose($fp);
-        if (!is_string($buf)) {
+        $read = $this->readTailBytes($path);
+        if ($read['buf'] === null) {
             return [];
         }
 
         $matches = [];
-        foreach (explode("\n", $buf) as $raw) {
+        foreach (explode("\n", $read['buf']) as $raw) {
             if (strpos($raw, '[DataFlair][') === false) {
                 continue;
             }
@@ -138,20 +127,22 @@ final class LogsCommand
             return [];
         }
 
-        // Stream-read the last ~512 KB to avoid loading massive logs into memory.
-        $size = filesize($path);
-        $read_bytes = min($size ?: 0, 512 * 1024);
-        $fp = fopen($path, 'rb');
-        if (!$fp) {
+        $read = $this->readTailBytes($path);
+        if ($read['buf'] === null) {
             return [];
         }
-        if ($read_bytes > 0) {
-            fseek($fp, -$read_bytes, SEEK_END);
-        }
-        $buf = stream_get_contents($fp);
-        fclose($fp);
-        if (!is_string($buf)) {
-            return [];
+        $buf = $read['buf'];
+
+        // FileLogger keeps a single rotated generation (path . '.1'). If the
+        // active file's entire content already fit inside the read window,
+        // older lines may have rolled into that generation — pull it in too
+        // so a --since window spanning a rotation doesn't silently drop them.
+        $rotated = $path . '.1';
+        if (!$read['truncated'] && is_readable($rotated)) {
+            $prev = $this->readTailBytes($rotated);
+            if ($prev['buf'] !== null && $prev['buf'] !== '') {
+                $buf = rtrim($prev['buf'], "\n") . "\n" . $buf;
+            }
         }
 
         $matches = [];
@@ -174,6 +165,45 @@ final class LogsCommand
             $matches = array_slice($matches, -$limit);
         }
         return $matches;
+    }
+
+    /**
+     * Stream-read the last ~$maxBytes of a file. When the read doesn't start
+     * at byte 0 (the file is bigger than $maxBytes), the leading fragment is
+     * almost certainly a partial line — drop everything up to and including
+     * the first newline so callers never see a truncated, unparseable line.
+     *
+     * @return array{buf: ?string, truncated: bool}
+     */
+    private function readTailBytes(string $path, int $maxBytes = 512 * 1024): array
+    {
+        $size = filesize($path);
+        if ($size === false) {
+            return ['buf' => null, 'truncated' => false];
+        }
+
+        $read_bytes = min($size, $maxBytes);
+        $fp = fopen($path, 'rb');
+        if (!$fp) {
+            return ['buf' => null, 'truncated' => false];
+        }
+
+        $truncated = $read_bytes > 0 && $size > $read_bytes;
+        if ($read_bytes > 0) {
+            fseek($fp, -$read_bytes, SEEK_END);
+        }
+        $buf = stream_get_contents($fp);
+        fclose($fp);
+        if (!is_string($buf)) {
+            return ['buf' => null, 'truncated' => false];
+        }
+
+        if ($truncated) {
+            $nl = strpos($buf, "\n");
+            $buf = $nl !== false ? substr($buf, $nl + 1) : '';
+        }
+
+        return ['buf' => $buf, 'truncated' => $truncated];
     }
 
     private function extractFileLoggerTimestamp(string $line): ?int
