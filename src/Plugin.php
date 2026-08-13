@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace DataFlair\Toplists;
 
 use DataFlair\Toplists\Admin\PluginInfoFilter;
+use DataFlair\Toplists\Block\BlockBootstrap;
 use DataFlair\Toplists\Database\SchemaMigrator;
 use DataFlair\Toplists\Sync\SyncHistoryRecorder;
 use DataFlair\Toplists\Frontend\Assets\AlpineDeferAttribute;
@@ -149,6 +150,16 @@ final class Plugin
         // *after* every other plugin has had a chance to register a
         // `dataflair_card_renderer` / `dataflair_table_renderer` filter.
         (new ShortcodeRegistrar([$this->legacy, 'toplist_shortcode']))->register();
+
+        // Phase 7 — Block registration. Gutenberg block for displaying toplists.
+        (new BlockBootstrap(
+            \Closure::fromCallable([$this->legacy, 'toplist_shortcode']),
+            \Closure::fromCallable('get_option'),
+            DATAFLAIR_PLUGIN_DIR,
+            DATAFLAIR_PLUGIN_URL,
+            DATAFLAIR_VERSION
+        ))->boot()->register();
+
         $this->legacy->campaign_redirect_handler()->register();
     }
 
