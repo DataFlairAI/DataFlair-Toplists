@@ -13,15 +13,24 @@
  * the Integration suite is part of the run) happened to leave behind a
  * matching global fallback. Declared namespace-locally here instead, so
  * PHP finds these before ever considering the global namespace.
+ *
+ * update_option() is already stubbed for this exact namespace by
+ * SaveSettingsHandlerTestStubs.php (a stateful recorder SaveSettingsHandlerTest
+ * asserts against directly) — required here rather than re-declared, so the
+ * two files can't race for the function_exists() guard and silently disable
+ * SaveSettingsHandlerTestStubs.php's recording depending on load order (which
+ * this file would always win, since PHPUnit discovers "ApiHealthHandlerTest.php"
+ * before "SaveSettingsHandlerTest.php"). Only set_transient() is new here.
  */
 
 declare(strict_types=1);
 
+namespace {
+    require_once __DIR__ . '/SaveSettingsHandlerTestStubs.php';
+}
+
 namespace DataFlair\Toplists\Admin\Ajax {
     if (!function_exists(__NAMESPACE__ . '\\set_transient')) {
-        function set_transient($key, $value, $expiration) { return true; }
-    }
-    if (!function_exists(__NAMESPACE__ . '\\update_option')) {
-        function update_option($key, $value, $autoload = null) { return true; }
+        function set_transient($key, $value, $expiration = 0) { return true; }
     }
 }
