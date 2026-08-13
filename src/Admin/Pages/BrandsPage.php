@@ -33,9 +33,9 @@ final class BrandsPage implements PageInterface
 
     public function render(): void
     {
-        // Initial page state — no filters, sort by name, page 1.
-        $initial_sort    = isset($_GET['sort_by'])  ? sanitize_key((string) $_GET['sort_by'])  : 'name';
-        $initial_dir     = isset($_GET['sort_dir']) ? strtoupper((string) $_GET['sort_dir'])   : 'ASC';
+        // Initial page state — no filters, newest last-synced first, page 1.
+        $initial_sort    = isset($_GET['sort_by'])  ? sanitize_key((string) $_GET['sort_by'])  : BrandsQuery::SORT_LAST_SYNCED;
+        $initial_dir     = isset($_GET['sort_dir']) ? strtoupper((string) $_GET['sort_dir'])   : BrandsQuery::DIR_DESC;
         $initial_page    = isset($_GET['paged'])    ? max(1, (int) $_GET['paged'])             : 1;
 
         $query = BrandsQuery::fromArray([
