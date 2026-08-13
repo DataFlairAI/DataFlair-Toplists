@@ -9,6 +9,12 @@ namespace DataFlair\Toplists\Geo;
  * the main DataFlair repo is the source of truth this mirrors.
  *
  * Tries, in order:
+ *  0. `?dataflair_geo=` query param — admin-only QA override (see
+ *     resolveAdminOverride()). Lets a logged-in admin preview any country's
+ *     geo-gated content from a plain browser URL, no VPN or custom headers
+ *     needed. Gated to manage_options so a public visitor can never use it
+ *     to bypass the compliance-driven restriction this class exists to
+ *     enforce.
  *  1. `CF-IPCountry` header (Cloudflare)
  *  2. `X-Geoip-Country` header (reverse proxy / another plugin)
  *  3. the `dataflair_visitor_country` filter — a seam for a site-installed
@@ -17,7 +23,7 @@ namespace DataFlair\Toplists\Geo;
  *     can plug one in without this plugin inventing a fake integration.
  *  4. null (unresolved — callers must default-deny, never guess).
  *
- * Read-only: inspects request headers only, no HTTP calls, no writes.
+ * Read-only: inspects request headers/params only, no HTTP calls, no writes.
  */
 final class VisitorGeoResolver implements VisitorGeoResolverInterface
 {
@@ -30,6 +36,11 @@ final class VisitorGeoResolver implements VisitorGeoResolverInterface
 
     public function resolve(): ?string
     {
+        $override = $this->resolveAdminOverride();
+        if ($override !== null) {
+            return $override;
+        }
+
         foreach (['HTTP_CF_IPCOUNTRY', 'HTTP_X_GEOIP_COUNTRY'] as $serverKey) {
             $value = $this->normalize($_SERVER[$serverKey] ?? null);
             if ($value !== null) {
@@ -42,6 +53,24 @@ final class VisitorGeoResolver implements VisitorGeoResolverInterface
             : null;
 
         return $this->normalize($filtered);
+    }
+
+    /**
+     * `?dataflair_geo=GB` QA override — only honored for a logged-in user
+     * with manage_options. Never trusts current_user_can()'s absence as
+     * permission: if the capability check itself isn't available, deny.
+     */
+    private function resolveAdminOverride(): ?string
+    {
+        if (!isset($_GET['dataflair_geo']) || !is_string($_GET['dataflair_geo'])) {
+            return null;
+        }
+
+        if (!function_exists('current_user_can') || !current_user_can('manage_options')) {
+            return null;
+        }
+
+        return $this->normalize($_GET['dataflair_geo']);
     }
 
     private function normalize(mixed $value): ?string

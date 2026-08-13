@@ -98,7 +98,7 @@ final class ToplistShortcode
 
             if (!$toplist) {
                 $this->signalUncacheable();
-                return '';
+                return $this->renderGeoUnavailableNotice();
             }
         } elseif (!empty($atts['slug'])) {
             $toplist = $this->toplistsRepo->findBySlug((string) $atts['slug']);
@@ -218,6 +218,25 @@ final class ToplistShortcode
         ]);
 
         return $html;
+    }
+
+    /**
+     * Layer 2 (auto_geo family selection) empty-result notice. Unlike the
+     * Layer 1 GeoRenderGate (fixed id/slug), an auto_geo block occupies one
+     * slot and is meant to show exactly one regional variant — if none in
+     * the family matches, that slot genuinely has nothing for this visitor,
+     * so an explicit message is always correct here. This does NOT apply
+     * to fixed id/slug blocks, which stay silent: a page commonly carries
+     * several region-locked blocks side by side, and only one is meant to
+     * be visible to any given visitor — the others aren't "unavailable",
+     * they were simply never meant for that visitor.
+     */
+    private function renderGeoUnavailableNotice(): string
+    {
+        return '<div class="dataflair-geo-unavailable">'
+            . '<span class="dataflair-geo-unavailable-icon" aria-hidden="true">🌍</span>'
+            . '<span>' . esc_html__('These brands aren\'t available in your country or region.', 'dataflair-toplists') . '</span>'
+            . '</div>';
     }
 
     /**

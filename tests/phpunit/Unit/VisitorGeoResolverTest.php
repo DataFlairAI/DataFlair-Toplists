@@ -20,6 +20,7 @@ namespace DataFlair\Toplists\Tests\Unit\Geo;
 
 use Brain\Monkey;
 use Brain\Monkey\Filters;
+use Brain\Monkey\Functions;
 use DataFlair\Toplists\Geo\VisitorGeoResolver;
 use PHPUnit\Framework\TestCase;
 
@@ -31,6 +32,7 @@ final class VisitorGeoResolverTest extends TestCase
         Monkey\setUp();
 
         $_SERVER = [];
+        $_GET    = [];
     }
 
     protected function tearDown(): void
@@ -113,5 +115,39 @@ final class VisitorGeoResolverTest extends TestCase
         $_SERVER['HTTP_X_GEOIP_COUNTRY'] = 'PT';
 
         $this->assertSame('PT', (new VisitorGeoResolver())->resolve());
+    }
+
+    public function test_query_param_override_wins_for_admin(): void
+    {
+        $_GET['dataflair_geo'] = 'gb';
+        Functions\when('current_user_can')->justReturn(true);
+
+        $this->assertSame('GB', (new VisitorGeoResolver())->resolve());
+    }
+
+    public function test_query_param_override_beats_headers_for_admin(): void
+    {
+        $_GET['dataflair_geo']         = 'FR';
+        $_SERVER['HTTP_CF_IPCOUNTRY']  = 'DE';
+        Functions\when('current_user_can')->justReturn(true);
+
+        $this->assertSame('FR', (new VisitorGeoResolver())->resolve());
+    }
+
+    public function test_query_param_override_ignored_for_non_admin(): void
+    {
+        $_GET['dataflair_geo']        = 'GB';
+        $_SERVER['HTTP_CF_IPCOUNTRY'] = 'DE';
+        Functions\when('current_user_can')->justReturn(false);
+
+        $this->assertSame('DE', (new VisitorGeoResolver())->resolve());
+    }
+
+    public function test_query_param_override_ignored_when_param_absent(): void
+    {
+        $_SERVER['HTTP_CF_IPCOUNTRY'] = 'DE';
+        Functions\when('current_user_can')->justReturn(true);
+
+        $this->assertSame('DE', (new VisitorGeoResolver())->resolve());
     }
 }
