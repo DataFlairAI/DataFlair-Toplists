@@ -4,7 +4,10 @@
  *
  * Verifies that the recorder writes capped FIFO entries to the
  * `dataflair_sync_history` option in response to the existing sync action
- * hooks emitted by Brand/Toplist sync services.
+ * hooks emitted by Brand/Toplist sync services. Since 0772bfd, per-page
+ * totals accumulate in a `dataflair_sync_acc_{type}` transient and only
+ * flush to a single history entry once the payload reports
+ * `is_complete` (or `partial`) — not one entry per page.
  */
 
 declare(strict_types=1);
@@ -23,6 +26,9 @@ final class SyncHistoryRecorderTest extends TestCase
     /** @var array<string, mixed> */
     public static array $store = [];
 
+    /** @var array<string, mixed> */
+    public static array $transients = [];
+
     public static function peek(string $key, $default)
     {
         return self::$store[$key] ?? $default;
@@ -38,6 +44,7 @@ final class SyncHistoryRecorderTest extends TestCase
         parent::setUp();
         Monkey\setUp();
         self::$store = [];
+        self::$transients = [];
         Functions\when('get_option')->alias(function ($key, $default = []) {
             return SyncHistoryRecorderTest::peek($key, $default);
         });
@@ -46,6 +53,20 @@ final class SyncHistoryRecorderTest extends TestCase
             return true;
         });
         Functions\when('add_action')->justReturn(true);
+        // Real in-memory transient store — SyncHistoryRecorder accumulates
+        // per-page totals here between dataflair_sync_batch_finished calls
+        // until the batch reports is_complete/partial.
+        Functions\when('get_transient')->alias(function ($key) {
+            return SyncHistoryRecorderTest::$transients[$key] ?? false;
+        });
+        Functions\when('set_transient')->alias(function ($key, $value, $ttl = 0) {
+            SyncHistoryRecorderTest::$transients[$key] = $value;
+            return true;
+        });
+        Functions\when('delete_transient')->alias(function ($key) {
+            unset(SyncHistoryRecorderTest::$transients[$key]);
+            return true;
+        });
     }
 
     protected function tearDown(): void
@@ -59,10 +80,11 @@ final class SyncHistoryRecorderTest extends TestCase
         $rec = new SyncHistoryRecorder();
         $rec->onBatchFinished([
             'type'            => 'brands',
-            'page'            => 3,
+            'page'            => 1,
             'items_done'      => 12,
             'errors'          => 0,
             'partial'         => false,
+            'is_complete'     => true,
             'elapsed_seconds' => 4.21,
         ]);
 
@@ -70,8 +92,44 @@ final class SyncHistoryRecorderTest extends TestCase
         $this->assertCount(1, $entries);
         $this->assertSame('success', $entries[0]['status']);
         $this->assertSame('brands', $entries[0]['source']);
-        $this->assertStringContainsString('page 3', $entries[0]['title']);
-        $this->assertStringContainsString('12 synced', $entries[0]['detail']);
+        $this->assertStringContainsString('12 synced', $entries[0]['title']);
+        $this->assertStringContainsString('1 page', $entries[0]['title']);
+        $this->assertStringContainsString('0 errors', $entries[0]['detail']);
+    }
+
+    public function test_multi_page_batch_accumulates_before_flushing_on_complete(): void
+    {
+        $rec = new SyncHistoryRecorder();
+
+        $rec->onBatchFinished([
+            'type'            => 'brands',
+            'page'            => 1,
+            'items_done'      => 10,
+            'errors'          => 1,
+            'partial'         => false,
+            'is_complete'     => false,
+            'elapsed_seconds' => 2.0,
+        ]);
+        // Still mid-batch — accumulator persisted to a transient, no history entry yet.
+        $this->assertArrayNotHasKey(SyncHistoryRecorder::OPTION_KEY, self::$store);
+
+        $rec->onBatchFinished([
+            'type'            => 'brands',
+            'page'            => 2,
+            'items_done'      => 5,
+            'errors'          => 0,
+            'partial'         => false,
+            'is_complete'     => true,
+            'elapsed_seconds' => 1.5,
+        ]);
+
+        $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
+        $this->assertCount(1, $entries);
+        // Totals span both pages: 10+5 synced, 1+0 errors, 2 pages.
+        $this->assertSame('partial', $entries[0]['status']);
+        $this->assertStringContainsString('15 synced', $entries[0]['title']);
+        $this->assertStringContainsString('2 pages', $entries[0]['title']);
+        $this->assertStringContainsString('1 error', $entries[0]['detail']);
     }
 
     public function test_batch_with_errors_records_partial_status(): void
@@ -83,6 +141,7 @@ final class SyncHistoryRecorderTest extends TestCase
             'items_done'      => 9,
             'errors'          => 2,
             'partial'         => false,
+            'is_complete'     => true,
             'elapsed_seconds' => 1.0,
         ]);
 
@@ -120,23 +179,28 @@ final class SyncHistoryRecorderTest extends TestCase
         $rec = new SyncHistoryRecorder();
         $cap = SyncHistoryRecorder::MAX_ENTRIES;
 
+        // Each iteration is its own complete single-page batch (page=1 +
+        // is_complete=true) so every call flushes a distinct history entry.
+        // items_done varies per iteration so entries stay distinguishable —
+        // the title no longer echoes the raw page number since 0772bfd.
         for ($i = 1; $i <= $cap + 5; $i++) {
             $rec->onBatchFinished([
-                'type'       => 'brands',
-                'page'       => $i,
-                'items_done' => 1,
-                'errors'     => 0,
-                'partial'    => false,
+                'type'        => 'brands',
+                'page'        => 1,
+                'items_done'  => $i,
+                'errors'      => 0,
+                'partial'     => false,
+                'is_complete' => true,
                 'elapsed_seconds' => 0.1,
             ]);
         }
 
         $entries = self::$store[SyncHistoryRecorder::OPTION_KEY];
         $this->assertCount($cap, $entries);
-        // Newest first — last pushed is page (cap+5).
-        $this->assertStringContainsString('page ' . ($cap + 5), $entries[0]['title']);
-        // Oldest in window: page 6 (entries 1-5 dropped).
-        $this->assertStringContainsString('page 6', $entries[$cap - 1]['title']);
+        // Newest first — last pushed had items_done = (cap+5).
+        $this->assertStringContainsString(($cap + 5) . ' synced', $entries[0]['title']);
+        // Oldest in window: items_done = 6 (entries 1-5 dropped).
+        $this->assertStringContainsString('6 synced', $entries[$cap - 1]['title']);
     }
 
     public function test_recent_returns_top_n(): void
@@ -144,8 +208,9 @@ final class SyncHistoryRecorderTest extends TestCase
         $rec = new SyncHistoryRecorder();
         for ($i = 1; $i <= 7; $i++) {
             $rec->onBatchFinished([
-                'type' => 'brands', 'page' => $i, 'items_done' => 1,
-                'errors' => 0, 'partial' => false, 'elapsed_seconds' => 0.1,
+                'type' => 'brands', 'page' => 1, 'items_done' => 1,
+                'errors' => 0, 'partial' => false, 'is_complete' => true,
+                'elapsed_seconds' => 0.1,
             ]);
         }
 
