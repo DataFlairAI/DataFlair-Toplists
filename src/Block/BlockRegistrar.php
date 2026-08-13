@@ -32,26 +32,50 @@ final class BlockRegistrar
      */
     public function register(): void
     {
-        // WordPress auto-registers blocks from block.json. Instead of re-registering,
-        // use a filter to add the render callback to the auto-registered block type.
-        add_filter('register_block_type_args', [$this, 'addRenderCallback'], 10, 2);
+        add_action('init', [$this, 'registerBlock']);
         add_action('enqueue_block_editor_assets', [$this->editorAssets, 'enqueue']);
     }
 
     /**
-     * Filter callback to add render_callback to the auto-registered block type.
-     * WordPress auto-registers blocks from block.json, so we use this filter
-     * to inject the render callback instead of re-registering.
+     * Direct entry point for the `init` action — exposed public so the hook
+     * callback is testable in isolation.
      *
-     * @param array  $args Block type arguments.
-     * @param string $block_type Block type name.
+     * Calling register_block_type() (rather than only filtering
+     * register_block_type_args) is required: it's what makes WordPress
+     * enqueue the block.json-declared editorScript (index.js) on the block
+     * editor, so wp.blocks.registerBlockType() runs client-side and the
+     * block appears in the inserter search. A filter-only approach has
+     * nothing to attach to without an underlying registration call.
      */
-    public function addRenderCallback(array $args, string $block_type): array
+    public function registerBlock(): void
     {
-        if ($block_type === 'dataflair-toplists/toplist') {
-            $args['render_callback'] = [$this->block, 'render'];
+        if (!function_exists('register_block_type')) {
+            return;
         }
-        return $args;
+
+        // Guard against double registration (observed to fire twice within
+        // a single request in some WP-CLI / bootstrap paths).
+        if ($this->isBlockRegistered()) {
+            return;
+        }
+
+        $block_json = $this->resolveBlockJsonPath();
+        if ($block_json === null) {
+            return;
+        }
+
+        register_block_type($block_json, [
+            'render_callback' => [$this->block, 'render'],
+            'version'         => $this->version,
+        ]);
+    }
+
+    private function isBlockRegistered(): bool
+    {
+        if (!function_exists('get_block_type')) {
+            return false;
+        }
+        return get_block_type('dataflair-toplists/toplist') !== null;
     }
 
     private function resolveBlockJsonPath(): ?string
