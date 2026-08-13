@@ -46,6 +46,11 @@ final class BlockRegistrar
             return;
         }
 
+        // Guard against double registration (can happen if multiple hooks fire).
+        if ($this->isBlockRegistered()) {
+            return;
+        }
+
         $block_json = $this->resolveBlockJsonPath();
         if ($block_json === null) {
             return;
@@ -55,6 +60,14 @@ final class BlockRegistrar
             'render_callback' => [$this->block, 'render'],
             'version'         => $this->version,
         ]);
+    }
+
+    private function isBlockRegistered(): bool
+    {
+        if (!function_exists('get_block_type')) {
+            return false;
+        }
+        return get_block_type('dataflair-toplists/toplist') !== null;
     }
 
     private function resolveBlockJsonPath(): ?string
