@@ -53,4 +53,11 @@ namespace DataFlair\Toplists\Admin\Ajax {
             return is_string($value) ? trim(strip_tags($value)) : $value;
         }
     }
+    if (!function_exists(__NAMESPACE__ . '\\delete_transient')) {
+        function delete_transient($key)
+        {
+            unset(\SaveSettingsHandlerTestStubs::$options[$key]);
+            return true;
+        }
+    }
 }
