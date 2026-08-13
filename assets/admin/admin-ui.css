@@ -375,12 +375,20 @@
 .df-log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
 .df-log-ts    { color: #6a9955; margin-right: 6px; }
 .df-log-level { display: inline-block; min-width: 54px; font-weight: 700; margin-right: 6px; }
-.df-log-level--error   { color: #f48771; }
+.df-log-level--error     { color: #f48771; }
 .df-log-level--warning,
-.df-log-level--warn    { color: #f9c74f; }
-.df-log-level--info    { color: #9cdcfe; }
-.df-log-level--debug   { color: #888; }
-.df-log--error   { color: #f48771; }
-.df-log--warning { color: #f9c74f; }
-.df-log--info    { color: #d4d4d4; }
-.df-log--debug   { color: #888; }
+.df-log-level--warn      { color: #f9c74f; }
+.df-log-level--notice    { color: #4ec9b0; }
+.df-log-level--info      { color: #9cdcfe; }
+.df-log-level--debug     { color: #888; }
+.df-log-level--critical  { color: #ff5555; }
+.df-log-level--alert     { color: #ff2d55; font-weight: 800; }
+.df-log-level--emergency { color: #ff1744; font-weight: 800; }
+.df-log--error     { color: #f48771; }
+.df-log--warning   { color: #f9c74f; }
+.df-log--notice    { color: #4ec9b0; }
+.df-log--info      { color: #d4d4d4; }
+.df-log--debug     { color: #888; }
+.df-log--critical  { color: #ff5555; }
+.df-log--alert     { color: #ff2d55; }
+.df-log--emergency { color: #ff1744; }

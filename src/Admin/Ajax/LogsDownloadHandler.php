@@ -3,16 +3,10 @@
  * Phase 9.6 (admin UX redesign) — Stream the active DataFlair log as a
  * text/plain download.
  *
- * The active logger is resolved via LoggerFactory and dispatched by type,
- * mirroring LogsTailHandler and `wp dataflair logs`
- * (includes/Cli/LogsCommand.php):
- *   - ErrorLogLogger (shared destination, e.g. wp-content/debug.log):
- *     read WP_DEBUG_LOG and keep only lines carrying the `[DataFlair]`
- *     marker it writes via PHP's error_log().
- *   - FileLogger (default since the persistent dataflair-sync.log
- *     feature): read the logger's own dedicated file directly — every
- *     line already belongs to DataFlair.
- *   - Any other logger: no built-in download support.
+ * Which file(s) to read, and whether [DataFlair]-marker filtering applies,
+ * is resolved by ActiveLogSource (includes/Support/ActiveLogSource.php)
+ * from the currently active logger (LoggerFactory::get()) — see that
+ * class's docblock for the ErrorLogLogger/FileLogger/unsupported dispatch.
  *
  * Uses the admin-ajax.php route (nopriv=false) with `Content-Disposition:
  * attachment` so the admin can save the log locally. The nonce check is
@@ -25,91 +19,84 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
-use DataFlair\Toplists\Logging\ErrorLogLogger;
-use DataFlair\Toplists\Logging\FileLogger;
-use DataFlair\Toplists\Logging\LoggerFactory;
+use DataFlair\Toplists\Support\ActiveLogSource;
 
 final class LogsDownloadHandler implements AjaxHandlerInterface
 {
-    private const DF_MARKER = '[DataFlair]';
-
     public function handle(array $request): array
     {
-        $logger = LoggerFactory::get();
+        $source = (new ActiveLogSource())->resolve();
 
-        if ($logger instanceof ErrorLogLogger) {
-            return $this->downloadErrorLog();
+        if ($source['error'] !== null) {
+            return ['success' => false, 'data' => ['message' => $source['error']]];
         }
 
-        if ($logger instanceof FileLogger) {
-            return $this->downloadFileLogger($logger);
+        // Common case: a single unfiltered file (FileLogger, no rotated
+        // backup pending) — stream it straight from disk instead of
+        // loading it into an array and rejoining it into one big string.
+        if (count($source['paths']) === 1 && !$source['filterMarker']) {
+            $this->streamFile($source['paths'][0]);
         }
 
-        return ['success' => false, 'data' => ['message' => sprintf(
-            'Log viewer does not support the active logger (%s).',
-            get_class($logger)
-        )]];
+        $lines = [];
+        foreach ($source['paths'] as $path) {
+            $lines = array_merge($lines, $this->readLinesOrEmpty($path));
+        }
+
+        if ($source['filterMarker']) {
+            $lines = array_filter($lines, static fn(string $l) => str_contains($l, ActiveLogSource::DF_MARKER));
+        }
+
+        $this->stream($lines);
     }
 
-    private function downloadErrorLog(): array
+    /**
+     * Streams a file straight from disk as a text/plain download and
+     * terminates via wp_die(). See stream() for the fallback-throw
+     * rationale.
+     */
+    private function streamFile(string $path): never
     {
-        $log_path = $this->resolveLogPath();
+        $this->sendDownloadHeaders();
+        readfile($path);
+        wp_die();
 
-        if ($log_path === null || !is_readable($log_path)) {
-            return ['success' => false, 'data' => ['message' => 'debug.log not found or not readable.']];
-        }
-
-        $raw = file($log_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($raw === false) {
-            $raw = [];
-        }
-
-        $lines = array_filter($raw, static fn(string $l) => str_contains($l, self::DF_MARKER));
-
-        return $this->stream($lines);
-    }
-
-    private function downloadFileLogger(FileLogger $logger): array
-    {
-        $path = $logger->path();
-
-        if ($path === '' || !is_readable($path)) {
-            return ['success' => false, 'data' => ['message' => 'dataflair-sync.log not found or not readable.']];
-        }
-
-        $raw = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($raw === false) {
-            $raw = [];
-        }
-
-        return $this->stream($raw);
+        throw new \RuntimeException('wp_die() did not terminate the request.');
     }
 
     /**
      * Streams the given lines as a text/plain download and terminates via
-     * wp_die(). The return is unreachable in production; it exists only so
-     * the method satisfies its declared return type for tests that stub
-     * wp_die() as a no-op.
+     * wp_die(). wp_die() always terminates in a real WordPress request; the
+     * throw below is a safety net for the (only ever filter-induced) case
+     * where it doesn't, so a non-terminating wp_die() fails loudly instead
+     * of silently falling through to a "success" response appended after
+     * the already-streamed body.
      *
      * @param array<int,string> $lines
      */
-    private function stream(array $lines): array
+    private function stream(array $lines): never
+    {
+        $this->sendDownloadHeaders();
+        echo implode(PHP_EOL, $lines);
+        wp_die();
+
+        throw new \RuntimeException('wp_die() did not terminate the request.');
+    }
+
+    private function sendDownloadHeaders(): void
     {
         $filename = 'dataflair-debug-' . gmdate('Y-m-d') . '.txt';
         header('Content-Type: text/plain; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Cache-Control: no-cache, must-revalidate');
-        echo implode(PHP_EOL, $lines);
-        wp_die();
-
-        return ['success' => true, 'data' => []];
     }
 
-    private function resolveLogPath(): ?string
+    /**
+     * @return array<int,string>
+     */
+    private function readLinesOrEmpty(string $path): array
     {
-        if (defined('WP_DEBUG_LOG') && is_string(WP_DEBUG_LOG) && WP_DEBUG_LOG !== '') {
-            return WP_DEBUG_LOG;
-        }
-        return defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR . '/debug.log' : null;
+        $raw = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        return $raw === false ? [] : $raw;
     }
 }

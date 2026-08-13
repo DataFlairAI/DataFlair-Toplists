@@ -2,16 +2,10 @@
 /**
  * Phase 9.6 (admin UX redesign) — Tail the active DataFlair log.
  *
- * The active logger is resolved via LoggerFactory and dispatched by type,
- * mirroring `wp dataflair logs` (includes/Cli/LogsCommand.php):
- *   - ErrorLogLogger (shared destination, e.g. wp-content/debug.log):
- *     read WP_DEBUG_LOG and keep only lines carrying the `[DataFlair]`
- *     marker it writes via PHP's error_log().
- *   - FileLogger (default since the persistent dataflair-sync.log
- *     feature): read the logger's own dedicated file directly — every
- *     line already belongs to DataFlair, and the line format carries no
- *     `[DataFlair]` marker to filter on.
- *   - Any other logger: no built-in tail support.
+ * Which file(s) to read, and whether [DataFlair]-marker filtering applies,
+ * is resolved by ActiveLogSource (includes/Support/ActiveLogSource.php)
+ * from the currently active logger (LoggerFactory::get()) — see that
+ * class's docblock for the ErrorLogLogger/FileLogger/unsupported dispatch.
  *
  * Output: { entries: [ { line, level, ts, message }, … ], total, truncated }
  */
@@ -21,65 +15,38 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
-use DataFlair\Toplists\Logging\ErrorLogLogger;
-use DataFlair\Toplists\Logging\FileLogger;
-use DataFlair\Toplists\Logging\LoggerFactory;
+use DataFlair\Toplists\Support\ActiveLogSource;
 
 final class LogsTailHandler implements AjaxHandlerInterface
 {
     private const MAX_LINES = 200;
-    private const DF_MARKER = '[DataFlair]';
+
+    /** Start of a FileLogger entry: "[YYYY-MM-DD HH:MM:SS UTC][LEVEL] ...". */
+    private const FILE_LOGGER_ENTRY_START = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\]\[\w+\]/';
 
     public function handle(array $request): array
     {
-        $logger = LoggerFactory::get();
+        $source = (new ActiveLogSource())->resolve();
 
-        if ($logger instanceof ErrorLogLogger) {
-            return $this->tailErrorLog();
+        if ($source['error'] !== null) {
+            return $this->emptyState($source['error']);
         }
 
-        if ($logger instanceof FileLogger) {
-            return $this->tailFileLogger($logger);
+        $rawLines = [];
+        foreach ($source['paths'] as $path) {
+            $rawLines = array_merge($rawLines, $this->tailLastChunk($path));
         }
 
-        return $this->emptyState(sprintf(
-            'Log viewer does not support the active logger (%s).',
-            get_class($logger)
-        ));
-    }
-
-    private function tailErrorLog(): array
-    {
-        if (!defined('WP_DEBUG_LOG') || !WP_DEBUG_LOG) {
-            return $this->emptyState('Enable WP_DEBUG_LOG in wp-config.php to capture log output.');
+        if ($source['filterMarker']) {
+            $lines = array_values(array_filter(
+                $rawLines,
+                static fn(string $l) => str_contains($l, ActiveLogSource::DF_MARKER)
+            ));
+            return $this->buildResponse($lines, [$this, 'parseLine']);
         }
 
-        $log_path = $this->resolveLogPath();
-        if ($log_path === null || !is_readable($log_path)) {
-            return $this->emptyState('debug.log not found or not readable.');
-        }
-
-        $lines = array_values(array_filter(
-            $this->tailLastChunk($log_path),
-            static fn(string $l) => str_contains($l, self::DF_MARKER)
-        ));
-
-        return $this->buildResponse($lines, [$this, 'parseLine']);
-    }
-
-    private function tailFileLogger(FileLogger $logger): array
-    {
-        $path = $logger->path();
-        if ($path === '' || !is_readable($path)) {
-            return $this->emptyState('dataflair-sync.log not found or not readable.');
-        }
-
-        $lines = array_values(array_filter(
-            $this->tailLastChunk($path),
-            static fn(string $l) => $l !== ''
-        ));
-
-        return $this->buildResponse($lines, [$this, 'parseFileLoggerLine']);
+        $entries = $this->groupFileLoggerLines($rawLines);
+        return $this->buildResponse($entries, [$this, 'parseFileLoggerLine']);
     }
 
     /**
@@ -149,13 +116,44 @@ final class LogsTailHandler implements AjaxHandlerInterface
         return explode("\n", rtrim($chunk));
     }
 
-    /** Return the debug.log path, respecting string WP_DEBUG_LOG values. */
-    private function resolveLogPath(): ?string
+    /**
+     * Regroup raw physical lines from FileLogger's own file into logical
+     * entries: a line starting a new "[TS UTC][LEVEL]" entry begins a new
+     * entry; any line that doesn't match is a continuation of the previous
+     * entry's message (e.g. a logged error body with embedded newlines)
+     * rather than a spurious entry of its own.
+     *
+     * @param array<int,string> $rawLines
+     * @return array<int,string>
+     */
+    private function groupFileLoggerLines(array $rawLines): array
     {
-        if (is_string(WP_DEBUG_LOG) && WP_DEBUG_LOG !== '') {
-            return WP_DEBUG_LOG;
+        $entries = [];
+        $current = null;
+
+        foreach ($rawLines as $raw) {
+            if ($raw === '') {
+                continue;
+            }
+            if (preg_match(self::FILE_LOGGER_ENTRY_START, $raw)) {
+                if ($current !== null) {
+                    $entries[] = $current;
+                }
+                $current = $raw;
+            } elseif ($current !== null) {
+                $current .= "\n" . $raw;
+            } else {
+                // Orphaned continuation at the start of the tail window
+                // (its parent line fell outside the read chunk) — surface
+                // it rather than silently dropping it.
+                $entries[] = $raw;
+            }
         }
-        return defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR . '/debug.log' : null;
+        if ($current !== null) {
+            $entries[] = $current;
+        }
+
+        return $entries;
     }
 
     /**
@@ -198,7 +196,8 @@ final class LogsTailHandler implements AjaxHandlerInterface
     }
 
     /**
-     * Parse a raw FileLogger line into a structured entry.
+     * Parse a raw FileLogger entry (possibly spanning multiple physical
+     * lines, see groupFileLoggerLines()) into a structured entry.
      *
      * Format written by FileLogger:
      *   [2026-04-25 14:05:22 UTC][INFO] Sync complete
