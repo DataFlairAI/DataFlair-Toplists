@@ -155,6 +155,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.11</h4>
+<ul>
+  <li><strong>Removed: the auto_geo "not available in your region" notice added in 2.2.10.</strong> Scoping this release to the fixed <code>id</code>/<code>slug</code> geo-targeting pattern only; <code>auto_geo</code> is being redesigned as part of a plugin-side geo-templates + page-linking feature rather than incrementally extended now. <code>auto_geo</code> itself (unchanged since 2.2.3) is unaffected. The admin <code>?dataflair_geo=</code> QA override from 2.2.10 is unrelated and stays.</li>
+</ul>
+
 <h4>2.2.10</h4>
 <ul>
   <li><strong>Added: <code>?dataflair_geo=GB</code> admin QA override.</strong> A logged-in admin (<code>manage_options</code>) can preview any country\'s geo-gated content from a plain browser URL &mdash; no VPN or custom headers needed. Ignored entirely for anyone without the capability.</li>
