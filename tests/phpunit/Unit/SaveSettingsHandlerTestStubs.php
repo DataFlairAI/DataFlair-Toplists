@@ -18,9 +18,13 @@ namespace {
             /** @var array<string,mixed> */
             public static array $options = [];
 
+            /** @var array<string,mixed> */
+            public static array $transients = [];
+
             public static function reset(): void
             {
                 self::$options = [];
+                self::$transients = [];
             }
         }
     }
@@ -56,7 +60,7 @@ namespace DataFlair\Toplists\Admin\Ajax {
     if (!function_exists(__NAMESPACE__ . '\\delete_transient')) {
         function delete_transient($key)
         {
-            unset(\SaveSettingsHandlerTestStubs::$options[$key]);
+            unset(\SaveSettingsHandlerTestStubs::$transients[$key]);
             return true;
         }
     }
