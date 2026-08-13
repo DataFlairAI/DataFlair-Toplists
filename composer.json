@@ -58,6 +58,10 @@
         "install-dev": [
             "composer install --prefer-dist --optimize-autoloader --no-interaction --no-progress"
         ],
+        "test": [
+            "composer install --prefer-dist --optimize-autoloader --no-interaction --no-progress",
+            "./vendor/bin/phpunit"
+        ],
         "perf": [
             "@php bin/perf-gate.php"
         ]
