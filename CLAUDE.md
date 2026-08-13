@@ -106,3 +106,4 @@ Before tagging a new version and pushing, ALWAYS:
 ## Parked Plans
 
 - `docs/plans/TOPLIST_PAGE_MAP.md` — toplist-to-page mapping feature, to be built on a separate branch
+- `docs/plans/PLUGIN_SIDE_GEO_TEMPLATES.md` — move geo-template/region grouping into the plugin (WP-owned mapping instead of the DataFlair backend's `list_template_id`), so a template swap propagates to every page using it instead of per-page edits. Explicitly deferred — "keep it simple" for now.
