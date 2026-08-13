@@ -3,11 +3,12 @@
  * Phase 1 — LogsCommand contract pin.
  *
  * Pins:
- *  - `--since` parses 15m, 1h, 3d, etc.
- *  - `--level` filters lines below the threshold
- *  - lines outside the DataFlair tag are ignored
+ *  - `--since` parses 15m, 1h, 3d, etc. (against the default FileLogger tail)
+ *  - `--level` filters lines below the threshold (against the default FileLogger tail)
+ *  - lines outside the DataFlair tag are ignored when tailing a shared
+ *    ErrorLogLogger destination (e.g. wp-content/debug.log)
  *  - the `dataflair_logs_tail` filter can supply a custom tail for non-default loggers
- *  - limit caps output
+ *  - limit caps output (against the default FileLogger tail)
  */
 
 declare(strict_types=1);
@@ -17,6 +18,7 @@ namespace DataFlair\Toplists\Tests\Unit\Logging;
 use Brain\Monkey;
 use Brain\Monkey\Filters;
 use DataFlair\Toplists\Cli\LogsCommand;
+use DataFlair\Toplists\Logging\ErrorLogLogger;
 use DataFlair\Toplists\Logging\LoggerFactory;
 use DataFlair\Toplists\Logging\NullLogger;
 use PHPUnit\Framework\TestCase;
@@ -24,6 +26,7 @@ use PHPUnit\Framework\TestCase;
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/NullLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/ErrorLogLogger.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/FileLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/SentryLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerFactory.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/LogsCommand.php';
@@ -58,10 +61,15 @@ final class LogsCommandTest extends TestCase
 
     public function test_tail_filters_non_dataflair_lines(): void
     {
+        // Exercises the ErrorLogLogger tail path specifically: a shared
+        // destination (e.g. wp-content/debug.log) can carry lines from
+        // other plugins/PHP itself, which must be filtered out. The
+        // default FileLogger writes to its own dedicated file and never
+        // sees foreign lines, so this scenario doesn't apply to it.
         Filters\expectApplied('dataflair_logger_level')
             ->andReturnUsing(static fn($d) => $d);
         Filters\expectApplied('dataflair_logger')
-            ->andReturnUsing(static fn($d) => $d);
+            ->andReturn(new ErrorLogLogger());
         Filters\expectApplied('dataflair_logs_tail')
             ->andReturn(null);
 
@@ -87,14 +95,16 @@ final class LogsCommandTest extends TestCase
     {
         Filters\expectApplied('dataflair_logger_level')->andReturnUsing(static fn($d) => $d);
         Filters\expectApplied('dataflair_logger')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_sync_log_path')->andReturn($this->tmp);
         Filters\expectApplied('dataflair_logs_tail')->andReturn(null);
 
-        $now = date('d-M-Y H:i:s') . ' UTC';
+        // FileLogger's own line shape: [YYYY-MM-DD HH:MM:SS UTC][LEVEL] message
+        $now = gmdate('Y-m-d H:i:s') . ' UTC';
         file_put_contents($this->tmp, implode("\n", [
-            "[$now] [DataFlair][DEBUG] noise",
-            "[$now] [DataFlair][INFO] ok",
-            "[$now] [DataFlair][WARNING] bad",
-            "[$now] [DataFlair][ERROR] real",
+            "[$now][DEBUG] noise",
+            "[$now][INFO] ok",
+            "[$now][WARNING] bad",
+            "[$now][ERROR] real",
         ]) . "\n");
 
         $out = $this->captureOutput(static function () {
@@ -103,22 +113,23 @@ final class LogsCommandTest extends TestCase
 
         $this->assertStringNotContainsString('DEBUG', $out);
         $this->assertStringNotContainsString('INFO', $out);
-        $this->assertStringContainsString('[DataFlair][WARNING] bad', $out);
-        $this->assertStringContainsString('[DataFlair][ERROR] real', $out);
+        $this->assertStringContainsString('[WARNING] bad', $out);
+        $this->assertStringContainsString('[ERROR] real', $out);
     }
 
     public function test_since_filter_drops_older_lines(): void
     {
         Filters\expectApplied('dataflair_logger_level')->andReturnUsing(static fn($d) => $d);
         Filters\expectApplied('dataflair_logger')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_sync_log_path')->andReturn($this->tmp);
         Filters\expectApplied('dataflair_logs_tail')->andReturn(null);
 
-        $now = date('d-M-Y H:i:s') . ' UTC';
-        $old = date('d-M-Y H:i:s', time() - 7200) . ' UTC';
+        $now = gmdate('Y-m-d H:i:s') . ' UTC';
+        $old = gmdate('Y-m-d H:i:s', time() - 7200) . ' UTC';
 
         file_put_contents($this->tmp, implode("\n", [
-            "[$old] [DataFlair][NOTICE] old-event",
-            "[$now] [DataFlair][NOTICE] fresh-event",
+            "[$old][NOTICE] old-event",
+            "[$now][NOTICE] fresh-event",
         ]) . "\n");
 
         $out = $this->captureOutput(static function () {
@@ -149,12 +160,13 @@ final class LogsCommandTest extends TestCase
     {
         Filters\expectApplied('dataflair_logger_level')->andReturnUsing(static fn($d) => $d);
         Filters\expectApplied('dataflair_logger')->andReturnUsing(static fn($d) => $d);
+        Filters\expectApplied('dataflair_sync_log_path')->andReturn($this->tmp);
         Filters\expectApplied('dataflair_logs_tail')->andReturn(null);
 
-        $now = date('d-M-Y H:i:s') . ' UTC';
+        $now = gmdate('Y-m-d H:i:s') . ' UTC';
         $lines = [];
         for ($i = 1; $i <= 10; $i++) {
-            $lines[] = "[$now] [DataFlair][NOTICE] event-$i";
+            $lines[] = "[$now][NOTICE] event-$i";
         }
         file_put_contents($this->tmp, implode("\n", $lines) . "\n");
 

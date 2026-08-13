@@ -2,11 +2,12 @@
 /**
  * Phase 1 — `wp dataflair logs` command.
  *
- * Tails DataFlair log lines from the configured logger. For ErrorLogLogger
- * (the default) that means parsing PHP's error_log destination and
- * returning only lines tagged `[DataFlair][...]`. For any other logger,
- * the command delegates to a filter `dataflair_logs_tail` so downstream
- * implementations (SentryLogger, file-based, etc.) can provide their own
+ * Tails DataFlair log lines from the configured logger. ErrorLogLogger and
+ * FileLogger (the default since the persistent dataflair-sync.log feature)
+ * are tailed natively — parsing PHP's error_log destination or the logger's
+ * own file respectively, each returning only DataFlair-tagged lines. For
+ * any other logger, the command delegates to a filter `dataflair_logs_tail`
+ * so downstream implementations (SentryLogger, etc.) can provide their own
  * tail.
  *
  *   wp dataflair logs                    # last hour, all levels
@@ -20,6 +21,7 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Cli;
 
 use DataFlair\Toplists\Logging\ErrorLogLogger;
+use DataFlair\Toplists\Logging\FileLogger;
 use DataFlair\Toplists\Logging\LoggerFactory;
 
 final class LogsCommand
@@ -53,14 +55,16 @@ final class LogsCommand
             : null;
 
         if (!is_array($lines)) {
-            if (!$logger instanceof ErrorLogLogger) {
+            if ($logger instanceof ErrorLogLogger) {
+                $lines = $this->tailErrorLog($since_ts, $min_lvl, $limit);
+            } elseif ($logger instanceof FileLogger) {
+                $lines = $this->tailFileLogger($logger, $since_ts, $min_lvl, $limit);
+            } else {
                 $this->warn(sprintf(
                     'Active logger is %s; no tail provider registered. Hook `dataflair_logs_tail` to return an array of log lines.',
                     get_class($logger)
                 ));
                 $lines = [];
-            } else {
-                $lines = $this->tailErrorLog($since_ts, $min_lvl, $limit);
             }
         }
 
@@ -121,6 +125,74 @@ final class LogsCommand
             $matches = array_slice($matches, -$limit);
         }
         return $matches;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function tailFileLogger(FileLogger $logger, int $since_ts, int $min_level, int $limit): array
+    {
+        $path = $logger->path();
+        if ($path === '' || !is_readable($path)) {
+            $this->warn('FileLogger path is empty or not readable: ' . $path);
+            return [];
+        }
+
+        // Stream-read the last ~512 KB to avoid loading massive logs into memory.
+        $size = filesize($path);
+        $read_bytes = min($size ?: 0, 512 * 1024);
+        $fp = fopen($path, 'rb');
+        if (!$fp) {
+            return [];
+        }
+        if ($read_bytes > 0) {
+            fseek($fp, -$read_bytes, SEEK_END);
+        }
+        $buf = stream_get_contents($fp);
+        fclose($fp);
+        if (!is_string($buf)) {
+            return [];
+        }
+
+        $matches = [];
+        foreach (explode("\n", $buf) as $raw) {
+            if ($raw === '') {
+                continue;
+            }
+            $ts = $this->extractFileLoggerTimestamp($raw);
+            if ($ts !== null && $ts < $since_ts) {
+                continue;
+            }
+            $lvl = $this->extractFileLoggerLevel($raw);
+            if ($lvl !== null && $lvl < $min_level) {
+                continue;
+            }
+            $matches[] = $raw;
+        }
+
+        if (count($matches) > $limit) {
+            $matches = array_slice($matches, -$limit);
+        }
+        return $matches;
+    }
+
+    private function extractFileLoggerTimestamp(string $line): ?int
+    {
+        // FileLogger format: [YYYY-MM-DD HH:MM:SS UTC][LEVEL] message
+        if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\]/', $line, $m)) {
+            $ts = strtotime($m[1] . ' UTC');
+            return is_int($ts) ? $ts : null;
+        }
+        return null;
+    }
+
+    private function extractFileLoggerLevel(string $line): ?int
+    {
+        if (preg_match('/^\[[^\]]+\]\[([A-Z]+)\]/', $line, $m)) {
+            $lvl = strtolower($m[1]);
+            return self::LEVELS[$lvl] ?? null;
+        }
+        return null;
     }
 
     private function extractTimestamp(string $line): ?int
