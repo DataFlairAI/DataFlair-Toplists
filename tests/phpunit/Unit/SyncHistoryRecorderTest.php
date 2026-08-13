@@ -119,6 +119,61 @@ final class SyncHistoryRecorderTest extends TestCase
         $this->assertStringContainsString('2 errors', $entries[0]['detail']);
     }
 
+    public function test_page_level_partial_retry_does_not_flush_until_run_completes(): void
+    {
+        $rec = new SyncHistoryRecorder();
+
+        // Page 1: normal, mid-run.
+        $rec->onBatchFinished([
+            'type' => 'brands', 'page' => 1, 'items_done' => 10, 'errors' => 0,
+            'partial' => false, 'is_complete' => false, 'elapsed_seconds' => 2.0,
+        ]);
+        // Page 2 hits its wall-clock budget — a retry signal (next_page
+        // stays on page 2), NOT the run ending. Must not flush yet.
+        $rec->onBatchFinished([
+            'type' => 'brands', 'page' => 2, 'items_done' => 3, 'errors' => 0,
+            'partial' => true, 'is_complete' => false, 'elapsed_seconds' => 25.0,
+        ]);
+        $this->assertArrayNotHasKey(SyncHistoryRecorder::OPTION_KEY, \SyncFunctionStubsStore::$options);
+
+        // Page 2 retried, succeeds this time.
+        $rec->onBatchFinished([
+            'type' => 'brands', 'page' => 2, 'items_done' => 5, 'errors' => 0,
+            'partial' => false, 'is_complete' => false, 'elapsed_seconds' => 3.0,
+        ]);
+        $this->assertArrayNotHasKey(SyncHistoryRecorder::OPTION_KEY, \SyncFunctionStubsStore::$options);
+
+        // Page 3: the run genuinely completes.
+        $rec->onBatchFinished([
+            'type' => 'brands', 'page' => 3, 'items_done' => 7, 'errors' => 0,
+            'partial' => false, 'is_complete' => true, 'elapsed_seconds' => 1.5,
+        ]);
+
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
+        $this->assertCount(1, $entries, 'The whole run must produce exactly one history entry.');
+        $this->assertSame('success', $entries[0]['status']);
+        // Totals span every call including the partial retry: 10+3+5+7=25.
+        $this->assertStringContainsString('25 synced', $entries[0]['title']);
+    }
+
+    public function test_batch_that_is_both_terminal_and_budget_limited_reports_partial(): void
+    {
+        // ToplistSyncService's "budget already spent" fallback branch can
+        // report partial=true and is_complete=true together (this page IS
+        // the last page, but budget ran out before any items were synced
+        // this call) — the flush must still happen (is_complete=true) and
+        // must still be labelled 'partial', not 'success'.
+        $rec = new SyncHistoryRecorder();
+        $rec->onBatchFinished([
+            'type' => 'toplists', 'page' => 5, 'items_done' => 0, 'errors' => 0,
+            'partial' => true, 'is_complete' => true, 'elapsed_seconds' => 0.0,
+        ]);
+
+        $entries = \SyncFunctionStubsStore::$options[SyncHistoryRecorder::OPTION_KEY];
+        $this->assertCount(1, $entries);
+        $this->assertSame('partial', $entries[0]['status']);
+    }
+
     public function test_item_failed_records_error_entry(): void
     {
         $rec = new SyncHistoryRecorder();

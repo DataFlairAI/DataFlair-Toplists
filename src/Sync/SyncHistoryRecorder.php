@@ -85,7 +85,14 @@ final class SyncHistoryRecorder
         $acc['elapsed'] += $elapsed;
         $acc['pages']   += 1;
 
-        if ($isComplete || $partial) {
+        // $partial alone means "this page hit its budget and will be
+        // auto-retried" (see BrandSyncService/ToplistSyncService — next_page
+        // stays on the same page), not "the run is over" — both callers
+        // already compute $isComplete as false whenever a retry is still
+        // pending, so only $isComplete should trigger a flush. Flushing on
+        // $partial too caused one continuous run to fragment into multiple
+        // undercounted/misleading history entries.
+        if ($isComplete) {
             // Flush to history as a single batch entry.
             $status = ($acc['errors'] > 0 || $partial) ? 'partial' : 'success';
             $label  = ucfirst($type) . ' sync';
