@@ -305,6 +305,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Rest\\Controllers\\ToplistsController' => __DIR__ . '/../..' . '/src/Rest/Controllers/ToplistsController.php',
         'DataFlair\\Toplists\\Rest\\RestBootstrap' => __DIR__ . '/../..' . '/src/Rest/RestBootstrap.php',
         'DataFlair\\Toplists\\Rest\\RestRouter' => __DIR__ . '/../..' . '/src/Rest/RestRouter.php',
+        'DataFlair\\Toplists\\Support\\ActiveLogSource' => __DIR__ . '/../..' . '/includes/Support/ActiveLogSource.php',
         'DataFlair\\Toplists\\Support\\EnvironmentDetector' => __DIR__ . '/../..' . '/src/Support/EnvironmentDetector.php',
         'DataFlair\\Toplists\\Support\\RelativeTimeFormatter' => __DIR__ . '/../..' . '/src/Support/RelativeTimeFormatter.php',
         'DataFlair\\Toplists\\Support\\UrlTransformer' => __DIR__ . '/../..' . '/src/Support/UrlTransformer.php',

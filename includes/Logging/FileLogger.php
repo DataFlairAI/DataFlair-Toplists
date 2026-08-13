@@ -58,6 +58,12 @@ final class FileLogger implements LoggerInterface
         return $this->path;
     }
 
+    /** Path of the single-generation rotated backup written by maybeRotate(). */
+    public function rotatedPath(): string
+    {
+        return $this->path . '.1';
+    }
+
     private function write(string $level, string $message, array $context): void
     {
         if ((self::LEVELS[$level] ?? 0) < $this->minLevel) {
@@ -90,7 +96,7 @@ final class FileLogger implements LoggerInterface
         if ($size === false || $size < self::MAX_BYTES) {
             return;
         }
-        $rotated = $this->path . '.1';
+        $rotated = $this->rotatedPath();
         if (is_file($rotated)) {
             @unlink($rotated);
         }
