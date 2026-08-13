@@ -32,42 +32,26 @@ final class BlockRegistrar
      */
     public function register(): void
     {
-        add_action('init', [$this, 'registerBlock']);
+        // WordPress auto-registers blocks from block.json. Instead of re-registering,
+        // use a filter to add the render callback to the auto-registered block type.
+        add_filter('register_block_type_args', [$this, 'addRenderCallback'], 10, 2);
         add_action('enqueue_block_editor_assets', [$this->editorAssets, 'enqueue']);
     }
 
     /**
-     * Direct entry point for the `init` action — exposed public so the hook
-     * callback is testable in isolation.
+     * Filter callback to add render_callback to the auto-registered block type.
+     * WordPress auto-registers blocks from block.json, so we use this filter
+     * to inject the render callback instead of re-registering.
+     *
+     * @param array  $args Block type arguments.
+     * @param string $block_type Block type name.
      */
-    public function registerBlock(): void
+    public function addRenderCallback(array $args, string $block_type): array
     {
-        if (!function_exists('register_block_type')) {
-            return;
+        if ($block_type === 'dataflair-toplists/toplist') {
+            $args['render_callback'] = [$this->block, 'render'];
         }
-
-        // Guard against double registration (can happen if multiple hooks fire).
-        if ($this->isBlockRegistered()) {
-            return;
-        }
-
-        $block_json = $this->resolveBlockJsonPath();
-        if ($block_json === null) {
-            return;
-        }
-
-        register_block_type($block_json, [
-            'render_callback' => [$this->block, 'render'],
-            'version'         => $this->version,
-        ]);
-    }
-
-    private function isBlockRegistered(): bool
-    {
-        if (!function_exists('get_block_type')) {
-            return false;
-        }
-        return get_block_type('dataflair-toplists/toplist') !== null;
+        return $args;
     }
 
     private function resolveBlockJsonPath(): ?string
