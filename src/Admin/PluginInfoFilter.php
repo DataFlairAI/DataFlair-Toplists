@@ -76,7 +76,7 @@ final class PluginInfoFilter
         $res->author        = '<a href="https://dataflair.ai">DataFlair</a>';
         $res->homepage      = 'https://dataflair.ai';
         $res->requires      = '6.3';
-        $res->tested        = '6.9';
+        $res->tested        = '7.0';
         $res->requires_php  = '8.1';
 
         $res->sections = [
@@ -143,10 +143,10 @@ final class PluginInfoFilter
 <h4>Admin Interface</h4>
 <ul>
   <li><strong>Dashboard:</strong> API health tile, stat tiles (brands synced, toplists count, last sync + next-in), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. Sync Brands and Sync Toplists buttons with live progress toast.</li>
-  <li><strong>Toplists list:</strong> search, bulk re-sync and bulk delete, per-row accordion with Items tab (position/brand/offer/synced status per item), Raw JSON tab (pretty-printed blob with copy + download), and Alt Geos tab.</li>
+  <li><strong>Toplists list:</strong> search, bulk re-sync and bulk delete, per-row accordion with Items tab (position/brand/offer/synced status per item) and Raw JSON tab (pretty-printed blob with copy + download).</li>
   <li><strong>Brands:</strong> full brand table with review URL override inline-edit cell.</li>
   <li><strong>Tools:</strong> Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered DataFlair entries from debug.log, severity colouring, Download), API Preview tab.</li>
-  <li><strong>Settings:</strong> API Connection tab (bearer token + Test Connection), Customizations tab (colour pickers with live preview), Sync Schedule tab (cadence selects, retry count, alert email — saves and reschedules WP-Cron hooks). Dirty-state amber pill + beforeunload guard.</li>
+  <li><strong>Settings:</strong> API Connection tab (bearer token + Test Connection), Customizations tab (colour pickers with live preview), Sync Schedule tab (cadence selects, retry count, alert email — saves and reschedules WP-Cron hooks), Geo-Targeting tab (site-level on/off toggle for the render gate). Dirty-state amber pill + beforeunload guard.</li>
   <li>REST API endpoints for the block editor.</li>
 </ul>
         ';
@@ -155,6 +155,25 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.2.7</h4>
+<ul>
+  <li><strong>Added: site-level "Enable geo-targeting" toggle</strong> in Settings &rarr; Geo-Targeting (default on). Disabling it makes every toplist render for every visitor, bypassing country/market restrictions &mdash; intended for non-production/test sites only, since it removes the compliance-driven visibility gate.</li>
+  <li><strong>Fixed: <code>cta_mode</code> / <code>ctamode</code> shortcode-attribute aliases were declared but never normalized</strong> into the canonical <code>ctaMode</code> key, so <code>cta_mode="dual_app"</code> silently had no effect.</li>
+</ul>
+
+<h4>2.2.4 &ndash; 2.2.6</h4>
+<ul>
+  <li><strong>Fixed: the DataFlair Toplist Gutenberg block was never registered</strong> from the canonical <code>Plugin::registerHooks()</code> bootstrap, so the block rendered empty on both the editor and the frontend.</li>
+  <li><strong>Fixed: block registration now uses the <code>register_block_type_args</code> filter</strong> to attach the render callback to WordPress\'s auto-registered <code>block.json</code> block, instead of a second <code>register_block_type()</code> call that raised a <code>WP_Block_Type_Registry</code> double-registration notice.</li>
+</ul>
+
+<h4>2.2.3</h4>
+<ul>
+  <li><strong>Added: visitor geo-targeting on the toplist render path.</strong> Each synced toplist carries a <code>data.geo</code> payload (<code>global</code> / <code>country</code> / <code>market</code>); <code>GeoRenderGate</code> hides a toplist from visitors whose resolved country doesn\'t match, using <code>CF-IPCountry</code> / Cloudflare-style geo headers via <code>VisitorGeoResolver</code>.</li>
+  <li><strong>Added: <code>auto_geo</code> shortcode/block attribute.</strong> Given a template ID, <code>GeoFamilySelector</code> auto-picks the right regional toplist variant for the visitor (exact country match &rarr; covering market &rarr; global fallback) instead of requiring a fixed toplist ID per page.</li>
+  <li><strong>Removed:</strong> the dead "Alt Geos" admin tab, superseded by automatic geo-targeting.</li>
+</ul>
+
 <h4>2.2.2</h4>
 <ul>
   <li><strong>UX: Admin page header layout fixes.</strong> <code>.df-page-header</code> set to <code>display:block</code> and <code>.df-page-header__actions</code> always right-aligned via <code>display:block; text-align:right</code> — prevents the action buttons from collapsing on narrower admin widths.</li>

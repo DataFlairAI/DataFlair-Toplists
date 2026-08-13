@@ -64,10 +64,10 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 
 ### Admin Interface
 - **DataFlair → Dashboard:** API health tile, stat tiles (brands synced, toplists, last sync + next-run), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. One-click Sync Brands and Sync Toplists buttons with live toast feedback.
-- **DataFlair → Toplists:** search + sort, bulk re-sync and bulk delete, per-row accordion showing Items (position/brand/offer/status pill), Raw JSON (copy + download), and Alt Geos tabs.
+- **DataFlair → Toplists:** search + sort, bulk re-sync and bulk delete, per-row accordion showing Items (position/brand/offer/status pill) and Raw JSON (copy + download) tabs.
 - **DataFlair → Brands:** full brand table with review URL override inline-edit cell.
 - **DataFlair → Tools:** Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered `[DataFlair]` debug.log entries with severity colouring + Download), API Preview tab.
-- **DataFlair → Settings:** API Connection (bearer token + Test Connection), Customizations (colour pickers with live preview), Sync Schedule (cadence, retry count, alert email — reschedules WP-Cron on save). Dirty-state amber pill + `beforeunload` guard.
+- **DataFlair → Settings:** API Connection (bearer token + Test Connection), Customizations (colour pickers with live preview), Sync Schedule (cadence, retry count, alert email — reschedules WP-Cron on save), Geo-Targeting (site-level on/off toggle for the render gate). Dirty-state amber pill + `beforeunload` guard.
 - REST API endpoints for the block editor (`/wp-json/dataflair/v1/toplists`, `/wp-json/dataflair/v1/casinos`)
 
 ### Security
@@ -427,6 +427,14 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.7
+- **Added: site-level "Enable geo-targeting" toggle.** New Settings → Geo-Targeting tab controls `dataflair_geo_targeting_enabled` (default on). Disabling it makes every toplist render for every visitor, bypassing country/market restrictions — intended for non-production/test sites only, since it removes the compliance-driven visibility gate.
+- **Fixed: `cta_mode` / `ctamode` shortcode-attribute aliases were declared but never normalized** into the canonical `ctaMode` key, so `cta_mode="dual_app"` silently had no effect.
+
+### 2.2.4 – 2.2.6
+- **Fixed: the DataFlair Toplist Gutenberg block was never registered** from the canonical `Plugin::registerHooks()` bootstrap, so the block rendered empty on both the editor and the frontend.
+- **Fixed: block registration now uses the `register_block_type_args` filter** to attach the render callback to WordPress's auto-registered `block.json` block, instead of a second `register_block_type()` call that raised a `WP_Block_Type_Registry` double-registration notice.
+
 ### 2.2.3
 - **Added: Visitor geo-targeting on toplist render path.** `VisitorGeoResolver` detects visitor location from Cloudflare headers and applies the appropriate geo-rule to filter and rank toplist items. Integrates seamlessly with the existing toplist render pipeline.
 - **Refactored: Retired Alt Geos tab in admin.** The legacy manual geo-override interface replaced by automatic visitor-based geo-detection. Simplifies the Toplists admin page and reduces manual intervention.
@@ -766,4 +774,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.6 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.2.7 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
