@@ -115,4 +115,18 @@ final class SaveSettingsHandlerTest extends TestCase
         // Only the whitelisted brands_api_version always writes (defaults v1).
         $this->assertSame(['dataflair_brands_api_version' => 'v1'], \SaveSettingsHandlerTestStubs::$options);
     }
+
+    public function test_delete_transient_does_not_touch_the_options_store(): void
+    {
+        \SaveSettingsHandlerTestStubs::$options['dataflair_api_health'] = 'unrelated-option-value';
+
+        (new SaveSettingsHandler())->handle([]);
+
+        // The unconditional delete_transient('dataflair_api_health') call at
+        // the end of handle() must clear the transients store, not options —
+        // even when an (unrelated in real WP) option happens to share the name.
+        $this->assertArrayHasKey('dataflair_api_health', \SaveSettingsHandlerTestStubs::$options);
+        $this->assertSame('unrelated-option-value', \SaveSettingsHandlerTestStubs::$options['dataflair_api_health']);
+        $this->assertArrayNotHasKey('dataflair_api_health', \SaveSettingsHandlerTestStubs::$transients);
+    }
 }

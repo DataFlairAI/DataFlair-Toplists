@@ -427,6 +427,9 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.11
+- **Removed: the auto_geo "not available in your region" notice added in 2.2.10.** Scoping this release to the fixed `id`/`slug` geo-targeting pattern only; `auto_geo` is being redesigned as part of a plugin-side geo-templates + page-linking feature (parked in `docs/plans/PLUGIN_SIDE_GEO_TEMPLATES.md`) rather than incrementally extended now. `auto_geo` itself (unchanged since 2.2.3) is unaffected. The admin `?dataflair_geo=` QA override from 2.2.10 is unrelated and stays.
+
 ### 2.2.10
 - **Added: `?dataflair_geo=GB` admin QA override.** A logged-in admin (`manage_options`) can preview any country's geo-gated content from a plain browser URL — no VPN or custom headers needed. Ignored entirely for anyone without the capability, so it can never be used to bypass the compliance-driven restriction the gate exists to enforce.
 - **Added: "these brands aren't available in your country or region" notice for unmatched `auto_geo` families.** Scoped to only the `auto_geo`/`GeoFamilySelector` path — fixed `id`/`slug` blocks (the common pattern of several region-locked blocks side by side on one page) stay silent as before, since showing "unavailable" on a block that was simply never meant for that visitor would be wrong.
@@ -785,4 +788,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.10 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.2.11 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0

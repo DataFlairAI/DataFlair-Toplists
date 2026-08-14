@@ -14,10 +14,17 @@ use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/ApiHealthHandler.php';
+require_once __DIR__ . '/ApiHealthHandlerTestStubs.php';
 
 final class ApiHealthHandlerTest extends TestCase
 {
-    protected function setUp(): void    { parent::setUp(); Monkey\setUp(); }
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Monkey\setUp();
+        \ApiHealthHandlerTestStubs::reset();
+        \SaveSettingsHandlerTestStubs::reset();
+    }
     protected function tearDown(): void { Monkey\tearDown(); parent::tearDown(); }
 
     public function test_returns_cached_result_when_transient_exists(): void
@@ -42,6 +49,9 @@ final class ApiHealthHandlerTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertSame('unconfigured', $result['data']['status']);
+        $this->assertSame('unconfigured', \ApiHealthHandlerTestStubs::$transients['dataflair_api_health']['value']['status']);
+        $this->assertSame(60, \ApiHealthHandlerTestStubs::$transients['dataflair_api_health']['expiration']);
+        $this->assertSame('unconfigured', \SaveSettingsHandlerTestStubs::$options['dataflair_api_health_last']['status']);
     }
 
     public function test_returns_failing_on_wp_error(): void
@@ -64,6 +74,8 @@ final class ApiHealthHandlerTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertSame('failing', $result['data']['status']);
         $this->assertStringContainsString('cURL', $result['data']['error']);
+        $this->assertSame('failing', \ApiHealthHandlerTestStubs::$transients['dataflair_api_health']['value']['status']);
+        $this->assertSame('failing', \SaveSettingsHandlerTestStubs::$options['dataflair_api_health_last']['status']);
     }
 
     public function test_returns_healthy_on_200(): void
@@ -83,5 +95,7 @@ final class ApiHealthHandlerTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertSame('healthy', $result['data']['status']);
+        $this->assertSame('healthy', \ApiHealthHandlerTestStubs::$transients['dataflair_api_health']['value']['status']);
+        $this->assertSame('healthy', \SaveSettingsHandlerTestStubs::$options['dataflair_api_health_last']['status']);
     }
 }

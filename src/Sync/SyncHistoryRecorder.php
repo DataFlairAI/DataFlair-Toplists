@@ -70,7 +70,7 @@ final class SyncHistoryRecorder
                 'pages'   => 0,
             ];
         } else {
-            $stored = \get_transient($accKey);
+            $stored = get_transient($accKey);
             $acc    = is_array($stored) ? $stored : [
                 'ts'      => time(),
                 'synced'  => 0,
@@ -85,7 +85,14 @@ final class SyncHistoryRecorder
         $acc['elapsed'] += $elapsed;
         $acc['pages']   += 1;
 
-        if ($isComplete || $partial) {
+        // $partial alone means "this page hit its budget and will be
+        // auto-retried" (see BrandSyncService/ToplistSyncService — next_page
+        // stays on the same page), not "the run is over" — both callers
+        // already compute $isComplete as false whenever a retry is still
+        // pending, so only $isComplete should trigger a flush. Flushing on
+        // $partial too caused one continuous run to fragment into multiple
+        // undercounted/misleading history entries.
+        if ($isComplete) {
             // Flush to history as a single batch entry.
             $status = ($acc['errors'] > 0 || $partial) ? 'partial' : 'success';
             $label  = ucfirst($type) . ' sync';
@@ -104,10 +111,10 @@ final class SyncHistoryRecorder
                 'detail' => $detail,
                 'source' => $type,
             ]);
-            \delete_transient($accKey);
+            delete_transient($accKey);
         } else {
             // Not done yet — persist accumulator until next page arrives.
-            \set_transient($accKey, $acc, self::ACC_TTL);
+            set_transient($accKey, $acc, self::ACC_TTL);
         }
     }
 
@@ -127,7 +134,7 @@ final class SyncHistoryRecorder
         $detail = $this->truncate($error, 240);
 
         // Also clear any in-progress accumulator so the next run starts fresh.
-        \delete_transient('dataflair_sync_acc_' . $type);
+        delete_transient('dataflair_sync_acc_' . $type);
 
         $this->push([
             'ts'     => time(),
@@ -155,13 +162,13 @@ final class SyncHistoryRecorder
      */
     public function all(): array
     {
-        $stored = \get_option(self::OPTION_KEY, []);
+        $stored = get_option(self::OPTION_KEY, []);
         return is_array($stored) ? array_values($stored) : [];
     }
 
     public function clear(): void
     {
-        \update_option(self::OPTION_KEY, [], false);
+        update_option(self::OPTION_KEY, [], false);
     }
 
     /**
@@ -175,7 +182,7 @@ final class SyncHistoryRecorder
             $all = array_slice($all, 0, self::MAX_ENTRIES);
         }
         // Autoload off — this option grows and is read only on the Dashboard.
-        \update_option(self::OPTION_KEY, $all, false);
+        update_option(self::OPTION_KEY, $all, false);
     }
 
     private function truncate(string $text, int $max): string

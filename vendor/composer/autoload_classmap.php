@@ -223,6 +223,7 @@ return array(
     'DataFlair\\Toplists\\Rest\\Controllers\\ToplistsController' => $baseDir . '/src/Rest/Controllers/ToplistsController.php',
     'DataFlair\\Toplists\\Rest\\RestBootstrap' => $baseDir . '/src/Rest/RestBootstrap.php',
     'DataFlair\\Toplists\\Rest\\RestRouter' => $baseDir . '/src/Rest/RestRouter.php',
+    'DataFlair\\Toplists\\Support\\ActiveLogSource' => $baseDir . '/includes/Support/ActiveLogSource.php',
     'DataFlair\\Toplists\\Support\\EnvironmentDetector' => $baseDir . '/src/Support/EnvironmentDetector.php',
     'DataFlair\\Toplists\\Support\\RelativeTimeFormatter' => $baseDir . '/src/Support/RelativeTimeFormatter.php',
     'DataFlair\\Toplists\\Support\\UrlTransformer' => $baseDir . '/src/Support/UrlTransformer.php',

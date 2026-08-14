@@ -497,7 +497,7 @@ final class ToplistShortcodeTest extends TestCase
         $this->assertSame('EuroBrand', $card->calls[0]->item['brand']['name']);
     }
 
-    public function test_auto_geo_ambiguous_covering_markets_yields_unavailable_notice(): void
+    public function test_auto_geo_ambiguous_covering_markets_yields_no_render(): void
     {
         $family = [
             $this->buildFamilyRow(1, ['geo_type' => 'market', 'code' => 'EU', 'coveredCountries' => ['GB', 'DE']], [['brand' => ['name' => 'EuroBrand'], 'position' => 1]]),
@@ -507,35 +507,7 @@ final class ToplistShortcodeTest extends TestCase
 
         $html = $sc->render(['template' => 5, 'auto_geo' => 'true']);
 
-        $this->assertStringContainsString('dataflair-geo-unavailable', $html);
-        $this->assertStringContainsString("aren't available in your country or region", $html);
-    }
-
-    public function test_auto_geo_no_family_yields_unavailable_notice_not_empty_family_error(): void
-    {
-        $sc = $this->shortcode($this->stubRepo(null, []), null, null, $this->stubGeoResolver('GB'));
-
-        $html = $sc->render(['template' => 5, 'auto_geo' => 'true']);
-
-        $this->assertStringContainsString('dataflair-geo-unavailable', $html);
-    }
-
-    public function test_fixed_id_geo_gate_stays_silent_never_shows_unavailable_notice(): void
-    {
-        // Layer 1 (GeoRenderGate, fixed id/slug) must never show the notice —
-        // pages commonly carry several region-locked blocks side by side,
-        // and only one is meant to be visible to any given visitor. Showing
-        // "unavailable" on the others would be wrong: they were never meant
-        // for that visitor to begin with. Only Layer 2 (auto_geo family
-        // selection) shows the notice — see the auto_geo tests above.
-        $items = [['brand' => ['name' => 'Acme'], 'position' => 1]];
-        $row   = $this->buildToplistRow($items, 'Canada Casinos', null, ['geo_type' => 'country', 'code' => 'CA']);
-        $sc    = $this->shortcode($this->stubRepo($row), null, null, $this->stubGeoResolver('GB'));
-
-        $html = $sc->render(['id' => 42]);
-
         $this->assertSame('', $html);
-        $this->assertStringNotContainsString('dataflair-geo-unavailable', $html);
     }
 
     public function test_auto_geo_falls_back_to_global_when_no_country_or_market_match(): void

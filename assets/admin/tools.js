@@ -85,11 +85,15 @@
     /* ── Logs tab ───────────────────────────────────────────────── */
 
     var LEVEL_CLASS = {
-        error:   'df-log--error',
-        warning: 'df-log--warning',
-        warn:    'df-log--warning',
-        info:    'df-log--info',
-        debug:   'df-log--debug',
+        debug:     'df-log--debug',
+        info:      'df-log--info',
+        notice:    'df-log--notice',
+        warning:   'df-log--warning',
+        warn:      'df-log--warning',
+        error:     'df-log--error',
+        critical:  'df-log--critical',
+        alert:     'df-log--alert',
+        emergency: 'df-log--emergency',
     };
 
     function renderLogEntry(e) {

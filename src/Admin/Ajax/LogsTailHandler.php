@@ -1,15 +1,11 @@
 <?php
 /**
- * Phase 9.6 (admin UX redesign) — Tail the WP debug log, filtered to
- * DataFlair entries.
+ * Phase 9.6 (admin UX redesign) — Tail the active DataFlair log.
  *
- * Reads `wp-content/debug.log`, retains only lines that contain the
- * `[DataFlair]` prefix written by ErrorLogLogger, parses `[LEVEL]` for
- * severity colouring, and returns the last 200 entries newest-first.
- *
- * Guards:
- *   - WP_DEBUG_LOG not defined / false  → empty-state message
- *   - Log file missing or unreadable    → empty-state message
+ * Which file(s) to read, and whether [DataFlair]-marker filtering applies,
+ * is resolved by ActiveLogSource (includes/Support/ActiveLogSource.php)
+ * from the currently active logger (LoggerFactory::get()) — see that
+ * class's docblock for the ErrorLogLogger/FileLogger/unsupported dispatch.
  *
  * Output: { entries: [ { line, level, ts, message }, … ], total, truncated }
  */
@@ -19,54 +15,75 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
+use DataFlair\Toplists\Support\ActiveLogSource;
 
 final class LogsTailHandler implements AjaxHandlerInterface
 {
-    private const MAX_LINES   = 200;
-    private const DF_MARKER   = '[DataFlair]';
+    private const MAX_LINES = 200;
+
+    /** Start of a FileLogger entry: "[YYYY-MM-DD HH:MM:SS UTC][LEVEL] ...". */
+    private const FILE_LOGGER_ENTRY_START = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\]\[\w+\]/';
 
     public function handle(array $request): array
     {
-        if (!defined('WP_DEBUG_LOG') || !WP_DEBUG_LOG) {
-            return ['success' => true, 'data' => [
-                'entries'   => [],
-                'total'     => 0,
-                'truncated' => false,
-                'notice'    => 'Enable WP_DEBUG_LOG in wp-config.php to capture log output.',
-            ]];
+        $source = (new ActiveLogSource())->resolve();
+
+        if ($source['error'] !== null) {
+            return $this->emptyState($source['error']);
         }
 
-        $log_path = $this->resolveLogPath();
-        if ($log_path === null || !is_readable($log_path)) {
-            return ['success' => true, 'data' => [
-                'entries'   => [],
-                'total'     => 0,
-                'truncated' => false,
-                'notice'    => 'debug.log not found or not readable.',
-            ]];
+        $rawLines = [];
+        foreach ($source['paths'] as $path) {
+            $rawLines = array_merge($rawLines, $this->tailLastChunk($path));
         }
 
-        $df_lines  = $this->tailFilteredLines($log_path);
-        $total     = count($df_lines);
+        if ($source['filterMarker']) {
+            $lines = array_values(array_filter(
+                $rawLines,
+                static fn(string $l) => str_contains($l, ActiveLogSource::DF_MARKER)
+            ));
+            return $this->buildResponse($lines, [$this, 'parseLine']);
+        }
+
+        $entries = $this->groupFileLoggerLines($rawLines);
+        return $this->buildResponse($entries, [$this, 'parseFileLoggerLine']);
+    }
+
+    /**
+     * @param array<int,string> $lines
+     */
+    private function buildResponse(array $lines, callable $parser): array
+    {
+        $total     = count($lines);
         $truncated = $total > self::MAX_LINES;
-        $slice     = array_slice($df_lines, -self::MAX_LINES);
+        $slice     = array_slice($lines, -self::MAX_LINES);
         $slice     = array_reverse($slice);   // newest-first
 
-        $entries = array_map([$this, 'parseLine'], $slice);
-
         return ['success' => true, 'data' => [
-            'entries'   => $entries,
+            'entries'   => array_map($parser, $slice),
             'total'     => $total,
             'truncated' => $truncated,
             'notice'    => '',
         ]];
     }
 
+    private function emptyState(string $notice): array
+    {
+        return ['success' => true, 'data' => [
+            'entries'   => [],
+            'total'     => 0,
+            'truncated' => false,
+            'notice'    => $notice,
+        ]];
+    }
+
     /**
-     * Read only the last 2MB of the log file and return lines containing
-     * the DataFlair marker. Avoids loading a large debug.log into memory.
+     * Read only the last 2MB of a file, dropping any leading partial line.
+     * Avoids loading a large log file into memory.
+     *
+     * @return array<int,string>
      */
-    private function tailFilteredLines(string $path): array
+    private function tailLastChunk(string $path): array
     {
         $chunk_size = 2 * 1024 * 1024; // 2MB
         $size       = filesize($path);
@@ -96,23 +113,53 @@ final class LogsTailHandler implements AjaxHandlerInterface
             }
         }
 
-        $lines = explode("\n", rtrim($chunk));
-        return array_values(array_filter($lines, static fn(string $l) => str_contains($l, self::DF_MARKER)));
+        return explode("\n", rtrim($chunk));
     }
 
-    /** Return the log file path, respecting string WP_DEBUG_LOG values. */
-    private function resolveLogPath(): ?string
+    /**
+     * Regroup raw physical lines from FileLogger's own file into logical
+     * entries: a line starting a new "[TS UTC][LEVEL]" entry begins a new
+     * entry; any line that doesn't match is a continuation of the previous
+     * entry's message (e.g. a logged error body with embedded newlines)
+     * rather than a spurious entry of its own.
+     *
+     * @param array<int,string> $rawLines
+     * @return array<int,string>
+     */
+    private function groupFileLoggerLines(array $rawLines): array
     {
-        if (is_string(WP_DEBUG_LOG) && WP_DEBUG_LOG !== '') {
-            return WP_DEBUG_LOG;
+        $entries = [];
+        $current = null;
+
+        foreach ($rawLines as $raw) {
+            if ($raw === '') {
+                continue;
+            }
+            if (preg_match(self::FILE_LOGGER_ENTRY_START, $raw)) {
+                if ($current !== null) {
+                    $entries[] = $current;
+                }
+                $current = $raw;
+            } elseif ($current !== null) {
+                $current .= "\n" . $raw;
+            } else {
+                // Orphaned continuation at the start of the tail window
+                // (its parent line fell outside the read chunk) — surface
+                // it rather than silently dropping it.
+                $entries[] = $raw;
+            }
         }
-        return defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR . '/debug.log' : null;
+        if ($current !== null) {
+            $entries[] = $current;
+        }
+
+        return $entries;
     }
 
     /**
      * Parse a raw log line into a structured entry.
      *
-     * Typical format written by ErrorLogLogger:
+     * Typical format written by ErrorLogLogger via PHP's error_log():
      *   [25-Apr-2026 14:05:22 UTC] [DataFlair][INFO] Sync complete
      * or plain:
      *   [DataFlair][ERROR] Something went wrong
@@ -145,6 +192,32 @@ final class LogsTailHandler implements AjaxHandlerInterface
             'ts'      => $ts,
             'level'   => $level,
             'message' => trim($message),
+        ];
+    }
+
+    /**
+     * Parse a raw FileLogger entry (possibly spanning multiple physical
+     * lines, see groupFileLoggerLines()) into a structured entry.
+     *
+     * Format written by FileLogger:
+     *   [2026-04-25 14:05:22 UTC][INFO] Sync complete
+     */
+    private function parseFileLoggerLine(string $line): array
+    {
+        if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\]\[(\w+)\]\s*(.*)$/s', $line, $m)) {
+            return [
+                'line'    => $line,
+                'ts'      => $m[1] . ' UTC',
+                'level'   => strtolower($m[2]),
+                'message' => trim($m[3]),
+            ];
+        }
+
+        return [
+            'line'    => $line,
+            'ts'      => '',
+            'level'   => 'info',
+            'message' => trim($line),
         ];
     }
 }
