@@ -1,0 +1,83 @@
+name: phpunit
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  phpunit:
+    name: PHPUnit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, json
+          tools: composer
+          coverage: none
+
+      - name: Composer install
+        id: composer_install
+        run: composer install --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+      - name: Run PHPUnit (full suite)
+        run: ./vendor/bin/phpunit
+
+      # Guards against a recurring bug class in this repo: a test file only
+      # passes as part of the full suite because some other *Test.php file,
+      # loaded earlier in the same shared process by PHPUnit's directory
+      # discovery, happens to declare a global (or namespace-matching)
+      # function the subject class falls back to. --filter doesn't isolate
+      # against this (discovery still requires every *Test.php file first),
+      # so each changed test file is run as its own bare-path invocation.
+      - name: Run changed test files in isolation
+        # Referencing cancelled() removes Actions' implicit success() guard, so
+        # this still runs after a red full suite. Do not run without dependencies.
+        if: ${{ !cancelled() && steps.composer_install.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            DIFF_RANGE="${BASE_SHA}...${HEAD_SHA}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
+              BASE_SHA=$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || echo "$HEAD_SHA")
+            fi
+            DIFF_RANGE="${BASE_SHA}..${HEAD_SHA}"
+          fi
+
+          CHANGED=$(git diff --name-only --diff-filter=ACMR "$DIFF_RANGE" -- tests/phpunit | grep -E '/[^/]*Test\.php$' || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No changed test files to isolate."
+            exit 0
+          fi
+
+          echo "Changed test files:"
+          echo "$CHANGED"
+          echo
+
+          STATUS=0
+          while IFS= read -r file; do
+            echo "::group::phpunit $file"
+            ./vendor/bin/phpunit "$file" || STATUS=1
+            echo "::endgroup::"
+          done <<< "$CHANGED"
+
+          exit $STATUS
