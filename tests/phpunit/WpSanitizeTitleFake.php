@@ -5,7 +5,8 @@
  * Real WordPress hooks the `sanitize_title` filter to `sanitize_title_with_dashes()`
  * by default (wp-includes/default-filters.php), so a plain `sanitize_title($x)`
  * call is `remove_accents($x)` run through that dash-normalizing pipeline
- * (wp-includes/formatting.php). This class mirrors that exact algorithm.
+ * (wp-includes/formatting.php). This class mirrors the default `save` path used
+ * by this plugin without booting WordPress in the unit suite.
  *
  * Centralized here after a code review found five independent namespace-local
  * `sanitize_title` stubs (one per test namespace, required by the
@@ -20,14 +21,13 @@
  * WordPress can mask a real key-matching bug or bake a wrong expected slug
  * into a test.
  *
- * Scope: transliterates Latin-1 Supplement + Latin Extended-A, which covers
+ * Scope: transliterates Latin-1 Supplement + Latin Extended-A, plus the
+ * non-locale-specific Extended-B and currency entries used by WordPress. This covers
  * French, German, Spanish, Portuguese, Italian, Nordic, Turkish, Polish,
- * Czech, and Baltic accented characters — the realistic range for
- * casino/betting brand names. Does not implement remove_accents()'s
- * Cyrillic/Vietnamese/locale-conditional blocks, or
- * sanitize_title_with_dashes()'s percent-octet preservation dance — both are
- * no-ops for plain-text brand names with no literal `%XX` sequences, which is
- * the only input this plugin ever feeds it.
+ * Czech, Romanian, and Baltic accented characters — the realistic range for
+ * casino/betting brand names. Remaining Unicode is encoded with WordPress's
+ * URI-byte behavior, and existing percent octets plus save-context punctuation
+ * are normalized the same way as `sanitize_title_with_dashes()`.
  *
  * Verified against a live WordPress 6.9.4 install (strike-odds.test) via
  * `wp eval-file` for: accented names, ampersands, apostrophes, underscores,
@@ -243,20 +243,119 @@ if (!class_exists('WpSanitizeTitleFake')) {
             'Ž' => 'Z',
             'ž' => 'z',
             'ſ' => 's',
+            // Non-locale-specific Latin Extended-B entries.
+            'Ə' => 'E',
+            'ǝ' => 'e',
+            'Ș' => 'S',
+            'ș' => 's',
+            'Ț' => 'T',
+            'ț' => 't',
+            // Currency signs.
+            '€' => 'E',
+            '£' => '',
         ];
 
+        /**
+         * Mirror `sanitize_title($title, '', 'save')` with WordPress's default filter.
+         */
         public static function sanitize(string $title): string
         {
             $title = self::removeAccents($title);
             $title = strip_tags($title);
+
+            // Preserve valid escaped octets while removing every other percent sign.
+            $title = preg_replace('|%([a-fA-F0-9][a-fA-F0-9])|', '---$1---', $title) ?? '';
+            $title = str_replace('%', '', $title);
+            $title = preg_replace('|---([a-fA-F0-9][a-fA-F0-9])---|', '%$1', $title) ?? '';
+
+            if (preg_match('//u', $title) === 1) {
+                if (function_exists('mb_strtolower')) {
+                    $title = mb_strtolower($title, 'UTF-8');
+                }
+                $title = self::utf8UriEncode($title, 200);
+            }
+
             $title = strtolower($title);
+            $title = str_replace(
+                ['%c2%a0', '%e2%80%91', '%e2%80%93', '%e2%80%94'],
+                '-',
+                $title
+            );
+            $title = str_replace(
+                ['&nbsp;', '&#8209;', '&#160;', '&ndash;', '&#8211;', '&mdash;', '&#8212;'],
+                '-',
+                $title
+            );
             $title = str_replace('/', '-', $title);
-            $title = preg_replace('/&.+?;/', '', $title);
+            $title = str_replace(
+                [
+                    '%c2%ad', '%c2%a1', '%c2%bf', '%c2%ab', '%c2%bb',
+                    '%e2%80%b9', '%e2%80%ba', '%e2%80%98', '%e2%80%99',
+                    '%e2%80%9c', '%e2%80%9d', '%e2%80%9a', '%e2%80%9b',
+                    '%e2%80%9e', '%e2%80%9f', '%e2%80%a2', '%c2%a9',
+                    '%c2%ae', '%c2%b0', '%e2%80%a6', '%e2%84%a2',
+                    '%c2%b4', '%cb%8a', '%cc%81', '%cd%81', '%cc%80',
+                    '%cc%84', '%cc%8c', '%e2%80%8b', '%e2%80%8c',
+                    '%e2%80%8d', '%e2%80%8e', '%e2%80%8f', '%e2%80%aa',
+                    '%e2%80%ab', '%e2%80%ac', '%e2%80%ad', '%e2%80%ae',
+                    '%ef%bb%bf', '%ef%bf%bc',
+                ],
+                '',
+                $title
+            );
+            $title = str_replace(
+                [
+                    '%e2%80%80', '%e2%80%81', '%e2%80%82', '%e2%80%83',
+                    '%e2%80%84', '%e2%80%85', '%e2%80%86', '%e2%80%87',
+                    '%e2%80%88', '%e2%80%89', '%e2%80%8a', '%e2%80%a8',
+                    '%e2%80%a9', '%e2%80%af',
+                ],
+                '-',
+                $title
+            );
+            $title = str_replace('%c3%97', 'x', $title);
+
+            $title = preg_replace('/&.+?;/', '', $title) ?? '';
             $title = str_replace('.', '-', $title);
-            $title = preg_replace('/[^%a-z0-9 _-]/', '', $title);
-            $title = preg_replace('/\s+/', '-', $title);
-            $title = preg_replace('/-+/', '-', $title);
+            $title = preg_replace('/[^%a-z0-9 _-]/', '', $title) ?? '';
+            $title = preg_replace('/\s+/', '-', $title) ?? '';
+            $title = preg_replace('/-+/', '-', $title) ?? '';
             return trim($title, '-');
+        }
+
+        private static function utf8UriEncode(string $value, int $length): string
+        {
+            $encoded = '';
+            $encodedLength = 0;
+            $byteLength = strlen($value);
+
+            for ($index = 0; $index < $byteLength; $index++) {
+                $byte = ord($value[$index]);
+                if ($byte < 128) {
+                    if ($length > 0 && $encodedLength + 1 > $length) {
+                        break;
+                    }
+                    $encoded .= chr($byte);
+                    $encodedLength++;
+                    continue;
+                }
+
+                $octets = $byte < 224 ? 2 : ($byte < 240 ? 3 : 4);
+                $encodedOctetLength = $octets * 3;
+                if ($index + $octets > $byteLength
+                    || ($length > 0 && $encodedLength + $encodedOctetLength > $length)
+                ) {
+                    break;
+                }
+
+                for ($offset = 0; $offset < $octets; $offset++) {
+                    $encoded .= '%' . dechex(ord($value[$index + $offset]));
+                }
+                $encodedLength += $encodedOctetLength;
+                $index += $octets - 1;
+            }
+
+            return $encoded;
         }
 
         private static function removeAccents(string $text): string
