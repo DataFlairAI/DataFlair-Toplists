@@ -364,7 +364,8 @@ if (!class_exists('WpSanitizeTitleFake')) {
                 return $text;
             }
 
-            if (function_exists('normalizer_is_normalized')
+            if (preg_match('//u', $text) === 1
+                && function_exists('normalizer_is_normalized')
                 && function_exists('normalizer_normalize')
                 && !normalizer_is_normalized($text)
             ) {

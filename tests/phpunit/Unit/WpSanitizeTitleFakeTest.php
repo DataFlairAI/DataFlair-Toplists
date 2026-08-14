@@ -30,6 +30,23 @@ final class WpSanitizeTitleFakeTest extends TestCase
         $this->assertSame('bjorn-casino', WpSanitizeTitleFake::sanitize("Bjo\u{0308}rn Casino"));
     }
 
+    public function test_malformed_utf8_does_not_reach_intl_normalization(): void
+    {
+        $previousSetting = ini_get('intl.use_exceptions');
+
+        try {
+            if ($previousSetting !== false) {
+                ini_set('intl.use_exceptions', '1');
+            }
+
+            $this->assertSame('casino', WpSanitizeTitleFake::sanitize("\xFF Casino"));
+        } finally {
+            if ($previousSetting !== false) {
+                ini_set('intl.use_exceptions', $previousSetting);
+            }
+        }
+    }
+
     /**
      * @return array<string,array{string,string}>
      */
