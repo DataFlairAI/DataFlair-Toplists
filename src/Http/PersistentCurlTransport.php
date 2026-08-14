@@ -21,6 +21,12 @@
  * Falls back to a "not available" signal when the curl extension is missing
  * so callers can revert to wp_remote_get cleanly.
  *
+ * All actual curl_* calls go through a CurlDriverInterface (default:
+ * RealCurlDriver) rather than the global functions directly. curl is a
+ * compiled extension that Brain\Monkey/Patchwork cannot intercept, so this
+ * is the seam tests use — see setDriver()/resetDriver() below and
+ * PersistentCurlTransportTest.
+ *
  * @package DataFlair\Toplists\Http
  */
 
@@ -30,7 +36,27 @@ namespace DataFlair\Toplists\Http;
 
 final class PersistentCurlTransport
 {
-    private static ?\CurlHandle $handle = null;
+    private static ?CurlDriverInterface $driver = null;
+
+    public static function driver(): CurlDriverInterface
+    {
+        if (self::$driver === null) {
+            self::$driver = new RealCurlDriver();
+        }
+        return self::$driver;
+    }
+
+    /** Test-only injection point. */
+    public static function setDriver(CurlDriverInterface $driver): void
+    {
+        self::$driver = $driver;
+    }
+
+    /** Test-only reset back to the real curl-backed driver. */
+    public static function resetDriver(): void
+    {
+        self::$driver = null;
+    }
 
     public static function isAvailable(): bool
     {
@@ -50,12 +76,12 @@ final class PersistentCurlTransport
             return ['ok' => false, 'code' => 0, 'body' => '', 'error' => 'curl_unavailable', 'truncated' => false, 'bytes' => 0];
         }
 
-        $ch = self::handle();
+        $ch = self::driver()->handle();
 
         $buffer    = '';
         $truncated = false;
 
-        curl_setopt_array($ch, [
+        self::driver()->setOptArray($ch, [
             CURLOPT_URL            => $url,
             CURLOPT_HTTPHEADER     => self::flattenHeaders($headers),
             CURLOPT_TIMEOUT        => max(1, $timeoutSeconds),
@@ -81,9 +107,9 @@ final class PersistentCurlTransport
             },
         ]);
 
-        $exec_ok = curl_exec($ch) !== false;
-        $code    = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        $err     = curl_errno($ch) ? curl_error($ch) : null;
+        $exec_ok = self::driver()->exec($ch) !== false;
+        $code    = (int) self::driver()->getInfo($ch, CURLINFO_RESPONSE_CODE);
+        $err     = self::driver()->errno($ch) ? self::driver()->error($ch) : null;
 
         if ($truncated) {
             return [
@@ -113,9 +139,9 @@ final class PersistentCurlTransport
             return ['ok' => false, 'code' => 0, 'content_length' => 0, 'error' => 'curl_unavailable'];
         }
 
-        $ch = self::handle();
+        $ch = self::driver()->handle();
 
-        curl_setopt_array($ch, [
+        self::driver()->setOptArray($ch, [
             CURLOPT_URL            => $url,
             CURLOPT_HTTPHEADER     => [],
             CURLOPT_TIMEOUT        => max(1, $timeoutSeconds),
@@ -130,26 +156,16 @@ final class PersistentCurlTransport
             CURLOPT_USERAGENT      => 'DataFlair-Toplists/persistent-curl',
         ]);
 
-        $exec_ok = curl_exec($ch) !== false;
-        $code    = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        $len     = (int) curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
-        $err     = curl_errno($ch) ? curl_error($ch) : null;
+        $exec_ok = self::driver()->exec($ch) !== false;
+        $code    = (int) self::driver()->getInfo($ch, CURLINFO_RESPONSE_CODE);
+        $len     = (int) self::driver()->getInfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+        $err     = self::driver()->errno($ch) ? self::driver()->error($ch) : null;
 
         if (!$exec_ok && $err !== null) {
             return ['ok' => false, 'code' => $code, 'content_length' => 0, 'error' => 'curl_error: ' . $err];
         }
 
         return ['ok' => true, 'code' => $code, 'content_length' => max(0, $len), 'error' => null];
-    }
-
-    private static function handle(): \CurlHandle
-    {
-        if (self::$handle === null) {
-            self::$handle = curl_init();
-        } else {
-            curl_reset(self::$handle);
-        }
-        return self::$handle;
     }
 
     private static function flattenHeaders(array $headers): array
