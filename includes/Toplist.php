@@ -277,7 +277,12 @@ class Toplist {
      * @return bool
      */
     public function isStale($days = 3) {
-        $last_synced = strtotime($this->getAttribute('last_synced'));
+        $last_synced_value = $this->getAttribute('last_synced');
+        if (!is_string($last_synced_value) || trim($last_synced_value) === '') {
+            return true;
+        }
+
+        $last_synced = strtotime($last_synced_value);
         if (!$last_synced) {
             return true;
         }

@@ -22,6 +22,8 @@ declare(strict_types=1);
 
 namespace DataFlair\Toplists\Admin\Pages\Tools;
 
+use DataFlair\Toplists\Logging\LoggerFactory;
+
 final class TestsRunner
 {
     public const OPTION_KEY = 'dataflair_test_results';
@@ -77,8 +79,16 @@ final class TestsRunner
         $result = $this->makeResult($slug, $status, $message, $ms);
         $this->persist($slug, $result);
 
-        $level = $status === 'pass' ? 'INFO' : ($status === 'fail' ? 'ERROR' : 'WARN');
-        error_log("[DataFlair][{$level}] test.run slug={$slug} status={$status} duration_ms={$ms} message={$message}");
+        // Route through the active logger (not a raw error_log() call) so
+        // this shows up in `wp dataflair logs` regardless of which logger
+        // implementation is configured.
+        $logger  = LoggerFactory::get();
+        $logLine = "test.run slug={$slug} status={$status} duration_ms={$ms} message={$message}";
+        match ($status) {
+            'fail'  => $logger->error($logLine),
+            'warn'  => $logger->warning($logLine),
+            default => $logger->info($logLine),
+        };
 
         return $result;
     }

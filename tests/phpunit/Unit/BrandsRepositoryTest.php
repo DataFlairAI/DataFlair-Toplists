@@ -229,6 +229,30 @@ final class BrandsRepositoryTest extends TestCase
         $this->assertCount(2, $page->rows);
     }
 
+    public function test_find_paginated_order_by_includes_id_tiebreaker(): void
+    {
+        // Many brands can share the exact same last_synced second (written
+        // in a tight per-brand loop during sync) — without a secondary sort
+        // column, pagination across page loads is not guaranteed stable.
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn('2');
+
+        $capturedSql = null;
+        $wpdb->shouldReceive('get_results')
+            ->once()
+            ->with(M::on(function (string $sql) use (&$capturedSql): bool {
+                $capturedSql = $sql;
+                return true;
+            }), ARRAY_A)
+            ->andReturn([]);
+
+        $q = BrandsQuery::fromArray(['sort_by' => 'last_synced', 'sort_dir' => 'desc']);
+        $repo = new BrandsRepository($wpdb);
+        $repo->findPaginated($q);
+
+        $this->assertStringContainsString('ORDER BY last_synced DESC, id DESC', (string) $capturedSql);
+    }
+
     public function test_find_paginated_with_filters_binds_params(): void
     {
         $wpdb = $this->makeWpdb();

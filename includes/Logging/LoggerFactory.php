@@ -2,7 +2,8 @@
 /**
  * Resolves the active LoggerInterface for the current request.
  *
- * Default is `ErrorLogLogger('notice')`. Override via:
+ * Default is `FileLogger('debug')`, writing to a dedicated
+ * wp-content/dataflair-sync.log. Override via:
  *
  *   add_filter('dataflair_logger', fn() => new MyLogger());
  *

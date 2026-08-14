@@ -46,7 +46,7 @@ class BrandModelTest extends TestCase {
         return $instance;
     }
 
-    private function mockWpdb(array $rowOrNull = null, array $results = []): object {
+    private function mockWpdb(?array $rowOrNull = null, array $results = []): object {
         $wpdb          = M::mock('wpdb');
         $wpdb->prefix  = 'wp_';
         // prepare() just returns the query string (good enough for unit tests).
