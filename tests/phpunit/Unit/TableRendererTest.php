@@ -21,7 +21,6 @@ use DataFlair\Toplists\Frontend\Render\TableRenderer;
 use DataFlair\Toplists\Frontend\Render\ViewModels\ToplistTableVM;
 use PHPUnit\Framework\TestCase;
 
-require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/Unit/TableRendererTestStubs.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/ProsConsResolver.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/TableRendererInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Frontend/Render/TableRenderer.php';

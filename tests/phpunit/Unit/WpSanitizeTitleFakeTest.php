@@ -21,6 +21,15 @@ final class WpSanitizeTitleFakeTest extends TestCase
         $this->assertSame($expected, WpSanitizeTitleFake::sanitize($input));
     }
 
+    public function test_normalizes_decomposed_accents_when_intl_is_available(): void
+    {
+        if (!function_exists('normalizer_is_normalized') || !function_exists('normalizer_normalize')) {
+            $this->markTestSkipped('ext-intl is unavailable; WordPress also skips NFC normalization.');
+        }
+
+        $this->assertSame('bjorn-casino', WpSanitizeTitleFake::sanitize("Bjo\u{0308}rn Casino"));
+    }
+
     /**
      * @return array<string,array{string,string}>
      */

@@ -363,6 +363,17 @@ if (!class_exists('WpSanitizeTitleFake')) {
             if (!preg_match('/[\x80-\xff]/', $text)) {
                 return $text;
             }
+
+            if (function_exists('normalizer_is_normalized')
+                && function_exists('normalizer_normalize')
+                && !normalizer_is_normalized($text)
+            ) {
+                $normalized = normalizer_normalize($text);
+                if (is_string($normalized)) {
+                    $text = $normalized;
+                }
+            }
+
             return strtr($text, self::ACCENT_MAP);
         }
     }
