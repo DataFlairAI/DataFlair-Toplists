@@ -30,6 +30,11 @@ final class PersistentCurlTransportTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        if (!PersistentCurlTransport::isAvailable()) {
+            $this->markTestSkipped('ext-curl is unavailable; the plugin uses its WordPress HTTP fallback.');
+        }
+
         PersistentCurlTransport::resetDriver();
     }
 
