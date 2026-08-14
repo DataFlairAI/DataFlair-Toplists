@@ -39,6 +39,8 @@ namespace {
 }
 
 namespace DataFlair\Toplists\Sync {
+    require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpSanitizeTitleFake.php';
+
     if (!function_exists(__NAMESPACE__ . '\\set_transient')) {
         function set_transient($key, $value, $expiration = 0)
         {
@@ -77,7 +79,7 @@ namespace DataFlair\Toplists\Sync {
     }
     if (!function_exists(__NAMESPACE__ . '\\sanitize_title')) {
         function sanitize_title($value) {
-            return strtolower(preg_replace('/[^a-z0-9]+/i', '-', (string) $value));
+            return \WpSanitizeTitleFake::sanitize((string) $value);
         }
     }
     if (!function_exists(__NAMESPACE__ . '\\current_time')) {
