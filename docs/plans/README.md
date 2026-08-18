@@ -9,6 +9,7 @@ Living index of all parked plans for this plugin. New plans go in `to-be-impleme
 | 01 | [DataFlair → WordPress Webhooks Sync Architecture](to-be-implemented/01-dataflair-to-wordpress-webhooks-sync-architecture.md) | dataflair.ai-v2 + plugin | Mex | 2026-04-25 | Phase A (delta endpoint) → B (tombstones) → C (webhooks). Coordinated cross-repo work. |
 | 02 | [DataFlair Toplists for ASP.NET — Port Plan (Cricket World)](to-be-implemented/02-aspnet-toplists-port-cricket-world.md) | new repo `DataFlair-Toplists-AspNet` | Mex | 2026-08-18 | The what/why: architecture, feature inventory, deltas, risks. Discovery questions answered 2026-08-18; §15 lists what's still open. Appendix A is the API contract. |
 | 03 | [DataFlair Toplists for ASP.NET — Implementation Plan](to-be-implemented/03-aspnet-implementation-plan.md) | new repo `DataFlair-Toplists-AspNet` | Mex | 2026-08-18 | The how: repo scaffold, M0–M6 task breakdown, invariants, local test harness, and the kickoff prompt for the new repo. Companion to 02. |
+| 04 | [DataFlair Toplists for ASP.NET — UI Wireframes](to-be-implemented/04-aspnet-ui-wireframes.md) | new repo `DataFlair-Toplists-AspNet` | Mex | 2026-08-18 | What it looks like: admin nav + 5 screens, the three embed paths, the rendered card, and the sync / affiliate-click flows. Companion to 02 and 03. |
 
 ## In progress
 
