@@ -36,22 +36,29 @@ cannot come across, and in what order to build it.
 | **Cloudflare** in front | `CF-IPCountry` is available for free — the exact header `VisitorGeoResolver` already prefers. Geo-targeting ports with zero new dependencies. **Also the single biggest risk** — see §11. |
 | Clean URLs (`/about-us/`, no `.aspx`) | URL routing or rewriting is already in play. A `/go/` affiliate route can be registered without fighting the host. |
 | **jQuery 3.7 + Bootstrap** | Admin UI can reuse the existing jQuery-based admin JS with modest rework. |
-| **Preact + Goober** already loaded | If we ever need a client-side island (geo hydration — §11), the runtime is already on the page. |
-| **Lozad.js** (lazy loading) | Brand logos should emit `data-src` + `lozad` class to match house conventions, not eager `src`. |
+| **Preact + Goober** already loaded | **Nothing.** Noted for completeness only. Preact being bundled somewhere on the site does not make it a usable global for us, Goober is CSS-in-JS we have no use for (our card CSS is plain CSS), and the one optional island in §11 is ~30 lines of vanilla JS. Do not take a dependency on either. |
+| **Lozad.js** (lazy loading) | A house convention to be aware of, **not one to copy** — see §8.6. Native `loading="lazy"` is strictly better for our logos. Check whether their global JS rewrites `img` tags site-wide, because that would fight us. |
 | Google Tag Manager | CTA/impression tracking should push to `dataLayer`, not invent its own beacon. |
 
-### Must be answered before Phase 1 starts
+### Answered (2026-08-18)
 
-These are blocking design inputs, not nice-to-haves. Ask the Cricket World engineering owner:
+| # | Question | Answer | Consequence |
+|---|---|---|---|
+| 1 | WebForms, MVC5, or both? | **Both** | Ship both embed surfaces: `<df:Toplist>` server control **and** `@Html.DataFlairToplist()`. Both are thin wrappers over one renderer, so the cost is small — see §9.1. |
+| 2 | DB access / DDL rights | **Create tables; whichever of DDL-at-deploy vs DBA-scripts is less friction** | Resolved by building **one** migration engine with two output modes — §8.2. No either/or needed. |
+| 3 | Article content rendering | **Unknown — but the CMS appears to have "blocks of content" / block slots** | **This is the best news in the whole set.** A block system beats both a content hook and `Response.Filter`. Reframes §9.2 entirely. One question to their dev now: *"how do you add a new block type?"* |
+| 4 | Deploy model | **Unknown — wants pros/cons** | Weighed in §9.4. Recommendation: build as a standalone solution that emits a NuGet package **and** works as a project reference. Same csproj either way, so the decision stays open at near-zero cost. |
+| 5 | Admin authentication | **They have an auth mechanism** | Require it. No bespoke gate, no shared-secret-on-a-public-path compromise. §12 simplifies. |
+| 6 | Cloudflare tier | **Free or Pro** | **Enterprise cache-key-by-country is off the table.** §11 loses its easiest option; a Workers-based alternative replaces it. |
+| 7 | Brand-review content type | **Reviews exist; map manually per brand, as in WordPress** | §10.1 collapses from "biggest delta" to "port the existing override + bulk-pattern tooling". Big scope reduction. |
+| — | Delivery model (§3) | **Model C — hybrid SSR + optional JS island** | Confirmed. SSR is the default path; the island exists only for the §11 geo-cache case. |
 
-1. **WebForms, MVC5, or both?** Determines whether the embed surface is a `<df:Toplist>` server control, an `@Html.DataFlairToplist()` helper, or both. *Plan assumes both are needed until told otherwise.*
-2. **Database engine and access.** SQL Server is assumed. Can we create three tables in the CMS database, or do we get a separate database/schema? Do we get DDL rights at deploy time, or must migrations be handed to a DBA as scripts?
-3. **How does article body content get rendered?** Is there a single code path where the stored HTML of an article is emitted? A one-line hook there is worth ten times a `Response.Filter` (§9.2).
-4. **What is the editor?** CKEditor / TinyMCE / a bespoke field UI? Determines whether editors get a real "Insert Toplist" button or a copy-paste token.
-5. **Deploy model.** Can we drop a DLL into `/bin` and add a `web.config` block, or is everything built from one solution in CI? Determines whether we ship a NuGet package or a source-integrated project.
-6. **Admin authentication.** Is there an existing admin area with an auth mechanism we can require, or do we need our own gate?
-7. **Cloudflare plan tier.** Enterprise unlocks cache-key-by-country, which makes geo-targeting trivial. Without it, §11's decision tree applies.
-8. **Is there an existing brand-review content type?** The WP plugin leans hard on the `review` CPT (§10.1). If Cricket World has review articles, we map to them; if not, the Read Review feature degrades to the override field only.
+### Still open
+
+1. **The block API (from answer 3).** How does a new block type get registered, what does its editing UI look like, and can a block declare "this page is not cacheable"? Everything in §9.2 depends on this.
+2. **Which build/deploy model** (answer 4) — see §9.4 for the trade-off; needs their CI owner.
+3. **Whether their global JS rewrites `<img>` tags** for Lozad, which would fight the native lazy-loading in §8.6.
+4. **Reconcile Appendix A against `docs.dataflair.ai/api/toplist/`** — see §A.8. Still unread; blocked from the authoring environment.
 
 ---
 
@@ -87,7 +94,7 @@ one `web.config` block, no host source changes.
 | CDN cache interaction | Needs care (§11) | Trivial | Solved per-toplist (§11) |
 | Ownership | Cricket World deploys it | We host it | Cricket World deploys it |
 
-**Recommendation: C.** SSR is non-negotiable — toplists are the commercial payload of
+**Recommendation: C — confirmed by the user on 2026-08-18.** SSR is non-negotiable — toplists are the commercial payload of
 affiliate pages, and a client-rendered comparison table forfeits the rankings the pages
 exist to win. The optional JS island exists solely to solve the Cloudflare-cache-vs-geo
 problem on the minority of pages that use country/market-scoped toplists.
@@ -234,6 +241,38 @@ DataFlair.Toplists.sln
   optimisation in one move.
 - **Embedded static assets** served by a handler with immutable cache headers and a
   version-stamped URL. One DLL, nothing loose on disk.
+
+### 5.1 Build and deploy model — NuGet package vs source-integrated
+
+Question 4 in §2, weighed. This now sits alongside the decision to develop in **a separate
+repo** (§17), which pushes hard toward packaging.
+
+| | **NuGet package + DLL** | **Source-integrated project** |
+|---|---|---|
+| Update mechanism | Version bump, restore, deploy | Merge our code into their repo |
+| Version pinning | Explicit and auditable | Whatever their branch happens to hold |
+| Debugging into our code | Needs symbols — solved by shipping SourceLink + `.snupkg` | Native step-through, zero setup |
+| IP / licensing separation | Clean — our code stays ours | Entangled once it lives in their repo |
+| Local patching by their team | Discouraged; fixes come upstream | Easy — and then upstream fixes conflict with the drift |
+| Works if this becomes a product for N publishers | **Required** | Falls apart immediately |
+| Infrastructure needed | A feed — but a **local folder feed works**, no hosting required | None |
+| Friction if their CI builds one solution | Adds a restore step | Zero |
+
+**Recommendation: build it as a standalone solution that produces a NuGet package *and*
+works as a plain project reference.** That is the same `.csproj` either way — the cost of
+keeping both doors open is essentially zero, and it means their CI owner can choose without
+blocking Phase 1.
+
+Two practical notes:
+
+- Ship the `.nupkg` as a file they can drop into a local folder feed. No hosted NuGet feed,
+  no account, no auth to negotiate. Removes the most common objection.
+- Include SourceLink and a symbols package from day one. The strongest real argument for
+  source-integration is "we want to debug it", and shipping symbols removes that argument
+  before it is made.
+
+If §15 decision 9 comes back as "first of N publishers", this stops being a judgement call:
+NuGet, no discussion.
 
 ---
 
@@ -387,10 +426,22 @@ public static class Startup
 ### 8.2 Schema migrator
 
 Direct port of `src/Database/SchemaMigrator.php`. Same three responsibilities: create
-tables, apply numbered upgrades, self-heal. Same 12-hour warm-path short-circuit. Runs on
-first request after deploy. If DDL rights are withheld, the same embedded scripts are
-exported for a DBA and the runner switches to verify-only mode (log loudly, refuse to
-sync into a schema it cannot vouch for).
+tables, apply numbered upgrades, self-heal. Same 12-hour warm-path short-circuit.
+
+Answer 2 in §2 asks for "whichever is less friction" between DDL-at-deploy and
+DBA-supplied scripts. **Build both from one source and the question stops mattering:**
+
+- **Apply mode** (default in dev/staging, and in prod if we have DDL rights) — the runner
+  executes pending migrations on first request after deploy, exactly as the plugin does.
+- **Script mode** — `DataFlair.Toplists.Migrate.exe --script` writes the exact SQL that
+  *would* run to stdout, ready to hand a DBA. Same embedded scripts, same ordering, same
+  version bookkeeping.
+- **Verify mode** — when the runner has read-only rights it checks the schema matches the
+  expected version and, if not, logs loudly and **refuses to sync** rather than writing into
+  a shape it cannot vouch for.
+
+One set of migration scripts, three ways to consume them. No divergence between what a DBA
+runs and what the app expects, which is the actual failure mode this question is about.
 
 ### 8.3 Sync engine
 
@@ -438,8 +489,32 @@ preference:
 1. A configured static path under the web root (fastest, Cloudflare caches it).
 2. Failing that, the asset handler streams from `App_Data` with immutable cache headers.
 
-Emit `class="lozad" data-src="…"` to match the site's existing Lozad lazy-loading, with a
-`<noscript>` fallback so crawlers still see the image.
+**Lazy loading — do not copy the house Lozad convention.** Lozad was the right answer in
+2018; in 2026 native `loading="lazy"` beats it on every axis that matters here:
+
+- Lozad's `data-src` pattern **hides the URL from the browser's preload scanner**, so the
+  image can't be prioritised or fetched early. Native `loading="lazy"` keeps the real
+  `src`, so the browser schedules it intelligently.
+- Lozad needs JS to run before *any* logo appears. Native needs nothing.
+- Native costs 0 KB. Lozad costs a library plus an IntersectionObserver per image.
+
+More important than either: **a toplist is usually at or near the top of the page — it is
+the commercial payload.** Lazy-loading an above-the-fold image actively delays LCP, which
+is the opposite of an optimisation. So:
+
+```html
+<img src="…" width="120" height="60" alt="…"
+     loading="eager"  decoding="async"   <!-- positions 1–3 -->
+     loading="lazy"   decoding="async"   <!-- positions 4+   -->
+```
+
+Always emit explicit `width`/`height` — without them the card reflows as logos land, which
+is a CLS penalty on every toplist on the site.
+
+**One thing to verify on their side** (§2, still-open #3): if Cricket World's global JS
+rewrites `<img>` tags site-wide into the Lozad pattern, it will strip our `src` and undo
+this. If so we need an opt-out class, or we accept their convention for consistency and
+eat the LCP cost knowingly rather than by accident.
 
 ### 8.7 Front-end assets
 
@@ -495,29 +570,45 @@ underestimated. Three mechanisms, all worth shipping:
 
 Trivially reliable. Right answer for fixed page furniture (sidebars, hub pages).
 
-### 9.2 Editor placement — token expansion (the shortcode analogue)
+### 9.2 Editor placement — three options, best first
 
-Editors need to drop a toplist into the middle of an article body, exactly as
-`[dataflair_toplist id="123"]` does today. Two implementations, in order of preference:
+Editors need to drop a toplist into the middle of an article, exactly as
+`[dataflair_toplist id="123"]` does today.
 
-**Preferred — a CMS content hook.** If article HTML is emitted through a single code
-path, one line does it:
+**Option 1 — register a CMS block type. Strongly preferred.**
+
+Answer 3 in §2 says the CMS has "blocks of content" and slots for them. If that is a real
+block system, **this is the answer and the other two options are dead**. Registering a
+`DataFlair Toplist` block type gives us, for free, everything the Gutenberg block gives us
+in WordPress:
+
+- a real editor UI with a toplist picker instead of a hand-typed token,
+- typed, validated attributes instead of string parsing,
+- placement anywhere a block can go, with no HTML-rewriting anywhere,
+- and — critically for §11 — a **structured place to declare "this block makes the page
+  uncacheable"**, which a token buried in an HTML blob can never do cleanly.
+
+It also collapses §10.4 (the "no Gutenberg" delta) almost to nothing. This is the single
+highest-leverage unknown left in the plan, which is why §2's still-open list leads with it.
+**One question to their developer: *"how do you add a new block type?"***
+
+**Option 2 — a CMS content hook.** If there is no block system but article HTML is emitted
+through a single code path, one line does it:
 
 ```csharp
 html = DataFlairTokens.Expand(html);   // finds [dataflair_toplist …], renders, replaces
 ```
 
-Safe, fast, testable, and scoped to exactly the content that should contain tokens.
-**This is worth negotiating for**, and question 3 in §2 exists to find it.
+Safe, fast, testable, scoped to exactly the content that should contain tokens.
 
-**Fallback — `Response.Filter` in the HttpModule.** Zero host code changes: attach a
-stream filter on `PreRequestHandlerExecute`, only when `Content-Type` starts with
-`text/html`, and only rewrite when a cheap `IndexOf("[dataflair_toplist")` hits.
+**Option 3 — `Response.Filter` in the HttpModule.** Zero host code changes: attach a stream
+filter on `PreRequestHandlerExecute`, only when `Content-Type` starts with `text/html`, and
+only rewrite when a cheap `IndexOf("[dataflair_toplist")` hits.
 
-Honest caveats, because this is the option that bites: it buffers the response (memory
-cost on large pages), it can interact badly with IIS dynamic compression module ordering,
-and it breaks under unbuffered/streamed responses. It is a legitimate ship-it fallback,
-not the design goal.
+Honest caveats, because this is the option that bites: it buffers the response (memory cost
+on large pages), it can interact badly with IIS dynamic compression module ordering, and it
+breaks under unbuffered/streamed responses. It is a legitimate ship-it fallback, **not** a
+design goal — and given answer 3, probably not needed at all.
 
 ### 9.3 Affiliate redirect
 
@@ -535,30 +626,42 @@ Two changes from WordPress:
 
 ## 10. What cannot port 1:1 — decide these explicitly
 
-### 10.1 The `review` CPT is the biggest delta
+### 10.1 The `review` CPT — **resolved, and much smaller than feared**
 
-The WordPress plugin leans on a WordPress-only content type in three places:
+Answer 7 in §2 settles this: Cricket World **has** review content, and the team is happy to
+**map it manually per brand, exactly as they already do in WordPress**. That collapses what
+was the plan's biggest delta into a modest one.
 
-1. It **auto-creates draft `review` posts** at sync time for brands that lack one.
-2. It reads `_review_pros` post meta to populate the card's three feature bullets.
-3. It resolves the Read Review URL to the published review's permalink, matching by slug
-   variants and by `_review_brand_id` when the live slug differs (`brand-india` vs `brand`).
+What the WordPress plugin does with its `review` CPT, and what happens to each:
 
-None of that exists on Cricket World. **The port cannot create content in their CMS**, and
-it should not try. Replacement design:
+| WP behaviour | Port |
+|---|---|
+| Auto-creates draft `review` posts at sync time for brands lacking one | **Dropped.** The port must not write into their CMS, and with manual mapping there is nothing to auto-create. Removing this also deletes a whole class of "plugin created 400 orphan drafts" support tickets. |
+| Reads `_review_pros` post meta for the card's three feature bullets | **Replaced** by `editorial_pros` / `editorial_cons` columns on the brands table, edited in the Brands admin screen. Block-level pros/cons overrides still win. |
+| Resolves Read Review to the published permalink, matching by slug variants and `_review_brand_id` | **Replaced** by `review_url_override` as the *primary* mechanism rather than a fallback. |
 
-- **Read Review URL** resolves as: `review_url_override` → `cached_review_url` (populated
-  by an admin-run reconcile against a configured URL pattern or a CSV/API mapping supplied
-  by the Cricket World team) → configured pattern e.g. `/betting/reviews/{slug}/` →
-  affiliate CTA. Same cascade shape, host-appropriate middle steps.
-- **Feature bullets** come from `editorial_pros` / `editorial_cons` columns on the brands
-  table, editable in the Brands admin screen — replacing `_review_pros`. Block-level
-  pros/cons overrides continue to win, unchanged.
-- **The "only show Read Review when a real review exists" rule survives**: the link renders
-  only when an override or a reconciled `cached_review_url` is present. No dead links.
+The resolution cascade simplifies to: `review_url_override` → configured pattern
+(e.g. `/betting/reviews/{slug}/`) → affiliate CTA. The slug-variant and
+`_review_brand_id` fuzzy-matching machinery — the fiddliest, most bug-prone part of the
+WordPress implementation — **does not need porting at all**. Manual mapping is exact by
+construction.
 
-If Cricket World *does* have review articles with a queryable URL (question 8 in §2), step
-two becomes a real resolver against their content store and the parity is close to exact.
+**Port the bulk tooling, because it is what makes manual mapping tolerable.** The plugin
+already has `BulkApplyReviewPatternHandler`: select N brands, supply a pattern containing
+`{slug}`, and it writes `review_url_override` for each. The workflow becomes:
+
+1. Bulk-apply `/betting/reviews/{slug}/` across the whole catalogue — covers most brands in
+   one action.
+2. Hand-fix the exceptions in the Brands screen.
+3. Add a **link checker** in Tools that HEADs every stored review URL and flags 404s.
+
+That third step is new and worth building. Manual mapping's real failure mode is not the
+initial setup — it is silent rot when editorial moves or unpublishes a review six months
+later. A weekly check that surfaces broken review links costs a day and prevents dead links
+sitting on money pages indefinitely.
+
+**The "no dead links" rule survives unchanged**: the Read Review control renders only when
+an override is present. A brand with no mapping simply shows no review link.
 
 ### 10.2 No auto-update
 
@@ -620,22 +723,43 @@ performance regression on a high-traffic sports site. So decide per toplist:
 | Toplist `geo_type` | Cacheability | Mechanism |
 |---|---|---|
 | `global` | **Fully cacheable** — output is identical for everyone | Normal cache headers. No change. |
-| `country` / `market` | Not cacheable as-is | One of the three below |
+| `country` / `market` | Not cacheable as-is | One of the options below |
 
-For the geo-scoped minority:
+**Answer 6 in §2 constrains this: Cricket World is on Cloudflare Free or Pro.** Custom cache
+keys via Cache Rules are Enterprise-only, so the easiest option is gone. What remains:
 
-- **Option 1 — `Cache-Control: private` on that page.** Simplest, correct, costs origin
-  load only on the affected pages. **Default recommendation.**
-- **Option 2 — Cloudflare cache key by country.** Best of both: full CDN caching, one
-  variant per country. Requires an Enterprise-tier custom cache key (question 7).
+- **Option 1 — `Cache-Control: private, no-store` on pages carrying a geo-scoped toplist.**
+  Simplest, unambiguously correct, and the cost is bounded to the affected pages rather than
+  the whole site. **Default recommendation.** Pair it with a Cloudflare Cache Rule that
+  bypasses cache for those URLs, so origin headers and edge behaviour agree.
+
+- **Option 2 — a Cloudflare Worker that varies the cache key by country.** Available on
+  Free and Pro (Workers is priced separately from the zone plan, and the paid tier is
+  inexpensive). A Worker reads `request.cf.country`, builds a synthetic cache key like
+  `https://host/path#country=IN`, and uses the Workers Cache API to store one variant per
+  country. That recovers most of the Enterprise behaviour without the Enterprise plan.
+
+  Caveats to validate before committing: the Workers Cache API is **per-datacenter**, not
+  tiered, so hit rates are lower than native caching; every request costs a Worker
+  invocation; and cache-key logic living at the edge is a second place where geo rules can
+  drift out of sync with the origin's. Prototype it in Phase 5 and measure before adopting.
+
 - **Option 3 — client-side island.** SSR a placeholder, hydrate from
-  `/dataflair/api/v1/toplists/{id}/casinos` in the browser. Page stays fully cacheable;
-  the toplist becomes invisible to crawlers. **Acceptable only for below-the-fold or
-  non-SEO placements** — never for the main comparison table on a money page.
+  `/dataflair/api/v1/toplists/{id}/casinos` in the browser. Page stays fully cacheable; the
+  toplist becomes invisible to crawlers. **Acceptable only for below-the-fold or non-SEO
+  placements** — never for the main comparison table on a money page. (~30 lines of vanilla
+  JS. It does not need Preact, whatever else the page has loaded.)
 
-The renderer must therefore report its cacheability upward (`global` vs geo-scoped) so the
-page can set headers correctly. Design that seam in Phase 1, not as an afterthought:
-retrofitting it means auditing every call site.
+**Recommended sequence:** ship Option 1, measure the origin-load cost on the geo-scoped
+pages, and only reach for Option 2 if that cost turns out to matter. Most toplists are
+expected to be `global`, in which case this whole problem affects a small slice of pages and
+Option 1 is simply the right answer permanently.
+
+The renderer must report its cacheability upward (`global` vs geo-scoped) so the page can set
+headers correctly. Design that seam in Phase 1, not as an afterthought: retrofitting it means
+auditing every call site. **If the CMS block system from §9.2 exists, a block can declare
+this directly** — which is the cleanest version of the seam and another reason that question
+matters.
 
 ---
 
@@ -649,7 +773,7 @@ Everything the plugin does today, translated:
 | XSS | Razor auto-encoding + explicit `HtmlAttributeEncode` for attributes. |
 | URL injection in `href` | Keep `UrlValidator`: scheme allowlist (`http`/`https` only), reject `javascript:`/`data:`. Applies to tracker links and logo URLs, which are third-party data. |
 | CSRF on admin actions | `ValidateAntiForgeryToken` on every mutating endpoint. |
-| Admin authorisation | Require the host's admin auth. If none is exposable, gate on a config secret **plus** an IP allowlist, and say so loudly in the docs — a bare shared secret on a public path is not enough for a screen that can rewrite affiliate URLs. |
+| Admin authorisation | **Resolved (§2 answer 5): Cricket World has an auth mechanism — require it.** No bespoke gate, no shared-secret fallback. The admin screens can rewrite affiliate URLs, so they must sit behind the same auth as the rest of their admin, not a parallel one. |
 | Sync trigger auth | Bearer token from config, constant-time compared. |
 | Secrets at rest | API token in `web.config` `appSettings` (encryptable with `aspnet_regiis -pe`), **not** in the settings table. Diverges from WordPress deliberately — `wp_options` is not a good place for a bearer token either. |
 | SSRF on sync | Base URL restricted to a configured host allowlist; no user-supplied URL reaches `HttpClient`. |
@@ -702,23 +826,34 @@ available, taking it to roughly 9–10 calendar weeks.
 
 ## 15. Open decisions
 
+### Closed
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | WebForms vs MVC vs both | **Both** — §9.1 |
+| 2 | DB access + DDL rights | **Create tables; one migration engine, three modes** — §8.2 |
+| 5 | Cloudflare tier → §11 option | **Free/Pro** → Enterprise cache key out; ship option 1, prototype option 2 — §11 |
+| 6 | Review URL source of truth | **Manual per-brand mapping + bulk pattern tool** — §10.1 |
+| 7 | Admin auth mechanism | **Use their existing auth** — §12 |
+| — | Delivery model | **Model C — hybrid SSR + optional island** — §3 |
+| — | Repo | **New standalone repo**, not a folder in this one — §17 |
+
+### Still open
+
 | # | Decision | Owner | Blocks |
 |---|---|---|---|
-| 1 | WebForms vs MVC vs both | Cricket World eng | Phase 3 |
-| 2 | DB access + DDL rights | Cricket World eng | Phase 1 |
-| 3 | Content hook vs `Response.Filter` for tokens | Cricket World eng | Phase 3 |
-| 4 | Editor integration target | Cricket World eng | Phase 4 |
-| 5 | Cloudflare tier → §11 option 1, 2 or 3 | Mex + CW | Phase 5 |
-| 6 | Review URL source of truth (§10.1) | Mex + CW editorial | Phase 3 |
-| 7 | Admin auth mechanism | Cricket World eng | Phase 4 |
+| 3 | Does the CMS have a real block system, and how is a block type registered? | Cricket World eng | Phase 3 — **highest-leverage unknown left** (§9.2) |
+| 4 | NuGet package vs source-integrated build | Cricket World CI owner | Phase 6 — trade-off in §5.1; near-zero cost to defer |
 | 8 | Sync scheduling host (Task Scheduler / Hangfire / external cron) | Cricket World ops | Phase 2 |
 | 9 | Is this Cricket-World-specific, or the first of N ASP.NET sites? | Mex | Phase 1 — decides how much goes in `Core` vs a host adapter |
-| 10 | Reconcile Appendix A with docs.dataflair.ai; settle §A.8 (delta filter, webhooks, rate limits, OpenAPI spec) | Mex | Phase 0 → gates Phase 2 sync design |
+| 10 | Reconcile Appendix A with `docs.dataflair.ai/api/toplist/`; settle §A.8 | Mex | Phase 0 → gates Phase 2 sync design |
+| 11 | Does their global JS rewrite `<img>` into the Lozad pattern? | Cricket World eng | Phase 3 — §8.6 |
 
 Decision 9 is worth settling early. If DataFlair intends to sell this to other ASP.NET
-publishers, the host-specific parts (review URL resolution, admin auth, content hook,
+publishers, the host-specific parts (review URL resolution, admin auth, block registration,
 asset conventions) should sit behind a small `IHostAdapter` from day one, with Cricket
 World as the first implementation. That costs little in Phase 1 and a lot to retrofit.
+Building in a **separate repo** (§17) already keeps that door open.
 
 ---
 
@@ -738,6 +873,44 @@ Three things decide whether this port succeeds:
    pretending WordPress's content model exists on the other side (§10.1).
 
 Everything else is careful, well-understood translation.
+
+---
+
+## 17. Where this gets built — a new repo, not a folder here
+
+**Decision (2026-08-18): the port lives in its own repository.** Suggested name
+`DataFlair-Toplists-AspNet` under the same `DataFlairAI` org.
+
+Why not a folder in this repo:
+
+- **Different everything.** Different language, toolchain (`dotnet`/MSBuild vs
+  Composer/`wp-scripts`), test runner (xUnit vs PHPUnit), CI matrix, and release artefact
+  (NuGet package vs GitHub release zip). The two CI workflows here would either have to
+  learn to ignore a large C# tree or start failing on it.
+- **This repo's release checklist is WordPress-shaped** — version bumps in
+  `dataflair-toplists.php`, `plugins_api` changelog blocks, the strike-odds rsync rule.
+  None of it applies to a DLL, and interleaving two release processes in one repo is how
+  both get done badly.
+- **§15 decision 9 stays open.** If this becomes a product for N ASP.NET publishers, it
+  needs its own versioning and issue tracker from day one. A separate repo costs nothing now
+  and avoids an awkward extraction later.
+- **Clean IP separation** if the deploy model ends up source-integrated (§5.1).
+
+What the new repo takes *from* here:
+
+| Asset | Use |
+|---|---|
+| `tests/phpunit/fixtures/*.json` (3 files) | Copy verbatim. They become the .NET contract-test fixtures and the fake-API replay corpus. |
+| `views/frontend/casino-card.php` | The markup contract for the Razor port — same classes, same DOM, same SVGs. |
+| `assets/style.css`, `assets/editor.css` | Copy verbatim as embedded resources. |
+| `assets/admin/*.js` (~50 KB jQuery) | Port with URL + anti-forgery changes. |
+| This plan + Appendix A | Copy into the new repo's `docs/` as its founding spec. |
+
+The two repos stay linked by the API contract in Appendix A, not by code.
+
+**Implementation detail — repo scaffold, milestone-level task breakdown, and the local test
+harness — lives in [plan 03](03-aspnet-implementation-plan.md).** This document stays the
+"what and why"; 03 is the "how".
 
 ---
 
