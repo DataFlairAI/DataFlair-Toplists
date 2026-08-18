@@ -4,6 +4,7 @@
 > **Target host:** cricketworld.com — custom CMS on Microsoft ASP.NET (CLR 4.0.30319 → .NET Framework 4.x), fronted by Cloudflare
 > **Source of truth:** this repo at v2.2.11 (~18k LOC PHP, 112 PHPUnit tests)
 > **Deliverable:** `DataFlair.Toplists` — a drop-in .NET class library that gives a non-WordPress ASP.NET site the same toplist capability this plugin gives WordPress.
+> **API contract:** see [Appendix A](#appendix-a--dataflair-api-contract-reverse-engineered-from-this-plugin) — endpoints, payloads, error semantics and the seven upstream gaps this plugin already defends against.
 
 ---
 
@@ -663,9 +664,9 @@ Each phase is independently demoable. No phase depends on a later one.
 
 | Phase | Scope | Exit criteria | Est. |
 |---|---|---|---|
-| **0. Discovery + pilot** | Answer §2 questions. Stand up a JS-embed pilot (Option B) on one staging page to prove API access and data shape end-to-end. | Stack questions answered in writing; a real toplist visibly rendering on a Cricket World staging page. | 1 wk |
+| **0. Discovery + pilot** | Answer §2 questions. **Reconcile Appendix A against docs.dataflair.ai** and answer §A.8. Stand up a JS-embed pilot (Option B) on one staging page to prove API access and data shape end-to-end. | Stack questions answered in writing; Appendix A corrected and §A.8 closed; a real toplist visibly rendering on a Cricket World staging page. | 1 wk |
 | **1. Core + data** | `Core` + `Data.SqlServer`. Models, repositories, migrations, settings/cache stores. Port the model + repository tests. | `dotnet test` green; migrations run clean against an empty DB and are idempotent on re-run. | 2 wks |
-| **2. Sync engine** | API client, retry/caps/budget, toplist + brand sync, progressive split, logo download, sync history, integrity checker. | Full catalogue syncs from Sigma into SQL Server; row counts and JSON payloads match a WordPress instance synced from the same account. | 2 wks |
+| **2. Sync engine** | API client, retry/caps/budget, toplist + brand sync, progressive split, logo download, sync history, integrity checker. Build against Appendix A; if §A.8 q1/q2 came back positive, use the delta filter and/or a webhook receiver instead of full resync. | Full catalogue syncs from Sigma into SQL Server; row counts and JSON payloads match a WordPress instance synced from the same account. | 2 wks |
 | **3. Rendering + placement** | Razor templates (card, table, accordion), view-models, review-URL resolver, geo gate, token expander, Razor helper, WebForms control, assets handler, `/go/` redirect. | A staging page renders a toplist **byte-comparable** to WordPress output for the same toplist ID; `/go/` redirects correctly; read-only render test passes. | 3 wks |
 | **4. Admin** | Five screens, JSON endpoints, ported admin JS, anti-forgery + auth, editorial pros/cons, toplist picker. | An operator can sync, browse, edit review URLs, run tests, read logs, and change settings without touching the DB. | 3 wks |
 | **5. Geo + cache hardening** | Cacheability signalling, Cloudflare rules, per-country QA matrix, optional hydration island. | Verified: a `country` toplist never leaks across countries through the CDN. Signed off against the §11 decision. | 1.5 wks |
@@ -712,6 +713,7 @@ available, taking it to roughly 9–10 calendar weeks.
 | 7 | Admin auth mechanism | Cricket World eng | Phase 4 |
 | 8 | Sync scheduling host (Task Scheduler / Hangfire / external cron) | Cricket World ops | Phase 2 |
 | 9 | Is this Cricket-World-specific, or the first of N ASP.NET sites? | Mex | Phase 1 — decides how much goes in `Core` vs a host adapter |
+| 10 | Reconcile Appendix A with docs.dataflair.ai; settle §A.8 (delta filter, webhooks, rate limits, OpenAPI spec) | Mex | Phase 0 → gates Phase 2 sync design |
 
 Decision 9 is worth settling early. If DataFlair intends to sell this to other ASP.NET
 publishers, the host-specific parts (review URL resolution, admin auth, content hook,
@@ -736,3 +738,213 @@ Three things decide whether this port succeeds:
    pretending WordPress's content model exists on the other side (§10.1).
 
 Everything else is careful, well-understood translation.
+
+---
+
+## Appendix A — DataFlair API contract (reverse-engineered from this plugin)
+
+> **Provenance note.** `docs.dataflair.ai` is blocked by this session's egress policy
+> (gateway returns 403 on CONNECT for both `docs.dataflair.ai` and `dataflair.ai`), so
+> this appendix is derived from the working production integration in this repo rather
+> than from the published documentation: `src/Http/`, `src/Sync/`, `src/Database/ToplistDataStore.php`,
+> `includes/DataIntegrityChecker.php`, the three fixtures in `tests/phpunit/fixtures/`,
+> and `tests/phpunit/Integration/V2ApiBrandsTest.php`.
+>
+> **Treat this as authoritative on observed behaviour and provisional on intent.** It
+> describes what the API demonstrably returns and what this plugin defends against — not
+> what is contractually guaranteed. Before Phase 2 starts, reconcile it against
+> docs.dataflair.ai and record any divergence here. Where the two disagree, the docs win
+> on *intent*; this appendix wins on *what you must handle in production*.
+
+### A.1 Transport and auth
+
+| | |
+|---|---|
+| Base URL | `https://{tenant}.dataflair.ai/api/v1` — **tenant-scoped**. `sigma` is one tenant; Cricket World will have its own. Hard-coded fallback in the plugin is `https://sigma.dataflair.ai/api/v1`. |
+| Auth | `Authorization: Bearer {token}` |
+| Accept | `application/json` |
+| Versioning | Path segment. Brands can opt into v2 by rewriting `/api/v\d+$` → `/api/v2`; **toplists are always v1** today. |
+| Optional | HTTP Basic credentials injected into the URL for password-gated staging environments — separate from, and additional to, the bearer token. |
+
+Base URL resolution order (port this cascade as-is): configured setting → base extracted from a cached endpoint URL via `^(https?://[^/]+/api/v\d+)/` → hard-coded fallback. HTTPS is forced.
+
+### A.2 Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/toplists?per_page={n}&page={n}` | Paginated list. **Returns the full nested payload** — items, brand, offer, trackers — not stubs. `?include=items` is a no-op (verified 2026-04-25: identical bytes, identical time). |
+| `GET` | `/toplists/{id}` | Single toplist. Same nested shape. Used as the per-ID fallback when a bulk page 5xxs. |
+| `GET` | `/brands?per_page={n}&page={n}` | Paginated brand catalogue. v1 default, v2 opt-in. |
+
+Connection test hits `{base}/toplists` with no query string.
+
+**Because the list endpoint already returns everything, the .NET sync engine should default to
+list-paging and treat per-ID fetches purely as the degradation path** — same as the plugin.
+Do not design a two-phase "list then hydrate" fetch; it would double the request count for no gain.
+
+### A.3 Envelopes and pagination
+
+List responses:
+
+```jsonc
+{ "data": [ { /* toplist or brand */ }, … ],
+  "meta": { "last_page": 4, "total": 87 } }
+```
+
+Single responses: `{ "data": { … } }`
+
+Rules the port must reproduce:
+
+- `meta.last_page` drives the batch loop; **default to `1` when absent** (the plugin caches it
+  for an hour and falls back to a stored value). `meta.total` is informational.
+- Missing `data` is a hard error, not an empty page.
+- v2 brand payloads may use **`data.listItems`** where v1 uses **`data.items`**. Read both.
+- **Normalization rule, easy to miss and expensive to get wrong:** when persisting an element
+  taken from a *list* response, the plugin re-wraps it as `{"data": {…toplist…}}` before
+  storing (`ToplistSyncService` line ~181). The stored blob therefore always has the
+  single-toplist envelope shape regardless of which endpoint produced it, and every reader
+  — shortcode, block, table renderer — accesses `data.data.items`. The .NET store must
+  apply the same wrap or every render breaks.
+
+### A.4 Toplist payload
+
+Top-level fields the integrity checker treats as **required**: `id`, `name`, `status`,
+`version`, `template`, `site`, `geo`, `items`.
+
+Fields it treats as **expected-but-tolerated** (upstream is known to omit them on some
+tenants — warn, persist, never block the sync): `slug`, `currentPeriod`, `publishedAt`,
+`shortcode`.
+
+```jsonc
+{ "data": {
+  "type": "toplist", "id": 55, "name": "…", "status": "…", "locked": false,
+  "version": "…", "slug": "…", "currentPeriod": "…", "publishedAt": "…",
+  "shortcode": "…", "createdAt": "…", "updatedAt": "…",
+  "template": { "id": 7, "name": "…", "productTypeId": 1, "productType": "casino",
+                "listClassificationTypeId": 2, "listClassificationType": "…" },
+  "site":     { "id": 3, "domain": "…" },
+  "geo":      { "geo_type": "country|market|global", "name": "Brazil",
+                "code": "BR", "coveredCountries": ["…"] },
+  "items": [ {
+    "type": "item", "id": 301, "position": 1, "isLocked": false, "dealId": "…",
+    "brand": { "id": 201, "name": "…", "slug": "…", "rating": 4.8,
+               "logo": { "rectangular": "…", "square": "…", "backgroundColor": "#1a1a2e" },
+               "licenses": ["MGA", "…"], "paymentMethods": ["Visa", "…"],
+               "restrictedCountries": ["US", "FR"] },
+    "offer": { "id": 401, "name": "…", "offerTypeId": 1, "offerTypeName": "…",
+               "offerText": "…", "currencies": ["…"],
+               "has_free_spins": true, "bonus_wagering_requirement": 30,
+               "bonus_expiry_date": "…", "bonus_code": "…",
+               "minimum_deposit": 10, "max_payout": null, "max_bonus_amount": 500,
+               "is_sticky_bonus": false, "minimum_odds": null, "free_bet_value": null,
+               "stake_returned": null, "bet_type": null, "tournament_ticket_value": null,
+               "rakeback_percentage": null, "free_tickets": null,
+               "geos": { "countries": ["Brazil"], "markets": ["LATAM"] },
+               "trackers": [ { "id": 401, "campaignName": "Brazil Main",
+                               "trackerLink": "https://…", "tcLink": "https://…",
+                               "pageType": "homepage",
+                               "geos": { "countries": ["Brazil"], "markets": [] } } ] }
+  } ] } }
+```
+
+`geo.geo_type` drives the render gate and, on the .NET side, page cacheability (§11). Note
+the shape varies by type: `country` carries `code`, `market` carries `coveredCountries`,
+`global` carries neither. The fixture shows `geo` with only `geo_type` + `name` — **`code`
+can be absent even on a `country` toplist**, which is exactly why `GeoRenderGate`
+default-denies rather than guessing.
+
+**Offer field sets are product-type-dependent.** Casino offers populate the bonus/spins
+fields; sportsbook offers populate `minimum_odds`, `free_bet_value`, `stake_returned`,
+`bet_type`; poker offers populate `tournament_ticket_value`, `rakeback_percentage`,
+`free_tickets`. Everything else is `null`. The .NET models must treat every one of these as
+nullable — do not infer required-ness from a single tenant's data.
+
+### A.5 Brand payload (`/brands`)
+
+Different key casing from the brand object nested inside a toplist item — **this is a real
+trap**. The nested one uses `rating`/`logo`; the catalogue one uses `brandStatus`,
+`productTypes`, `topGeos`, `offersCount`, `classificationTypes`:
+
+```jsonc
+{ "id": 201, "name": "…", "slug": "…",
+  "brandStatus": "Active",
+  "productTypes": ["Casino", "Sportsbook"],
+  "licenses": ["…"], "classificationTypes": ["…"],
+  "topGeos": { "countries": ["…"], "markets": ["…"] },
+  "offersCount": 4,
+  "offers": [ { "trackers": [ … ] } ] }
+```
+
+Mapping rules the port must reproduce exactly:
+
+| Column | Derivation |
+|---|---|
+| filter | **Skip any brand whose `brandStatus !== 'Active'`** — not stored at all |
+| skip | Skip any brand with no `id` |
+| `product_types` | `implode(', ', productTypes)` |
+| `licenses` | `implode(', ', licenses)` |
+| `classification_types` | `implode(', ', classificationTypes)` |
+| `top_geos` | `topGeos.countries` **concatenated with** `topGeos.markets`, comma-joined |
+| `offers_count` | `count(offers)` — **not** `offersCount`, which is only used for the warning below |
+| `trackers_count` | sum of `count(offer.trackers)` across all offers |
+| `local_logo_url` | local path after sync-time logo download, else `NULL` |
+| `data` | the whole brand object, verbatim |
+
+Operational warning worth keeping: if `topGeos` is empty **and** `offersCount > 0`, log
+"has N offer(s) but no topGeos — check DataFlair admin". That is a data-entry error upstream,
+and it silently removes the brand from geo-targeted lists.
+
+### A.6 Error handling
+
+| Status | Meaning and required response |
+|---|---|
+| 401 | **Two distinct causes.** API bearer rejected, *or* the web server's HTTP Basic gate rejecting you before the API is reached. The plugin distinguishes them by inspecting `WWW-Authenticate` and whether the body is HTML rather than JSON. Port this — conflating them sends operators hunting the wrong credential. |
+| 403 | Token valid, lacks permission for the resource. Not retryable. |
+| 404 | Endpoint wrong — usually a bad base URL. Not retryable. |
+| 419 | Session/CSRF-shaped failure (Laravel upstream). Not retryable. |
+| 429 | Rate limited. Back off; do not hammer. |
+| 500 / 502 / 503 / 504 | **Retryable.** Exponential retry, max 2 attempts, then progressive split (per_page 25 → 5 → 1), then per-ID fallback. |
+
+Error bodies carry a `message` field; surface it verbatim in the admin alongside the
+plugin's own guidance text.
+
+Other transport rules to carry across: 15 MB response cap (an unbounded upstream response is
+a memory-exhaustion vector), 12 s default timeout / 20 s on the toplist list call, and the
+25 s wall-clock budget with 3 s headroom checked between items.
+
+### A.7 Known upstream gaps this plugin already works around
+
+Port the defences, not just the happy path. Each of these is a real observed failure:
+
+1. **`offer.geos` may be `NULL` or a non-array** — flagged in `DataIntegrityChecker` as
+   "the known bug". Never assume `geos.countries` / `geos.markets` exist.
+2. **`publishedAt` / `shortcode` / `slug` / `currentPeriod` missing** on some tenants. Warn,
+   persist, carry on. Deliberately *not* logged to `error_log` any more because the noise
+   drowned out real timing diagnostics — mirror that restraint in the .NET logger.
+3. **Brand `logo` may be a bare string, a nested object (`rectangular`/`square`/`url`/`src`/`path`), or an array** — the card template walks five candidate keys before giving up. Port the whole cascade.
+4. **`bonus_code` is sometimes the literal string `"N/A"`** — treat as empty, suppress the promo pill.
+5. **`max_payout` absent** → the card renders `"None"`, not an empty cell.
+6. **`trackerLink` occasionally arrives as an array** rather than a string; the plugin
+   type-checks before use. An unvalidated affiliate URL is both a broken CTA and an
+   open-redirect risk.
+7. **Pagination meta can be missing** → assume one page rather than looping forever.
+
+### A.8 What to verify against docs.dataflair.ai before Phase 2
+
+Open questions this codebase cannot answer, listed so they can be checked in one pass:
+
+1. Is there a `?modified_since=` delta filter yet? Plan 01 proposes adding one; if it has
+   shipped, the .NET sync should use it from day one rather than full-resyncing. **This is
+   the highest-value question on the list.**
+2. Are webhooks available (`toplist.updated`, `brand.updated`, `alternative_toplist.updated`)?
+   Plan 01's Phase C. If yes, the .NET port should expose a receiver endpoint instead of
+   relying solely on a scheduled pull.
+3. Published rate limits — the 429 handling is currently reactive with no documented budget.
+4. Is `/api/v2` the intended path for toplists as well, and what changes in the payload?
+5. Is there an official OpenAPI/Swagger document? If so, generate the .NET DTOs from it
+   rather than hand-writing them from these fixtures — that removes an entire class of
+   drift, and is worth a day of Phase 1 to set up.
+6. Whether `alternative_toplists` has a first-class endpoint, or remains purely a local
+   WordPress-side mapping (it is local-only in this plugin today).
+7. Tenant/base-URL convention for Cricket World specifically, and whether their token is
+   scoped to a `site.id` that filters `/toplists` automatically.
