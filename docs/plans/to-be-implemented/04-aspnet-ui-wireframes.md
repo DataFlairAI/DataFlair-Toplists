@@ -248,6 +248,51 @@ was never a good home for a bearer token either; the port just declines to repea
 The amber **Unsaved changes** pill and the `beforeunload` guard port from the WordPress
 dirty-state script unchanged.
 
+**The Customizations tab is rebuilt, not ported (plan 02 §8.10).** WordPress's version is
+four text inputs expecting hand-typed Tailwind syntax (`"brand-600"`, `"bg-[#ff0000]"`) that
+the rendered card never actually reads — set them to anything and the card stays whatever
+the stylesheet says. The ASP.NET version uses real colour pickers against the 9 properties
+that actually reach the page, plus one that has never existed before:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  Settings                                                             [ Save ]   │
+│  ┌────────────────┬────────────────┬──────────┬──────────────┐                   │
+│  │  API Connection│▸Customizations │   Sync   │ Geo-Targeting│                   │
+│  └────────────────┴────────────────┴──────────┴──────────────┘                   │
+│                                                                                  │
+│  Site-wide defaults — every toplist uses these unless a block/shortcode          │
+│  overrides them.                                                                │
+│                                                                                  │
+│   Ribbon background   [🟥]  #e11d48      Ribbon label   [ Editor's Pick      ]  │
+│   Ribbon text         [⬜]  #ffffff                                              │
+│                                                                                  │
+│   CTA button          [🟦]  #2563eb      CTA hover      [🟦]  #1d4ed8           │
+│   CTA text            [⬜]  #ffffff                                              │
+│                                                                                  │
+│   Rank badge bg       [⬜]  #f3f4f6      Rank badge text [⬛]  #111827           │
+│   Brand name link     [🟪]  #2563eb                                              │
+│   Star rating ★new    [🟨]  #fbbf24      ← no hook for this existed in WordPress │
+│                                                                                  │
+│   Card style           ( Rounded ▾ )     Rounded · Square · Elevated             │
+│                                                                                  │
+│  ┌────────────────────────────────────────────────────────────────────┐         │
+│  │  Live preview                                                      │         │
+│  │  ┌──────────────────────────────────────────────────────────┐      │         │
+│  │  │ ★ EDITOR'S PICK          ┌───┐  Casino Alpha    ★4.8/5    │      │         │
+│  │  │  ┌───┐                   │Play Now →│                     │      │         │
+│  │  │  │ 1 │  100% up to ₹10,000                                │      │         │
+│  │  │  └───┘                                                     │      │         │
+│  │  └──────────────────────────────────────────────────────────┘      │         │
+│  └────────────────────────────────────────────────────────────────────┘         │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The live preview matters more here than it would in WordPress: the old panel had no preview
+either, which is presumably part of how 22 non-functional fields shipped unnoticed — nothing
+on the settings screen ever contradicted them. A preview that actually reflects the saved
+values is a cheap guard against the same failure mode recurring.
+
 ---
 
 ## 7. How a toplist gets on a page
@@ -273,20 +318,28 @@ question (§9.2).
 │ │ │          India      ▾  │ │ │
 │ │ │ Layout:  Cards      ▾  │ │ │          Block settings panel
 │ │ │ Limit:   [ 10 ]        │ │ │        ┌─────────────────────────────────────┐
-│ │ │ CTA:     Single     ▾  │ │ │        │ Toplist    [ Top Casinos India  ▾ ] │
-│ │ │                        │ │ │        │ Layout     [ Cards              ▾ ] │
-│ │ │ ⚠ Geo-scoped (IN) —    │ │ │        │ Limit      [ 10                   ] │
-│ │ │   page will not be     │ │ │        │ CTA mode   [ Single             ▾ ] │
+│ │ │                        │ │ │        │ Toplist    [ Top Casinos India  ▾ ] │
+│ │ │ ⚠ Geo-scoped (IN) —    │ │ │        │ Layout     [ Cards              ▾ ] │
+│ │ │   page will not be     │ │ │        │ Limit      [ 10                   ] │
 │ │ │   CDN-cached           │ │ │        │ ─────────────────────────────────── │
 │ │ └────────────────────────┘ │ │        │ ▸ Pros / cons overrides             │
-│ │      [ Preview ]           │ │        │ ▸ Colours                           │
+│ │      [ Preview ]           │ │        │ ▾ Colours        using site default │
+│ └────────────────────────────┘ │        │    Ribbon     🟥   CTA button  🟦   │
+│ ┌────────────────────────────┐ │        │    Rank badge ⬜   Star rating 🟨   │
+│ │ ▤ Text block               │ │        │    Card style ( Rounded        ▾ )  │
+│ │ Our verdict…               │ │        │    [ Reset to site default ]        │
 │ └────────────────────────────┘ │        └─────────────────────────────────────┘
-│ ┌────────────────────────────┐ │
-│ │ ▤ Text block               │ │          The ⚠ line is why the block path is
-│ │ Our verdict…               │ │          worth fighting for: the editor learns
-│ └────────────────────────────┘ │          the caching consequence at insert time,
-└────────────────────────────────┘          not from a support ticket later.
+└────────────────────────────────┘
 ```
+
+The ⚠ line is why the block path is worth fighting for: the editor learns the caching
+consequence at insert time, not from a support ticket three weeks later.
+
+The Colours panel is the rebuilt, real one (plan 02 §8.10) — actual colour swatches, a
+bounded card-style choice instead of freeform text, and an explicit "using site default"
+state so an editor can tell at a glance whether they're overriding anything. It replaces
+what was, in WordPress, 22 Tailwind-syntax text fields that the rendered card never read —
+and the "CTA mode" field is gone entirely, for the same reason.
 
 ### Option 2 — token in the article body (content hook)
 
@@ -369,6 +422,10 @@ Notes carried over from the plan:
 - **Logo** is `loading="eager"` for positions 1–3, `lazy` below, always with explicit
   `width`/`height` (§8.6). Falls back to a two-letter placeholder when absent.
 - **Labels** ("Welcome Bonus" vs "Free Bet" vs "Rakeback") come from the product-type map.
+- **Ribbon, CTA button, rank badge, brand link and star colour** all read from CSS custom
+  properties (`--df-ribbon-bg`, `--df-cta-bg`, `--df-star-color`, …) set by an inline
+  `<style>` block scoped to this instance, falling back to the values shown here when no
+  override is set (§8.10). In WordPress these are fixed; here they're finally live.
 
 ---
 

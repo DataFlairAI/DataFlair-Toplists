@@ -98,19 +98,26 @@ WordPress instance synced from the same account.
 ### M3 — Rendering + placement (3 wks)
 
 1. Razor templates via RazorGenerator: `CasinoCard`, `ToplistTable`, `ToplistAccordion` —
-   markup copied from the reference PHP, classes and SVGs unchanged.
+   markup copied from the reference PHP, classes and SVGs unchanged. Shipped CSS uses
+   `var(--df-*, <today's fixed value>)` throughout, so an instance with no overrides is
+   pixel-identical to the reference — plan 02 §8.10.
 2. View-models, `ProsConsResolver`, `SyncLabelFormatter`, `ReviewUrlResolver`
    (override → pattern → CTA; **no slug-variant fuzzy matching** — plan 02 §10.1).
-3. `GeoRenderGate` + `GeoFamilySelector` + `VisitorGeoResolver` (`CF-IPCountry`,
+3. **Customization system** (plan 02 §8.10 — new, not a port): `ThemeOptions` model
+   (9 typed colour/preset fields, not 22 Tailwind-string fields), site-wide defaults in
+   Settings, per-instance override in the placement surface, resolved into a scoped inline
+   `<style>` block. Includes the star-rating colour hook that has never existed in
+   WordPress. Drop `ctaMode` — dead in the source, not worth carrying over.
+4. `GeoRenderGate` + `GeoFamilySelector` + `VisitorGeoResolver` (`CF-IPCountry`,
    `X-Geoip-Country`, admin `?dataflair_geo=` override). Default-deny.
-4. **Cacheability signal**: the renderer reports `global` vs geo-scoped upward. Design this
+5. **Cacheability signal**: the renderer reports `global` vs geo-scoped upward. Design this
    seam now — retrofitting means auditing every call site (plan 02 §11).
-5. Placement surfaces: `@Html.DataFlairToplist()`, `<df:Toplist>`, and whichever of the
+6. Placement surfaces: `@Html.DataFlairToplist()`, `<df:Toplist>`, and whichever of the
    three §9.2 options the block-system answer selects.
-6. `/go/?campaign=` route → validate scheme → 301; 404 on miss. Tracker map in
+7. `/go/?campaign=` route → validate scheme → 301; 404 on miss. Tracker map in
    `DataFlairCache`, **written at sync time**, not only at render.
-7. Asset handler: embedded CSS/JS, immutable headers, version-stamped URL.
-8. Logos: native `loading="lazy"`, eager for positions 1–3, explicit `width`/`height`.
+8. Asset handler: embedded CSS/JS, immutable headers, version-stamped URL.
+9. Logos: native `loading="lazy"`, eager for positions 1–3, explicit `width`/`height`.
 
 **Exit:** golden-HTML diff against the PHP renderer passes on all three fixtures; `/go/`
 redirects correctly and survives an app-pool recycle; read-only render test passes.

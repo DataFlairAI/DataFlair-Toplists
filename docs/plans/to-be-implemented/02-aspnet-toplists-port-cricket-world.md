@@ -148,15 +148,16 @@ Everything the WordPress plugin does today, and its disposition in the port.
 |---|---|
 | Casino card: ribbon (#1), position badge, logo + initials fallback, brand link, star rating, Read Review link, bonus label/text, promo-code copy button, 3 feature bullets, CTA button | ✅ 1:1, markup preserved |
 | Expandable details panel (Alpine.js `x-data="{ showDetails: false }"`) — metrics grid, pros/cons, licences, payment methods | ✅ 1:1 (keep Alpine; §8.7) |
-| Table layout + accordion table layout | ✅ 1:1 |
+| `layout` attribute: `cards` (the only production display) vs `table` (operator debug aid, labelled **"Accordion Tables (Testing)"** in the block UI — not an editorial choice) | ✅ 1:1 — port both, keep the same UI framing so editors don't reach for the debug layout by mistake |
 | Product-type labels (casino / sportsbook / poker) | ✅ 1:1 |
 | Review-URL cascade: `review_url_override` → published review permalink → `/reviews/{slug}/` → affiliate CTA | ⚠️ middle step needs a host-specific resolver — §10.1 |
 | Stale-data banner after 3 days | ✅ 1:1 |
 | **Render-time read-only guarantee**: no HTTP, no media sideload, no content writes | ✅ **carry across as a pinned test** — this is the most valuable invariant in the codebase |
 | H7 batched brand-meta prefetch (flat query count regardless of item count) | ✅ 1:1 |
 | Pre-computed `local_logo_url` + `cached_review_post_id` at sync time | ✅ 1:1 |
-| Per-block colour customisations | ✅ 1:1 via token attributes + settings defaults |
-| Pros/cons overrides keyed by stable brand/item ID | ✅ 1:1 |
+| Per-card/per-block visual customisation (colours, border radius, shadows, ribbon text, rating stars) | ❌ **currently non-functional in WordPress — do not port as-is.** See §8.10: rebuilt for real, not carried across. |
+| `ctaMode` shortcode/block attribute | ❌ **also dead** — normalised and threaded through, never read downstream. Drop it rather than port a no-op. |
+| Pros/cons overrides keyed by stable brand/item ID | ✅ 1:1 — this one is real; see §8.10 for why it's the control case |
 
 ### 4.4 Placement, redirect, geo
 
@@ -552,6 +553,112 @@ colour pickers, and brands table all come across.
 built against the WordPress endpoints keeps working. These also back the optional client
 hydration island in §11.
 
+
+### 8.10 Customization system — rebuilt correctly, not ported as-is
+
+**Finding, worth stating plainly: the WordPress plugin's per-card visual customisation does
+not currently work.** This surfaced while scoping this section — tracing where the block's
+colour attributes actually land, expecting to write "✅ ports 1:1," found instead a complete,
+plausible-looking pipeline with a dead end.
+
+The trace, end to end:
+
+1. `dataflair-toplists/toplist` block declares **22 style attributes** — `ribbonBgColor`,
+   `ribbonText`, `rankBgColor`, `rankBorderRadius`, `brandLinkColor`, `bonusLabelStyle`,
+   `bonusTextStyle`, `featureCheckBg`, `featureCheckColor`, `featureTextColor`, `ctaBgColor`,
+   `ctaHoverBgColor`, `ctaTextColor`, `ctaBorderRadius`, `ctaShadow`, `metricLabelStyle`,
+   `metricValueStyle`, `rgBorderColor`, `rgTextColor`, and others — editable in the block
+   inspector under panels like "Ribbon / Highlight Bar" (`src/index.js`).
+2. Four of them (`ribbonBgColor`, `ribbonTextColor`, `ctaBgColor`, `ctaTextColor`) also have
+   a **site-wide default UI** on the Settings → Customizations tab, stored as `wp_options`.
+3. `ToplistBlock::defaults()` merges the option-sourced defaults with the block's saved
+   attributes and passes all 22 into `$shortcode_atts`.
+4. `ToplistShortcode::render()` carries them through into `CasinoCardVM::$customizations`.
+5. `CardRenderer::render()` extracts `$customizations` into the template's local scope
+   (`$customizations = $vm->customizations;`) before including `casino-card.php`.
+6. **`views/frontend/casino-card.php` — 531 lines — never reads `$customizations`, and
+   never references any of the 22 attribute names.** Grepping the template for every one of
+   them returns nothing. The rendered card uses fixed CSS classes
+   (`.casino-card-ribbon`, `.casino-cta-button`, `.rating-star`, …) from `assets/style.css` /
+   `editor.css`, unconditionally, regardless of what the block or Settings screen holds.
+
+An operator can set the CTA button to red in Settings, save it, see no error, and the button
+stays whatever colour the stylesheet says. **Star rating colour has no hook at all** —
+`.rating-star { color: #fbbf24; }` is a flat rule in `editor.css`; it was never a block
+attribute, on-CPT setting, or option in the first place.
+
+**Why this almost certainly happened:** the attribute values are Tailwind utility-class
+syntax — `"brand-600"`, `"text-gray-900 text-lg leading-6 font-semibold"`, `"shadow-md"`.
+Neither this plugin nor its target sites ship Tailwind (confirmed: no Tailwind config,
+CDN reference, or `@apply` anywhere in this repo). Those strings were never going to render
+as colours without a Tailwind build resolving them into real CSS. The card template's
+underlying rewrite to fixed, plain CSS classes (the read-only render-time invariant work,
+Phase 0A onward) most likely dropped the Tailwind-consuming markup and left the
+attribute-threading plumbing in place, unnoticed because nothing exercises it end to end.
+
+**Decision for the ASP.NET port: do not port this pipeline. Build the feature for real.**
+Faithfully reproducing 22 inert fields would be strictly worse than not having them — a
+control that visibly does nothing erodes trust in every other control on the same screen.
+This is also worth a one-line heads-up on the WordPress side separately; flag if you'd like
+that filed as its own issue on this repo — it's out of scope for this docs-only branch.
+
+**Design — CSS custom properties, not utility-class strings:**
+
+Real color inputs (hex/rgba from an actual colour picker, not a text field expecting
+Tailwind syntax) resolve at render time into an inline `<style>` block scoped to a
+per-instance attribute, consumed by `var()` fallbacks already built into the shipped CSS:
+
+```html
+<style>
+  .df-toplist-x7f2 {
+    --df-ribbon-bg: #e11d48;   --df-ribbon-text: #ffffff;   --df-ribbon-label: "Editor's Pick";
+    --df-cta-bg: #2563eb;      --df-cta-bg-hover: #1d4ed8;  --df-cta-text: #ffffff;
+    --df-star-color: #fbbf24;  --df-rank-bg: #f3f4f6;       --df-rank-text: #111827;
+  }
+</style>
+<div class="dataflair-toplist df-toplist-x7f2"> … </div>
+```
+
+```css
+/* shipped, unconditional CSS — falls back to today's fixed values when no override exists */
+.casino-card-ribbon  { background: var(--df-ribbon-bg, #e11d48); color: var(--df-ribbon-text, #fff); }
+.casino-cta-button   { background: var(--df-cta-bg, #2563eb); color: var(--df-cta-text, #fff); }
+.casino-cta-button:hover { background: var(--df-cta-bg-hover, #1d4ed8); }
+.rating-star          { color: var(--df-star-color, #fbbf24); }
+.casino-position-badge{ background: var(--df-rank-bg, #f3f4f6); color: var(--df-rank-text, #111827); }
+```
+
+No Tailwind dependency, no build step, no JS required for the base case, and every property
+has the current hardcoded value as its fallback — so an instance with no overrides renders
+pixel-identical to today. Same cascade shape WordPress already advertises (and should have
+delivered): **site-wide default in Settings → per-block/per-shortcode override.**
+
+**Trimmed, real attribute set** — collapses the 22 Tailwind-string fields into 9 typed
+properties. The multi-line utility-class fields (`bonusLabelStyle`, `bonusTextStyle`,
+`metricLabelStyle`, `metricValueStyle`, `rgBorderColor`, `rgTextColor`) don't have a
+faithful equivalent — they were arbitrary style strings, not single values — so they're
+replaced with the specific properties worth exposing rather than carried over as free text:
+
+| Property | CSS variable | New capability? |
+|---|---|---|
+| Ribbon background / text / label | `--df-ribbon-bg` / `-text` / literal string | Ports (was already real intent, just unwired) |
+| CTA button background / hover / text | `--df-cta-bg` / `-bg-hover` / `-text` | Ports |
+| Rank badge background / text | `--df-rank-bg` / `-text` | Ports |
+| Brand name link colour | `--df-brand-link` | Ports |
+| **Star rating colour** | `--df-star-color` | **New** — user-requested; had no hook in WordPress at all |
+
+Border radius and shadow become one **card style preset** (`rounded` / `square` /
+`elevated`) rather than four freeform strings — a bounded choice an operator can actually
+reason about, and the choice a colour-picker UI can render as swatches instead of text
+inputs prone to typos.
+
+`layout` (Cards vs the Testing accordion table) and pros/cons overrides are unaffected by
+any of this — they are the two customisation-adjacent features that were already real, and
+they carry across unchanged (§4.3). `ctaMode` is dropped: same shape of dead code as the
+style attributes, threaded and normalised but never read downstream — no reason to port a
+second no-op.
+
+
 ---
 
 ## 9. Getting a toplist onto a page
@@ -688,20 +795,28 @@ Better still, and worth doing in Phase 3: write the campaign → tracker map at 
 time rather than render time, so a redirect works for any campaign in the catalogue
 whether or not its card has been rendered yet.
 
-### 10.4 No Gutenberg
+### 10.4 No Gutenberg — mostly resolved by §9.2
 
-Gutenberg gives editors a visual block with an inspector panel. Realistic replacements,
-best-effort first:
+Gutenberg gives editors a visual block with an inspector panel. Whether that experience
+survives the port now depends entirely on the answer to still-open question 3 (§2): does
+Cricket World's CMS have a real content-block system?
 
-1. **Editor plugin** (CKEditor 5 / TinyMCE) with an "Insert Toplist" button that opens a
-   picker and inserts the token — closest to the current experience. Depends on question 4.
-2. **Admin picker page** that renders a searchable toplist list with a copy-token button
-   and a live preview. Works regardless of editor. **Ship this in Phase 3 either way** —
-   it is the fallback and the QA tool.
-3. Server-side preview endpoint so editors can see a rendered toplist before publishing.
+- **If yes** — §9.2 Option 1 (register a `DataFlair Toplist` block type) **is** the Gutenberg
+  replacement, not an approximation of one: a picker, typed inspector-style attributes, and
+  placement anywhere a block can go. This subsection is then nearly moot.
+- **If no** — fall back to what Gutenberg-parity actually needs, best-effort first:
+  1. **Editor plugin** (CKEditor 5 / TinyMCE) with an "Insert Toplist" button that opens a
+     picker and inserts the token — closest to the current experience. Depends on question 4.
+  2. **Admin picker page** that renders a searchable toplist list with a copy-token button
+     and a live preview. Works regardless of editor. **Ship this in Phase 3 either way** —
+     it is the fallback and the QA tool.
+  3. Server-side preview endpoint so editors can see a rendered toplist before publishing.
 
-The block's colour/customisation attributes become token attributes plus site-wide defaults
-in Settings, so the capability survives even where the UI is plainer.
+**The inspector's visual controls do not carry over as-is, and that is by design, not a
+gap.** In WordPress today those controls edit 22 attributes that the rendered card never
+reads (§8.10). Whichever placement path wins, its settings UI exposes only the smaller, real
+attribute set §8.10 defines — layout, item limit, pros/cons overrides, and the rebuilt
+colour/typography tokens that actually reach the page.
 
 ---
 
