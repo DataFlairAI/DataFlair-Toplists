@@ -149,6 +149,7 @@ Everything the WordPress plugin does today, and its disposition in the port.
 | Casino card: ribbon (#1), position badge, logo + initials fallback, brand link, star rating, Read Review link, bonus label/text, promo-code copy button, 3 feature bullets, CTA button | ✅ 1:1, markup preserved |
 | Expandable details panel (Alpine.js `x-data="{ showDetails: false }"`) — metrics grid, pros/cons, licences, payment methods | ✅ 1:1 (keep Alpine; §8.7) |
 | `layout` attribute: `cards` (the only production display) vs `table` (operator debug aid, labelled **"Accordion Tables (Testing)"** in the block UI — not an editorial choice) | ✅ 1:1 — port both, keep the same UI framing so editors don't reach for the debug layout by mistake |
+| `layout: grid` — 2/3-up responsive card grid | ➕ **new, not in WordPress** — CSS-only variant of `cards` on the same markup; see §8.11 |
 | Product-type labels (casino / sportsbook / poker) | ✅ 1:1 |
 | Review-URL cascade: `review_url_override` → published review permalink → `/reviews/{slug}/` → affiliate CTA | ⚠️ middle step needs a host-specific resolver — §10.1 |
 | Stale-data banner after 3 days | ✅ 1:1 |
@@ -658,6 +659,108 @@ they carry across unchanged (§4.3). `ctaMode` is dropped: same shape of dead co
 style attributes, threaded and normalised but never read downstream — no reason to port a
 second no-op.
 
+### 8.11 Grid layout — a new `layout` value, not in WordPress today
+
+User-requested (2026-08-19), working from a reference screenshot of a competitor's toplist.
+The reference turned out to be the *same* row layout this plugin already renders — full-width
+card, ribbon on #1, expandable "More information" — confirming the existing markup is already
+on the right track. The actual ask is a **third `layout` value**: instead of one full-width
+card per row, arrange 2 or 3 cards side by side on a wide viewport, collapsing responsively.
+
+**Today's two values, for context:** `cards` (production, one full-width row per item) and
+`table` (operator debug aid, §4.3). Neither lays out multiple cards side by side — nothing in
+`assets/style.css` or `editor.css` places more than one `.casino-card-wrapper` per row; each
+is simply a full-width block stacked under the last.
+
+**Design: reuse the card partial verbatim, change only its container and internal flow
+direction via a modifier class.** This keeps the "same DOM, styling does the work" principle
+from §8.5 intact — no new Razor template, no new view-model, no duplicated markup to drift
+out of sync with the row layout:
+
+```html
+<div class="dataflair-toplist dataflair-toplist--grid">
+  <div class="casino-card-wrapper" data-position="1"> … same partial … </div>
+  <div class="casino-card-wrapper" data-position="2"> … same partial … </div>
+  <div class="casino-card-wrapper" data-position="3"> … same partial … </div>
+</div>
+```
+
+```css
+.dataflair-toplist--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  max-width: 1200px;   /* same cap as today's .dataflair-toplist */
+}
+/* the row layout's 4-column internal grid doesn't fit a 320px-wide cell —
+   collapse each card to a single vertical column inside the grid variant only */
+.dataflair-toplist--grid .casino-card-main {
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+.dataflair-toplist--grid .casino-brand-col,
+.dataflair-toplist--grid .casino-bonus-col,
+.dataflair-toplist--grid .casino-features-col,
+.dataflair-toplist--grid .casino-cta-col {
+  border-left: none; border-top: none; padding-left: 0; padding-top: 0;
+}
+```
+
+`repeat(auto-fit, minmax(320px, 1fr))` inside a 1200px container is what actually delivers
+"3 up on desktop, 2 up on tablet, 1 up on mobile" — it's a size-based reflow, not a set of
+manual breakpoints, so it degrades gracefully at any viewport width rather than jumping
+awkwardly between two or three hand-picked ones:
+
+| Container width | Columns that fit at min. 320px + 1.5rem gaps |
+|---|---|
+| ≥ ~1030px (desktop) | **3** |
+| ~700–1029px (tablet) | **2** |
+| < 700px (mobile) | **1** — visually identical to today's `cards` layout |
+
+```
+Desktop — 3 up (>= ~1050px):
+┌────────────────────────────┐  ┌────────────────────────────┐  ┌────────────────────────────┐
+│★ OUR TOP CHOICE            │  │                            │  │                            │
+│[1] ┌────┐  GambleZen       │  │[2] ┌────┐  Malina          │  │[3] ┌────┐  BitStarz        │
+│    │LOGO│  ★4.0/5          │  │    │LOGO│  ★4.5/5          │  │    │LOGO│  ★4.5/5          │
+│    └────┘  Read Review →   │  │    └────┘  Read Review →   │  │    └────┘  Read Review →   │
+│                            │  │                            │  │                            │
+│WELCOME BONUS               │  │WELCOME BONUS               │  │WELCOME BONUS               │
+│500% up to $5,450           │  │100% up to $750             │  │300% up to $500             │
+│+ 350 Free Spins            │  │+ 200 Free Spins            │  │or 5 BTC + 180 FS           │
+│[ Promo: WELCOME100 ⧉ ]     │  │                            │  │                            │
+│                            │  │✓ 80+ providers             │  │✓ 500+ cryptos              │
+│✓ Fast payouts              │  │✓ Tiered VIP                │  │✓ 10-min cashout            │
+│✓ 11,000+ games             │  │                            │  │                            │
+│                            │  │                            │  │                            │
+│[    Visit Site →    ]      │  │[    Visit Site →    ]      │  │[    Visit Site →    ]      │
+│More information +          │  │More information +          │  │More information +          │
+└────────────────────────────┘  └────────────────────────────┘  └────────────────────────────┘
+```
+
+Design decisions worth pinning down explicitly, so the wireframe above isn't mistaken for
+the full spec:
+
+- **Ribbon.** Position 1's "OUR TOP CHOICE" bar renders on its own card, at that card's
+  width — not spanning the whole row as it does in `cards` layout. If position 1 lands in
+  column 2 or 3 (possible once `limit`/pagination interact with grid ordering), the ribbon
+  moves with it. No special-casing needed — it's the same conditional (`position === 1`)
+  the row layout already uses.
+- **Feature bullets** cap at 2 in the grid variant, not 3 — vertical space is scarcer per
+  card than in a 4-column horizontal strip. Configurable, not hardcoded: expose a
+  `maxFeatures` option defaulting to 2 for `grid`, 3 for `cards`.
+  - **Payment-method icons and the metrics grid move into the "More information" expandable
+  panel only** — they don't fit a narrow card unexpanded, and they already live there today.
+- **Column count is a *hint*, not a switch.** Expose it as `columns: auto | 2 | 3` on the
+  layout options — `auto` is `repeat(auto-fit, minmax(320px, 1fr))` (the recommended
+  default); `2` or `3` fixes `grid-template-columns: repeat(2, 1fr)` /
+  `repeat(3, 1fr)` for an editor who wants a guaranteed count regardless of viewport,
+  accepting that a fixed count won't reflow as gracefully on very narrow desktops.
+
+**Scope note:** this is new in the ASP.NET port, not present in the WordPress plugin's CSS at
+all. Because it's pure CSS on already-shared markup, it is also a low-risk **candidate to
+backport to WordPress** later as its own change — flag if that's wanted; out of scope for
+this docs-only branch.
 
 ---
 

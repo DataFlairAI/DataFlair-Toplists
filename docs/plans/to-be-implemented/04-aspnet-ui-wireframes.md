@@ -341,6 +341,10 @@ state so an editor can tell at a glance whether they're overriding anything. It 
 what was, in WordPress, 22 Tailwind-syntax text fields that the rendered card never read —
 and the "CTA mode" field is gone entirely, for the same reason.
 
+**The `Layout ▾` field above gains a third option: `Cards | Grid | Accordion Tables
+(Testing)`.** Picking `Grid` reveals one more control, `Columns: Auto (recommended) | 2 | 3`.
+See §8a below for what it renders.
+
 ### Option 2 — token in the article body (content hook)
 
 ```
@@ -426,6 +430,74 @@ Notes carried over from the plan:
   properties (`--df-ribbon-bg`, `--df-cta-bg`, `--df-star-color`, …) set by an inline
   `<style>` block scoped to this instance, falling back to the values shown here when no
   override is set (§8.10). In WordPress these are fixed; here they're finally live.
+
+## 8a. Grid layout — new, side-by-side cards (plan 02 §8.11)
+
+User-requested, working from a reference screenshot. The reference turned out to be the same
+row layout shown in §8 above — confirming the existing card design is already right. The
+actual gap: nothing arranges multiple cards side by side. `layout: grid` fixes that, reusing
+the identical card partial from §8 under a CSS-only modifier — no new template, no markup
+drift between the two layouts.
+
+```
+Desktop — 3 up (>= ~1050px):
+┌────────────────────────────┐  ┌────────────────────────────┐  ┌────────────────────────────┐
+│★ OUR TOP CHOICE            │  │                            │  │                            │
+│[1] ┌────┐  GambleZen       │  │[2] ┌────┐  Malina          │  │[3] ┌────┐  BitStarz        │
+│    │LOGO│  ★4.0/5          │  │    │LOGO│  ★4.5/5          │  │    │LOGO│  ★4.5/5          │
+│    └────┘  Read Review →   │  │    └────┘  Read Review →   │  │    └────┘  Read Review →   │
+│                            │  │                            │  │                            │
+│WELCOME BONUS               │  │WELCOME BONUS               │  │WELCOME BONUS               │
+│500% up to $5,450           │  │100% up to $750             │  │300% up to $500             │
+│+ 350 Free Spins            │  │+ 200 Free Spins            │  │or 5 BTC + 180 FS           │
+│[ Promo: WELCOME100 ⧉ ]     │  │                            │  │                            │
+│                            │  │✓ 80+ providers             │  │✓ 500+ cryptos              │
+│✓ Fast payouts              │  │✓ Tiered VIP                │  │✓ 10-min cashout            │
+│✓ 11,000+ games             │  │                            │  │                            │
+│                            │  │                            │  │                            │
+│[    Visit Site →    ]      │  │[    Visit Site →    ]      │  │[    Visit Site →    ]      │
+│More information +          │  │More information +          │  │More information +          │
+└────────────────────────────┘  └────────────────────────────┘  └────────────────────────────┘
+
+Tablet — 2 up (~700-1050px), card 3 wraps below:
+┌────────────────────────────┐  ┌────────────────────────────┐
+│★ OUR TOP CHOICE            │  │                            │
+│[1] ┌────┐  GambleZen       │  │[2] ┌────┐  Malina          │
+│    │LOGO│  ★4.0/5          │  │    │LOGO│  ★4.5/5          │
+│    └────┘  Read Review →   │  │    └────┘  Read Review →   │
+│                            │  │                            │
+│WELCOME BONUS               │  │WELCOME BONUS               │
+│500% up to $5,450           │  │100% up to $750             │
+│+ 350 Free Spins            │  │+ 200 Free Spins            │
+│[ Promo: WELCOME100 ⧉ ]     │  │                            │
+│                            │  │✓ 80+ providers             │
+│✓ Fast payouts              │  │✓ Tiered VIP                │
+│✓ 11,000+ games             │  │                            │
+│                            │  │                            │
+│[    Visit Site →    ]      │  │[    Visit Site →    ]      │
+│More information +          │  │More information +          │
+└────────────────────────────┘  └────────────────────────────┘
+```
+
+Reflows by container width, not fixed breakpoints — `repeat(auto-fit, minmax(320px, 1fr))`
+inside the existing 1200px cap:
+
+| Container width | Columns |
+|---|---|
+| ≥ ~1030px (desktop) | **3** |
+| ~700–1029px (tablet) | **2** |
+| < 700px (mobile) | **1** — visually identical to §8's row layout |
+
+Notes:
+
+- **Ribbon** stays on whichever card is `position === 1` — same conditional as the row
+  layout, it just now renders at that card's (narrower) width instead of the full row.
+- **Feature bullets** cap at 2 in grid vs 3 in cards — configurable via `maxFeatures`, not
+  hardcoded; vertical space per card is tighter with 2–3 cards per row.
+- **Payment icons and the metrics grid** live in "More information" only, same as today —
+  they don't fit a 320px card unexpanded.
+- **`columns: auto | 2 | 3`** — `auto` (the default, shown above) reflows by width; `2`/`3`
+  pins the count for an editor who wants it guaranteed regardless of viewport.
 
 ---
 

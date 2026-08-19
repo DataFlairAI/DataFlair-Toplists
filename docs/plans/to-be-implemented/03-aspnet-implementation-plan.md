@@ -118,6 +118,9 @@ WordPress instance synced from the same account.
    `DataFlairCache`, **written at sync time**, not only at render.
 8. Asset handler: embedded CSS/JS, immutable headers, version-stamped URL.
 9. Logos: native `loading="lazy"`, eager for positions 1–3, explicit `width`/`height`.
+10. **Grid layout** (plan 02 §8.11 — new, not a port): `layout: grid` with `columns: auto|2|3`,
+    a CSS-only variant of the card partial (`.dataflair-toplist--grid` modifier, no new
+    template), `maxFeatures` defaulting to 2 in grid vs 3 in cards.
 
 **Exit:** golden-HTML diff against the PHP renderer passes on all three fixtures; `/go/`
 redirects correctly and survives an app-pool recycle; read-only render test passes.
