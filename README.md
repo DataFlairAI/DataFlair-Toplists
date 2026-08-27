@@ -427,6 +427,9 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.2.12
+- **Fixed: the Gutenberg block's `init` registration was duplicated between the legacy bootstrap and the canonical `Plugin::registerHooks()` path.** A leftover call in the god-class's `init_hooks()` wired a second, independent `BlockRegistrar` to WordPress's `init` action alongside the one `Plugin::registerHooks()` already owns — always double-enqueuing the block editor's CSS, and, under real request timing, capable of tripping WordPress's own duplicate-registration notice into a fatal error on sites (e.g. Roots/Acorn-based) that elevate `WP_DEBUG` notices to exceptions. `Plugin::registerHooks()` is now the sole owner, matching how shortcode/redirect/assets registration already works.
+
 ### 2.2.11
 - **Removed: the auto_geo "not available in your region" notice added in 2.2.10.** Scoping this release to the fixed `id`/`slug` geo-targeting pattern only; `auto_geo` is being redesigned as part of a plugin-side geo-templates + page-linking feature (parked in `docs/plans/PLUGIN_SIDE_GEO_TEMPLATES.md`) rather than incrementally extended now. `auto_geo` itself (unchanged since 2.2.3) is unaffected. The admin `?dataflair_geo=` QA override from 2.2.10 is unrelated and stays.
 
@@ -788,4 +791,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.11 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.2.12 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
