@@ -48,7 +48,7 @@ Before tagging a new version and pushing, ALWAYS:
 6. **Run tests** — dev dependencies are not committed to vendor. Before running tests, install them first:
  ```bash
  composer install          # adds phpunit/mockery/brain-monkey locally (gitignored)
- ./vendor/bin/phpunit      # must be green (82 tests, 235 assertions)
+ ./vendor/bin/phpunit      # must be green (720 tests, 2619 assertions)
  composer install --no-dev # strip dev deps back out before committing
  ```
 
@@ -85,7 +85,7 @@ Before tagging a new version and pushing, ALWAYS:
 - `includes/render-casino-card.php` — casino card template, included via `ob_start()` in `render_casino_card()`
 - `includes/ProductTypeLabels.php` — label map for casino/sportsbook/poker product types
 - `build/index.js` — compiled Gutenberg block JS
-- `tests/phpunit/` — PHPUnit test suite (82 tests)
+- `tests/phpunit/` — PHPUnit test suite (720 tests)
 - `docs/plans/` — parked feature plans for future branches
 
 **Custom DB tables:**

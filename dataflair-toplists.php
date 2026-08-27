@@ -989,11 +989,14 @@ class DataFlair_Toplists {
         // class survive as thin delegators because the block editor render
         // callback still binds to `[$this, 'toplist_shortcode']`.
 
-        // Phase 7 — Gutenberg block registration + editor assets now live in
-        // DataFlair\Toplists\Block\{BlockRegistrar, ToplistBlock, EditorAssets}.
-        // BlockRegistrar::register() wires the `init` and
-        // `enqueue_block_editor_assets` hooks in one call.
-        $this->block_bootstrap()->boot()->register();
+        // Phase 7 — Gutenberg block registration (`init` +
+        // `enqueue_block_editor_assets`) is registered by `Plugin::registerHooks()`
+        // via `Block\BlockBootstrap` / `Block\BlockRegistrar`. This class no longer
+        // wires it directly — doing so from both places hooked two independent
+        // BlockRegistrar instances to `init`, which could double-register the
+        // block and always double-enqueued the editor CSS. The register_block() /
+        // render_block() / enqueue_editor_assets() methods below survive as thin
+        // delegators for any external caller still holding a reference to them.
 
         // REST API for block editor
         add_action('rest_api_init', array($this, 'register_rest_routes'));
