@@ -7,6 +7,85 @@ GitHub.
 
 ---
 
+## v2.2.x → v2.3.0 (API contract safety)
+
+**This is not a breaking change.** Update whenever it suits you. There is
+nothing to configure, no new settings, and no code changes required. 2.3.0
+works against the current DataFlair backend and the new one.
+
+### What changed, in one paragraph
+
+Your site renders toplists from its own WordPress database, not live from the
+DataFlair API. A sync fills that database. Before 2.3.0, a sync would clear the
+local tables and then fetch, and it trusted whatever it got back. 2.3.0 flips
+that around: it fetches first, checks that the response still looks like the
+data your site renders from, and only then touches local data. If anything is
+wrong, it stops and leaves your existing data in place.
+
+### What you will see if something goes wrong
+
+A red notice at the top of wp-admin: **"DataFlair sync is paused: ..."** Your
+pages keep serving the last successfully synced data the whole time. The notice
+tells you which of two things happened:
+
+| Notice says | What it means | What to do |
+|---|---|---|
+| "Update the plugin to version X or newer" | The backend no longer serves the API contract this plugin version was built for. | Update the plugin. |
+| Anything else (a named field, a safety stop) | The backend changed a field this plugin renders from, or returned an empty result set. | Tell DataFlair. This is a backend bug, not yours. |
+
+The notice clears itself on the next successful sync. There is nothing to
+dismiss and no state to clean up.
+
+To check the current state at any time: **DataFlair → Tools → API Contract
+Check**. It probes the live API and reports one of `pass`, `fail` (with the
+reason), or "passes but sync is still paused, run a full sync to clear it".
+
+For automated monitoring, `GET /wp-json/dataflair/v1/health` returns a
+`contract_mismatch` field, non-null while any sync stream is paused. The route
+requires a `manage_options` account, so use an Application Password.
+
+### What affects you and what does not
+
+**Does not affect you:**
+
+- DataFlair adding new fields to the API. The plugin ignores fields it does not
+  know about. This is the normal case for most backend releases.
+- DataFlair releasing `/api/v2`. Your plugin stays pinned to the version it was
+  built for. You move only when you deliberately install a plugin version that
+  uses the new one.
+- Any DataFlair deploy, at the moment it happens. Nothing on your site changes
+  until a sync runs, and a sync that finds a problem changes nothing at all.
+
+**Affects you:**
+
+- A DataFlair change that renames, removes, or retypes a field inside `/api/v1`.
+  This is a contract violation on their side and is supposed to ship as a new
+  API version instead. If it ever happens, your sync pauses loudly rather than
+  storing data your pages cannot render.
+- Backend downtime. Your sync fails, your pages keep serving the last good data,
+  and they go stale until the backend returns.
+
+### If you have custom code reading the payload
+
+Two integration points hand you raw API data, and neither is covered by the
+plugin's internal hardening, because your code is outside it:
+
+- the `dataflair_review_url` filter, which receives the raw `$brand` and `$item`
+  arrays;
+- the `data` column of `wp_dataflair_toplists`, which stores the API response
+  verbatim.
+
+Both are safe to use, with one rule: **only depend on fields that exist in
+`/api/v1` today.** Every field in the v1 response is locked by a snapshot test
+in DataFlair's CI, so a rename or removal fails their build before it can reach
+you. That guarantee covers the whole v1 contract, including fields this plugin
+never renders. It does not cover anything outside v1.
+
+If your custom code needs to know when sync is paused, hook
+`dataflair_sync_item_failed` or read the health endpoint above.
+
+---
+
 ## v1.15.x → v2.0.0
 
 ### What changed
