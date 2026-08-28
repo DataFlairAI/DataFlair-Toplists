@@ -91,6 +91,32 @@ problem empties your pages.
 | JSON key order or item order changed | No effect. Keys are read by name, and display order comes from the explicit `position` field. | fine |
 | Response so slow it burns the sync time budget | The stale-row cleanup is skipped for that run and records are updated in place instead. | preserved |
 
+### If you render from your own code instead of the shortcode or block
+
+Some sites install this plugin purely as a sync engine and render everything
+from their own theme functions, reading the synced data directly rather than
+using the `[dataflair_toplist]` shortcode or the Gutenberg block. If that is
+you, here is exactly what protects you and what does not:
+
+| Protection | Applies to you? |
+|---|---|
+| Contract handshake, the 409 pause, and the admin notice | **Yes.** These live in the sync layer. |
+| Contract canary (drift stopped before anything is written) | **Yes.** This is your most important protection: it is what keeps drifted data out of the database you read from. |
+| Fail-safe wipe order and the empty-payload safety stop | **Yes.** Your local data survives every backend failure. |
+| Drift-hardened rendering (templates degrade instead of erroring) | **No.** That hardening lives in the plugin's own card and table templates. Your rendering code is yours, and a retyped field will fail in it the way it would in any PHP. |
+
+Two consequences worth planning for:
+
+1. **Guard your own reads.** Treat the synced payload as external input: check
+   `is_array()` before looping, and avoid passing values straight into
+   `trim()`, `md5()`, or string casts. A field that changes type is the case
+   that bites custom integrations hardest, and the plugin cannot guard code it
+   does not control.
+2. **The canary checks the fields the plugin renders, not the fields you use.**
+   If your code depends on a v1 field the plugin never touches, the canary will
+   not notice it disappearing. What covers you there is DataFlair's own CI,
+   which locks the entire v1 field set. That is why the rule below matters.
+
 ### If you have custom code reading the payload
 
 Two integration points hand you raw API data, and neither is covered by the
