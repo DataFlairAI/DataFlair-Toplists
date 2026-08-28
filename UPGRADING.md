@@ -117,6 +117,51 @@ Two consequences worth planning for:
    not notice it disappearing. What covers you there is DataFlair's own CI,
    which locks the entire v1 field set. That is why the rule below matters.
 
+### The database tables are a contract, and they follow the same rule
+
+If you read the plugin's tables directly, those column names are as much a
+contract as the API is. From 2.3.0 they are treated that way and locked by a
+test in the plugin's own CI, so a rename fails our build instead of your site.
+
+**The promise: additive only inside a major version.** New columns may appear.
+An existing column will not be renamed, removed, or repurposed without a
+documented migration in this file and a major version bump.
+
+`wp_dataflair_toplists`
+
+```
+id  api_toplist_id  name  slug  current_period  published_at
+item_count  locked_count  sync_warnings  data  version  last_synced
+```
+
+`wp_dataflair_brands`
+
+```
+id  api_brand_id  name  slug  status  product_types  licenses  top_geos
+offers_count  trackers_count  classification_types  review_url_override
+is_disabled  data  last_synced
+```
+
+`wp_dataflair_alternative_toplists`
+
+```
+id  toplist_id  geo  alternative_toplist_id  created_at  updated_at
+```
+
+The `data` column holds the **verbatim** API response for that record. That is
+also locked by a test: it will keep storing the raw payload rather than a
+transformed shape, so anything you parse out of it stays parseable. The fields
+*inside* that JSON are governed by the `/api/v1` contract described above.
+
+Two practical notes:
+
+- **Read `api_toplist_id` / `api_brand_id`, not `id`.** The `id` column is a
+  local auto-increment that is not stable across a full resync; the `api_*`
+  columns are the upstream identifiers and are stable.
+- **Rows are replaced on a full sync.** Do not store your own data in these
+  tables or add your own columns to them; keep anything of your own in a
+  separate table keyed by `api_toplist_id` or `api_brand_id`.
+
 ### If you have custom code reading the payload
 
 Two integration points hand you raw API data, and neither is covered by the
