@@ -163,4 +163,25 @@ namespace DataFlair\Toplists\Admin\Notices {
             return AdminStubs::$currentUserCan;
         }
     }
+
+    if (!function_exists(__NAMESPACE__ . '\\add_query_arg')) {
+        function add_query_arg($key, $value = '')
+        {
+            return 'http://example.test/wp-admin/admin.php?' . $key . '=' . $value;
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\wp_nonce_url')) {
+        function wp_nonce_url(string $url, string $action = '-1'): string
+        {
+            return $url . '&_wpnonce=test-nonce';
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\wp_verify_nonce')) {
+        function wp_verify_nonce($nonce, $action = -1)
+        {
+            return $nonce === 'test-nonce' ? 1 : false;
+        }
+    }
 }

@@ -170,6 +170,17 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
         }
 
+        // Once per full sync, ask the backend what it now serves so the admin
+        // can be told the API moved instead of finding out when something
+        // breaks. Never fails the sync: an old backend has no /meta and this
+        // quietly does nothing.
+        if ($page === 1) {
+            $meta = ContractVersion::fetch($this->http, $this->baseUrl, $this->token);
+            if ($meta !== null) {
+                ContractVersion::record($meta);
+            }
+        }
+
         // Contract canary: deep-validate EVERY page before persisting it. A
         // field rename inside data[].items passes the shallow gates above but
         // would blank cards site-wide once stored; the canary turns that

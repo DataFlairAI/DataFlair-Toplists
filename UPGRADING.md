@@ -65,6 +65,39 @@ requires a `manage_options` account, so use an Application Password.
 - Backend downtime. Your sync fails, your pages keep serving the last good data,
   and they go stale until the backend returns.
 
+### How you find out when the DataFlair API changes
+
+You asked to be told when the API version moves rather than discovering it
+through a failure. Each full sync now reads DataFlair's `/api/vN/meta`
+endpoint, which publishes the contract revision and which API versions are
+served, and raises a **dismissible informational notice** when either changes:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  DataFlair API update: The DataFlair API contract moved from 1.0.0 to      │
+│  1.1.0. Changes within a version are additive, so your site keeps working  │
+│  and there is nothing to do.  Dismiss                                      │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  DataFlair API update: A newer API version is now available (v2). This     │
+│  plugin stays on v1 until you install a plugin version that uses the newer │
+│  one, so nothing changes for you today.  Dismiss                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+Three deliberate properties:
+
+- **Never an error.** Both cases are safe by policy, so this is a blue info
+  notice and not the red paused-sync one. It never asks you to act.
+- **The first reading is silent.** Establishing "the API is at 1.0.0" on
+  upgrade day is noise, not news, so nothing is announced until something
+  actually moves.
+- **Old backends are ignored.** A DataFlair deployment without `/meta` yields
+  nothing and changes no behaviour.
+
 ### Every failure mode, and what happens to your data
 
 The column that matters is the last one. In every case, the data your site is

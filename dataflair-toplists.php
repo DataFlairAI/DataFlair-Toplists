@@ -1023,6 +1023,10 @@ class DataFlair_Toplists {
         // API Contract Safety — persistent warning while sync is paused on a
         // backend contract-mismatch rejection (409 handshake).
         (new \DataFlair\Toplists\Admin\Notices\ContractMismatchNotice())->register();
+
+        // API Contract Safety — informational notice when the backend
+        // announces a new contract revision or a newer API version.
+        (new \DataFlair\Toplists\Admin\Notices\ContractVersionNotice())->register();
     }
 
     /**

@@ -82,6 +82,25 @@ namespace DataFlair\Toplists\Sync {
     if (!function_exists(__NAMESPACE__ . '\\wp_json_encode')) {
         function wp_json_encode($value) { return json_encode($value); }
     }
+    // These shadow the global Brain Monkey stubs for Sync-namespace code, so
+    // their semantics MUST stay identical to the `Functions\when(...)` aliases
+    // in ToplistSyncServiceTest / BrandSyncServiceTest or those tests change
+    // behaviour silently.
+    if (!function_exists(__NAMESPACE__ . '\\is_wp_error')) {
+        function is_wp_error($thing) { return $thing instanceof \WP_Error; }
+    }
+    if (!function_exists(__NAMESPACE__ . '\\wp_remote_retrieve_body')) {
+        function wp_remote_retrieve_body($response)
+        {
+            return is_array($response) ? ($response['body'] ?? '') : '';
+        }
+    }
+    if (!function_exists(__NAMESPACE__ . '\\wp_remote_retrieve_response_code')) {
+        function wp_remote_retrieve_response_code($response)
+        {
+            return is_array($response) ? (int) ($response['response']['code'] ?? 0) : 0;
+        }
+    }
     if (!function_exists(__NAMESPACE__ . '\\sanitize_title')) {
         function sanitize_title($value) {
             return strtolower(preg_replace('/[^a-z0-9]+/i', '-', (string) $value));
