@@ -70,10 +70,10 @@ class RenderCasinoCardDriftResilienceTest extends TestCase {
 
         $this->phpIssues = [];
         set_error_handler(function (int $errno, string $errstr, string $errfile = '', int $errline = 0): bool {
-            // Only issues raised from the template under test matter.
-            if (str_contains($errfile, 'casino-card.php')) {
-                $this->phpIssues[] = "[$errno] $errstr @ $errfile:$errline";
-            }
+            // Capture everything raised during the render, wherever it
+            // originates (template, ProductTypeLabels, resolver): a warning
+            // from a helper still prints into the page under WP_DEBUG_DISPLAY.
+            $this->phpIssues[] = "[$errno] $errstr @ $errfile:$errline";
             return true;
         });
     }
@@ -107,6 +107,7 @@ class RenderCasinoCardDriftResilienceTest extends TestCase {
                 'name'   => ['weird' => 'object'],     // string → object
                 'slug'   => ['also' => 'object'],
                 'rating' => [4.8],
+                'type'   => ['Casino', 'Sportsbook'],  // string → array (ProductTypeLabels input)
                 'licenses' => 'MGA',                   // legit string form
                 'payment_methods' => 'Visa, Mastercard', // array → string
             ],
@@ -118,6 +119,7 @@ class RenderCasinoCardDriftResilienceTest extends TestCase {
                 'payout_time' => ['x'],
                 'max_payout' => ['x'],
                 'trackers'   => 'https://not-an-array.example',
+                'bonus_expiry_date' => ['x'],
                 'tracking_url' => ['x'],
                 'url' => ['x'],
             ],
@@ -127,6 +129,62 @@ class RenderCasinoCardDriftResilienceTest extends TestCase {
 
         $this->assertSame([], $this->phpIssues, "Template emitted PHP issues:\n" . implode("\n", $this->phpIssues));
         $this->assertNotSame('', $html, 'card must still render a degraded but valid shell');
+    }
+
+    public function test_keyed_trackers_map_still_resolves_the_campaign_cta(): void
+    {
+        $html = $this->renderCard([
+            'position' => 1,
+            'brand'    => ['name' => 'Betway', 'slug' => 'betway'],
+            'offer'    => [
+                'offerText' => 'Bonus',
+                // id-keyed map instead of a 0-indexed list must not warn.
+                'trackers'  => ['881' => ['trackerLink' => 'https://t.example.com/c/1', 'campaignName' => 'Main']],
+            ],
+        ]);
+
+        $this->assertSame([], $this->phpIssues, "Template emitted PHP issues:\n" . implode("\n", $this->phpIssues));
+        $this->assertStringContainsString('/go/?campaign=Main', $html, 'keyed trackers must still resolve the campaign CTA');
+    }
+
+    public function test_retyped_campaign_name_degrades_to_no_cta_without_fatal(): void
+    {
+        // Pre-drift this md5()-fataled; the safe degradation matches how a
+        // tracker without a campaign name has always rendered: no CTA.
+        $html = $this->renderCard([
+            'position' => 1,
+            'brand'    => ['name' => 'Betway', 'slug' => 'betway'],
+            'offer'    => [
+                'offerText' => 'Bonus',
+                'trackers'  => [['trackerLink' => 'https://t.example.com/c/1', 'campaignName' => ['x']]],
+            ],
+        ]);
+
+        $this->assertSame([], $this->phpIssues, "Template emitted PHP issues:\n" . implode("\n", $this->phpIssues));
+        // The linked CTA is gated on a usable campaign name; the disabled
+        // placeholder button renders instead.
+        $this->assertStringNotContainsString('https://t.example.com/c/1', $html);
+        $this->assertStringContainsString('casino-cta-button" disabled', $html);
+    }
+
+    public function test_array_shaped_logo_still_resolves_through_the_nested_resolver(): void
+    {
+        $html = $this->renderCard([
+            'position' => 1,
+            'brand'    => [
+                'name' => 'Betway',
+                'slug' => 'betway',
+                'logo' => ['rectangular' => 'https://cdn.example.com/betway.png'],
+            ],
+            'offer'    => ['offerText' => 'Bonus', 'trackers' => []],
+        ]);
+
+        $this->assertSame([], $this->phpIssues);
+        $this->assertStringContainsString(
+            'https://cdn.example.com/betway.png',
+            $html,
+            'the nested logo shape must survive the scalar hardening'
+        );
     }
 
     public function test_missing_brand_and_offer_objects_render_without_notices(): void {

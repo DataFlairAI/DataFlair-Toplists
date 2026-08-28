@@ -57,7 +57,7 @@ final class ToplistFetcher
             $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
             if ($mismatch !== null) {
                 ContractMismatch::record($mismatch, $endpoint, 'toplists');
-                $errorMessage = 'DataFlair API contract mismatch: ' . $mismatch['message'];
+                $errorMessage = ContractMismatch::describe($mismatch);
                 error_log('DataFlair fetch_and_store_toplist error: ' . $errorMessage);
                 add_settings_error('dataflair_messages', 'dataflair_api_error', $errorMessage, 'error');
                 return false;

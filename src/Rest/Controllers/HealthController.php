@@ -25,16 +25,17 @@ final class HealthController
     {
         global $wpdb;
 
-        $contract = get_option(\DataFlair\Toplists\Sync\ContractMismatch::OPTION);
+        $mismatches = \DataFlair\Toplists\Sync\ContractMismatch::entries();
 
         return rest_ensure_response([
             'status'     => 'ok',
             'toplists'   => $this->repo->countAll(),
             'plugin_ver' => DATAFLAIR_VERSION,
             'db_error'   => ($wpdb instanceof \wpdb && !empty($wpdb->last_error)) ? $wpdb->last_error : null,
-            // Non-null while sync is paused on a backend contract mismatch —
-            // lets external monitoring catch it without scraping wp-admin.
-            'contract_mismatch' => is_array($contract) ? $contract : null,
+            // Non-null while any sync stream is paused on a contract mismatch
+            // (keyed by stream) — lets external monitoring catch it without
+            // scraping wp-admin.
+            'contract_mismatch' => $mismatches !== [] ? $mismatches : null,
         ]);
     }
 }

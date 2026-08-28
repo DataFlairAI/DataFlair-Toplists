@@ -227,21 +227,22 @@ final class TestsRunner
             },
 
             'contract_check' => function (): array {
-                // A recorded mismatch means sync is already paused — report
-                // that first, no HTTP needed.
-                $state = get_option(\DataFlair\Toplists\Sync\ContractMismatch::OPTION);
-                if (is_array($state) && !empty($state['message'])) {
-                    return ['status' => 'fail', 'message' => 'Sync is paused on a contract mismatch: ' . $state['message']];
-                }
-
                 $token = trim((string) get_option('dataflair_api_token', ''));
-                $base  = trim((string) get_option('dataflair_api_base_url', ''));
-                if ($token === '' || $base === '') {
-                    return ['status' => 'warn', 'message' => 'API token or base URL not configured — contract check skipped.'];
+                if ($token === '') {
+                    return ['status' => 'warn', 'message' => 'API token not configured. Contract check skipped.'];
                 }
 
-                $url  = rtrim($base, '/') . '/toplists?per_page=5&page=1';
-                $resp = (new \DataFlair\Toplists\Http\ApiClient())->get($url, $token, 8, 0);
+                // Always probe live, even while a mismatch is recorded: this
+                // is the one tool an operator reaches for to ask "does the
+                // contract work NOW?", so it must be able to observe recovery.
+                // Base URL goes through the same detector sync uses (option,
+                // cached endpoints, fallback) instead of the raw option.
+                $base = (new \DataFlair\Toplists\Http\ApiBaseUrlDetector(
+                    new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator())
+                ))->detect();
+
+                $url  = rtrim($base, '/') . '/toplists?per_page=1&page=1';
+                $resp = (new \DataFlair\Toplists\Http\ApiClient())->get($url, $token, 5, 0);
                 if (is_wp_error($resp)) {
                     return ['status' => 'warn', 'message' => 'Could not reach API: ' . $resp->get_error_message()];
                 }
@@ -259,12 +260,19 @@ final class TestsRunner
 
                 $data = json_decode($body, true);
                 if (!is_array($data) || !isset($data['data']) || !is_array($data['data'])) {
-                    return ['status' => 'fail', 'message' => 'Response no longer carries a "data" array — contract drift.'];
+                    return ['status' => 'fail', 'message' => 'Response no longer carries a "data" array. Contract drift.'];
                 }
 
                 $failure = (new \DataFlair\Toplists\Sync\ContractCanary())->assess($data['data']);
                 if ($failure !== null) {
                     return ['status' => 'fail', 'message' => 'Contract canary: ' . $failure];
+                }
+
+                if (\DataFlair\Toplists\Sync\ContractMismatch::entries() !== []) {
+                    return [
+                        'status'  => 'warn',
+                        'message' => 'Live contract check passes, but sync is still paused from an earlier mismatch. Run a full sync to clear the notice.',
+                    ];
                 }
 
                 return ['status' => 'pass', 'message' => 'API contract matches what this plugin version expects.'];

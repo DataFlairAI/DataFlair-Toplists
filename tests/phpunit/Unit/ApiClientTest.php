@@ -214,10 +214,13 @@ final class ApiClientTest extends TestCase
         $this->assertSame('v2', $headers['X-DataFlair-Expected-Contract'] ?? null);
     }
 
-    public function test_expected_contract_defaults_to_v1_for_unversioned_urls(): void
+    public function test_expected_contract_header_is_omitted_for_unversioned_urls(): void
     {
+        // A custom base URL with no /api/vN segment carries no knowable
+        // contract; claiming v1 could get a valid request rejected.
         $headers = $this->capturedHeadersFor('https://api.example.com/toplists');
 
-        $this->assertSame('v1', $headers['X-DataFlair-Expected-Contract'] ?? null);
+        $this->assertArrayNotHasKey('X-DataFlair-Expected-Contract', $headers);
+        $this->assertSame(DATAFLAIR_VERSION, $headers['X-DataFlair-Plugin-Version'] ?? null);
     }
 }

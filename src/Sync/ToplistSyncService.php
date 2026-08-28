@@ -120,14 +120,13 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 $this->logger->warning(
                     'ToplistSync: contract mismatch on page ' . $page . ' — sync aborted before any local write'
                 );
-                return SyncResult::failure(
-                    $page,
-                    'DataFlair API contract mismatch: ' . $mismatch['message']
-                    . ($mismatch['min_plugin_version'] !== ''
-                        ? ' Update the DataFlair Toplists plugin to version ' . $mismatch['min_plugin_version'] . ' or newer.'
-                        : '')
-                    . ' Your site continues to show the last synced data.'
-                );
+                $failureMessage = ContractMismatch::describe($mismatch);
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => $failureMessage,
+                ]);
+                return SyncResult::failure($page, $failureMessage);
             }
 
             if (in_array($statusCode, [500, 502, 503, 504], true)) {
@@ -162,10 +161,12 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         if (json_last_error() !== JSON_ERROR_NONE) {
             return SyncResult::failure($page, 'JSON decode error: ' . json_last_error_msg());
         }
-        if (!isset($data['data'])) {
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            // A retyped `data` (string/object) must fail here, not launder
+            // through the canary as an empty payload and reach the wipe.
             return SyncResult::failure(
                 $page,
-                'Invalid response format from API. Expected "data" key in response.'
+                'Invalid response format from API. Expected "data" key with an array in response.'
             );
         }
 
@@ -175,7 +176,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         // the canary turns that silent drift into a loud, data-preserving
         // abort. Filter escape hatch for emergencies only.
         if ($page === 1 && (bool) apply_filters('dataflair_contract_canary', true)) {
-            $canaryFailure = (new ContractCanary())->assess(is_array($data['data']) ? $data['data'] : []);
+            $canaryFailure = (new ContractCanary())->assess($data['data']);
             if ($canaryFailure !== null) {
                 ContractMismatch::record(
                     ['message' => $canaryFailure, 'min_plugin_version' => ''],
@@ -183,12 +184,50 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                     'toplists'
                 );
                 $this->logger->warning('ToplistSync: contract canary failed — ' . $canaryFailure);
-                return SyncResult::failure(
-                    $page,
-                    'DataFlair contract canary: ' . $canaryFailure
-                    . ' Sync aborted before any local write; your site continues to show the last synced data.'
-                );
+                $failureMessage = 'DataFlair contract canary: ' . $canaryFailure
+                    . ' Sync aborted before any local write; your site continues to show the last synced data.';
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => $failureMessage,
+                ]);
+                return SyncResult::failure($page, $failureMessage);
             }
+        }
+
+        // Safety stop: an empty page-1 payload against a populated local
+        // table is far more likely a backend scoping/auth regression than a
+        // deliberate delete-everything. Preserve local data and fail loudly;
+        // the filter is the deliberate override for a real wipe.
+        if ($page === 1 && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
+            global $wpdb;
+            $existingRows = (int) $wpdb->get_var(
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . DATAFLAIR_TABLE_NAME
+            );
+            if ($existingRows > 0) {
+                $failureMessage = 'DataFlair sync safety stop: the API returned zero toplists while this site has '
+                    . $existingRows . ' stored. Local data preserved. If removing all toplists is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                ContractMismatch::record(
+                    ['message' => $failureMessage, 'min_plugin_version' => ''],
+                    $listUrl,
+                    'toplists'
+                );
+                $this->logger->warning('ToplistSync: empty page-1 payload with ' . $existingRows . ' local rows — wipe refused');
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => $failureMessage,
+                ]);
+                return SyncResult::failure($page, $failureMessage);
+            }
+        }
+
+        // The destructive phase plus the persist loop needs real budget
+        // headroom. Wiping and then running dry on the first item would leave
+        // an empty table until the retry; retrying BEFORE the wipe is free.
+        if ($page === 1 && $budget->exceeded(8.0)) {
+            $this->logger->warning('ToplistSync: budget too low for the destructive page-1 phase — retrying page without wipe');
+            return SyncResult::success($page, max(1, (int) ($data['meta']['last_page'] ?? 1)), 0, 0, true, false);
         }
 
         // Destructive page-1 reset runs only AFTER the page-1 response has
@@ -264,6 +303,12 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $isComplete = !$budgetExhausted && $page >= $lastPage;
         if ($isComplete) {
             $this->markSyncCompleted();
+            if ($errors === 0) {
+                // Only a validated, error-free bulk sync proves the toplists
+                // contract works again. Fallback and skip paths never clear:
+                // they can complete with zero rows fetched.
+                ContractMismatch::clear('toplists');
+            }
         }
 
         $this->logger->info(
@@ -423,10 +468,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 . ' unrecoverable; every split failed. Attempts: '
                 . wp_json_encode($attemptLog)
             );
+            // Zero rows fetched: never stamp completion here — a fresh
+            // "last sync" timestamp would suppress staleness monitoring for
+            // a run that synced nothing.
             $isComplete = $page >= $naturalLastPage;
-            if ($isComplete) {
-                $this->markSyncCompleted();
-            }
             return SyncResult::success(
                 $page,
                 $naturalLastPage,
@@ -445,12 +490,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         // Budget may already be spent by the bulk HTTP retry attempts.
-        // Advance instead of re-queuing the same page forever.
+        // Advance instead of re-queuing the same page forever. Zero rows
+        // fetched, so completion is never stamped from this path either.
         if ($budget->exceeded(3.0)) {
             $isComplete = $page >= $naturalLastPage;
-            if ($isComplete) {
-                $this->markSyncCompleted();
-            }
             return SyncResult::success(
                 $page, $naturalLastPage, 0, 0, true, $isComplete,
                 ['fallback' => true, 'budget_skip' => true, 'next_page' => $page + 1]
@@ -479,19 +522,31 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if (!empty($endpoints)) {
-            $existing = get_option('dataflair_api_endpoints', '');
-            $joined   = implode("\n", $endpoints);
-            if (!empty($existing)) {
-                $joined = $existing . "\n" . $joined;
+            if ($page === 1) {
+                // Page 1 rebuilds the cache the way the bulk path's reset
+                // would have; appending here grew the autoloaded option
+                // without bound and pinned stale first entries forever.
+                if ($synced > 0) {
+                    $this->clearTrackerTransients();
+                }
+                update_option('dataflair_api_endpoints', implode("\n", $endpoints));
+            } else {
+                $existing = get_option('dataflair_api_endpoints', '');
+                $joined   = implode("\n", $endpoints);
+                if (!empty($existing)) {
+                    $joined = $existing . "\n" . $joined;
+                }
+                update_option('dataflair_api_endpoints', $joined);
             }
-            update_option('dataflair_api_endpoints', $joined);
         }
         if (function_exists('gc_collect_cycles')) {
             gc_collect_cycles();
         }
 
         $isComplete = !$budgetExhausted && $page >= $naturalLastPage;
-        if ($isComplete) {
+        if ($isComplete && $synced > 0) {
+            // Completion timestamps require rows actually fetched; an
+            // all-errors fallback must not look like a healthy sync.
             $this->markSyncCompleted();
         }
 
@@ -559,8 +614,6 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $ts = time();
         update_option('dataflair_last_toplists_sync', $ts);
         update_option('dataflair_last_toplists_cron_run', $ts);
-        // A fully completed sync proves the toplists contract works again.
-        ContractMismatch::clear('toplists');
     }
 
     private function emitBatchFinished(

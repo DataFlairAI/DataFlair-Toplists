@@ -85,8 +85,9 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $lastPage   = (int) $result['last_page'];
         $isComplete = !$partial && $page >= $lastPage;
 
-        if ($isComplete) {
-            // A fully completed sync proves the brands contract works again.
+        if ($isComplete && (int) ($result['errors'] ?? 0) === 0) {
+            // A fully completed, error-free sync proves the brands contract
+            // works again.
             ContractMismatch::clear('brands');
         }
 
@@ -147,11 +148,7 @@ final class BrandSyncService implements BrandSyncServiceInterface
             $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
             if ($mismatch !== null) {
                 ContractMismatch::record($mismatch, $url, 'brands');
-                $msg = 'DataFlair API contract mismatch: ' . $mismatch['message']
-                    . ($mismatch['min_plugin_version'] !== ''
-                        ? ' Update the DataFlair Toplists plugin to version ' . $mismatch['min_plugin_version'] . ' or newer.'
-                        : '')
-                    . ' Your site continues to show the last synced data.';
+                $msg = ContractMismatch::describe($mismatch);
                 $this->logger->error('BrandSync: ' . $msg);
                 return ['success' => false, 'message' => $msg];
             }
@@ -167,10 +164,44 @@ final class BrandSyncService implements BrandSyncServiceInterface
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
         }
-        if (!isset($data['data'])) {
-            $msg = 'Invalid response format from API. Expected "data" key.';
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            // A retyped `data` must fail before the wipe: post-wipe it would
+            // fatal on count() with the brands table already emptied.
+            $msg = 'Invalid response format from API. Expected "data" key with an array.';
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
+        }
+
+        // Safety stop: an empty page-1 payload against a populated brands
+        // table is far more likely a backend regression than a deliberate
+        // delete-everything (same policy as ToplistSyncService).
+        if ($page === 1 && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
+            global $wpdb;
+            $existingRows = (int) $wpdb->get_var(
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . 'dataflair_brands'
+            );
+            if ($existingRows > 0) {
+                $msg = 'DataFlair sync safety stop: the API returned zero brands while this site has '
+                    . $existingRows . ' stored. Local data preserved. If removing all brands is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                ContractMismatch::record(['message' => $msg, 'min_plugin_version' => ''], $url, 'brands');
+                $this->logger->error('BrandSync: ' . $msg);
+                return ['success' => false, 'message' => $msg];
+            }
+        }
+
+        // Retry before the wipe when the fetch already burned the budget:
+        // wiping and then running dry would blank brands until the retry.
+        if ($page === 1 && $budget->exceeded(8.0)) {
+            $this->logger->warning('BrandSync: budget too low for the destructive page-1 phase — retrying page without wipe');
+            return [
+                'success'      => true,
+                'partial'      => true,
+                'last_page'    => isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : 1,
+                'synced'       => 0,
+                'errors'       => 0,
+                'total_synced' => 0,
+                'total_brands' => isset($data['meta']['total']) ? (int) $data['meta']['total'] : 0,
+            ];
         }
 
         // Destructive page-1 wipe runs only AFTER the page-1 response has

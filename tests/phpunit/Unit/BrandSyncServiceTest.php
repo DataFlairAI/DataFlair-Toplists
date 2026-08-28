@@ -242,7 +242,7 @@ final class BrandSyncServiceTest extends TestCase
         );
         $this->assertEmpty($deletes);
 
-        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null;
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['brands'] ?? null;
         $this->assertIsArray($state);
         $this->assertSame('brands', $state['source']);
     }
@@ -250,22 +250,50 @@ final class BrandSyncServiceTest extends TestCase
     public function test_completed_brands_sync_clears_only_brands_mismatch(): void
     {
         \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
-            'message' => 'v1 mismatch', 'min_plugin_version' => '', 'source' => 'toplists',
+            'toplists' => ['message' => 'v1 mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
+            'brands'   => ['message' => 'brands mismatch', 'min_plugin_version' => '', 'source' => 'brands'],
         ];
         $this->http->response = $this->mockBrandsApiResponse([]);
 
         $this->makeService()->syncPage(SyncRequest::brands(1));
 
-        $this->assertArrayHasKey(
-            ContractMismatch::OPTION,
-            \SyncFunctionStubsStore::$options,
-            'a brands success must not hide a toplists mismatch'
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [];
+        $this->assertArrayNotHasKey('brands', $state, 'a completed brands sync clears its own mismatch');
+        $this->assertArrayHasKey('toplists', $state, 'a brands success must not hide a toplists mismatch');
+    }
+
+    public function test_retyped_data_key_fails_before_the_wipe(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['data' => 'maintenance', 'meta' => ['last_page' => 1]]),
+            'response' => ['code' => 200],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertFalse($result->success);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
         );
+        $this->assertEmpty($deletes, 'retyped data must never reach the brands wipe');
+    }
 
-        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['source'] = 'brands';
-        $this->makeService()->syncPage(SyncRequest::brands(1));
+    public function test_empty_page1_against_populated_brands_table_refuses_the_wipe(): void
+    {
+        $GLOBALS['wpdb']->countReturn = 50; // site currently has brands
+        $this->http->response = $this->mockBrandsApiResponse([]);
 
-        $this->assertArrayNotHasKey(ContractMismatch::OPTION, \SyncFunctionStubsStore::$options);
+        $result = $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('safety stop', $result->message);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
+        );
+        $this->assertEmpty($deletes, 'an empty payload must never wipe a populated brands table');
+        $this->assertArrayHasKey('brands', \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? []);
     }
 
     public function test_success_result_exposes_total_keys_for_ajax_payload(): void

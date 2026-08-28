@@ -32,14 +32,10 @@ trait ProsConsResolver
         );
 
         if (!empty($item['pros']) && is_array($item['pros'])) {
-            $fallback['pros'] = array_values(array_filter(array_map('trim', $item['pros']), static function ($value) {
-                return $value !== '';
-            }));
+            $fallback['pros'] = $this->trimScalarList($item['pros']);
         }
         if (!empty($item['cons']) && is_array($item['cons'])) {
-            $fallback['cons'] = array_values(array_filter(array_map('trim', $item['cons']), static function ($value) {
-                return $value !== '';
-            }));
+            $fallback['cons'] = $this->trimScalarList($item['cons']);
         }
 
         if (empty($pros_cons_data)) {
@@ -80,15 +76,35 @@ trait ProsConsResolver
 
             $override = $pros_cons_data[$candidate_key];
             return array(
-                'pros' => !empty($override['pros']) && is_array($override['pros']) ? array_values(array_filter(array_map('trim', $override['pros']), static function ($value) {
-                    return $value !== '';
-                })) : $fallback['pros'],
-                'cons' => !empty($override['cons']) && is_array($override['cons']) ? array_values(array_filter(array_map('trim', $override['cons']), static function ($value) {
-                    return $value !== '';
-                })) : $fallback['cons'],
+                'pros' => !empty($override['pros']) && is_array($override['pros']) ? $this->trimScalarList($override['pros']) : $fallback['pros'],
+                'cons' => !empty($override['cons']) && is_array($override['cons']) ? $this->trimScalarList($override['cons']) : $fallback['cons'],
             );
         }
 
         return $fallback;
+    }
+
+    /**
+     * trim() fatals on non-string input under strict_types (PHP 8 TypeError),
+     * and upstream contract drift can retype list entries at any time — cast
+     * scalars, drop everything else, so a drifted entry degrades instead of
+     * white-screening every page that renders a toplist.
+     *
+     * @param array<int|string, mixed> $values
+     * @return array<int, string>
+     */
+    private function trimScalarList(array $values): array
+    {
+        return array_values(array_filter(
+            array_map(
+                static function ($value) {
+                    return is_scalar($value) ? trim((string) $value) : '';
+                },
+                $values
+            ),
+            static function ($value) {
+                return $value !== '';
+            }
+        ));
     }
 }

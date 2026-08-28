@@ -9,6 +9,10 @@
  * see a clear message. This class owns detecting that rejection and the
  * option the admin notice renders from. Backends without the handshake never
  * emit this shape, so on old backends the plugin behaves exactly as before.
+ *
+ * State is one entry PER SYNC STREAM (toplists runs v1, brands may opt into
+ * v2), so a toplists success can never hide a still-broken brands mismatch
+ * or vice versa.
  */
 
 declare(strict_types=1);
@@ -19,12 +23,17 @@ final class ContractMismatch
 {
     public const OPTION = 'dataflair_contract_mismatch';
 
+    /** Upstream text is untrusted: cap what we store and render. */
+    private const MAX_MESSAGE_LENGTH = 300;
+
     /**
      * Detect a contract-mismatch rejection in an upstream response.
      *
      * Conservative on purpose: only a 409 whose JSON body carries
      * error_code=contract_mismatch counts, so an unrelated proxy or plugin
      * emitting a generic 409 can never pause sync with a misleading notice.
+     * The message/min fields are sanitized here because they later reach
+     * admin notices and AJAX responses rendered in wp-admin.
      *
      * @return array{message: string, min_plugin_version: string}|null
      */
@@ -39,48 +48,103 @@ final class ContractMismatch
             return null;
         }
 
-        return [
-            'message'            => (string) ($decoded['message'] ?? 'The DataFlair API reported a plugin/API contract mismatch.'),
-            'min_plugin_version' => (string) ($decoded['min_plugin_version'] ?? ''),
-        ];
+        $message = isset($decoded['message']) && is_scalar($decoded['message'])
+            ? substr(trim(strip_tags((string) $decoded['message'])), 0, self::MAX_MESSAGE_LENGTH)
+            : '';
+        if ($message === '') {
+            $message = 'The DataFlair API reported a plugin/API contract mismatch.';
+        }
+
+        $min = isset($decoded['min_plugin_version']) && is_scalar($decoded['min_plugin_version'])
+            ? substr(trim(strip_tags((string) $decoded['min_plugin_version'])), 0, 32)
+            : '';
+
+        return ['message' => $message, 'min_plugin_version' => $min];
     }
 
     /**
-     * Persist the mismatch so the admin notice can render it. One option,
-     * overwritten on every detection: only the latest mismatch matters.
+     * The one admin-facing sentence for a mismatch, used identically by every
+     * surface that reports it (bulk sync, per-ID resync, brands sync).
+     *
+     * @param array{message?: string, min_plugin_version?: string} $info
+     */
+    public static function describe(array $info): string
+    {
+        $min = (string) ($info['min_plugin_version'] ?? '');
+
+        return 'DataFlair API contract mismatch: ' . (string) ($info['message'] ?? '')
+            . ($min !== ''
+                ? ' Update the DataFlair Toplists plugin to version ' . $min . ' or newer.'
+                : '')
+            . ' Your site continues to show the last synced data.';
+    }
+
+    /**
+     * Persist a mismatch for one sync stream. Each stream owns its slot;
+     * recording toplists state never disturbs a recorded brands state.
      *
      * @param array{message: string, min_plugin_version: string} $info
-     * @param string $source Which sync stream hit the mismatch ('toplists'|'brands').
+     * @param string $source 'toplists'|'brands'
      */
     public static function record(array $info, string $url, string $source): void
     {
-        update_option(self::OPTION, [
-            'message'            => $info['message'],
-            'min_plugin_version' => $info['min_plugin_version'],
+        $state = get_option(self::OPTION);
+        $state = is_array($state) ? $state : [];
+
+        $state[$source] = [
+            'message'            => (string) ($info['message'] ?? ''),
+            'min_plugin_version' => (string) ($info['min_plugin_version'] ?? ''),
             'url'                => $url,
             'source'             => $source,
             'plugin_version'     => defined('DATAFLAIR_VERSION') ? DATAFLAIR_VERSION : '',
             'detected_at'        => time(),
-        ]);
+        ];
+
+        update_option(self::OPTION, $state);
     }
 
     /**
-     * Called when a sync stream completes successfully: that stream's
-     * contract works again. Only clears a mismatch recorded by the SAME
-     * stream, so a toplists (v1) success can never hide a still-broken
-     * brands (v2) mismatch or vice versa. Pass null to clear regardless.
+     * Called when one stream's sync completes cleanly: that stream's contract
+     * works again. Other streams' entries are left untouched, and when
+     * nothing is recorded no write is issued at all (this runs on every
+     * successful sync).
      */
-    public static function clear(?string $source = null): void
+    public static function clear(string $source): void
     {
-        if ($source !== null) {
-            $state          = get_option(self::OPTION);
-            $recordedSource = is_array($state) ? ($state['source'] ?? null) : null;
-            // A record with no source (defensive: record() always sets one)
-            // is clearable by any stream.
-            if ($recordedSource !== null && $recordedSource !== $source) {
-                return;
+        $state = get_option(self::OPTION);
+        if (!is_array($state) || !array_key_exists($source, $state)) {
+            return;
+        }
+
+        unset($state[$source]);
+
+        if ($state === []) {
+            delete_option(self::OPTION);
+        } else {
+            update_option(self::OPTION, $state);
+        }
+    }
+
+    /**
+     * All recorded mismatches, keyed by source. Tolerates garbage shapes so
+     * a corrupted option can never fatal the admin notice or health probe.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function entries(): array
+    {
+        $state = get_option(self::OPTION);
+        if (!is_array($state)) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($state as $source => $entry) {
+            if (is_array($entry) && isset($entry['message']) && is_string($entry['message']) && $entry['message'] !== '') {
+                $entries[(string) $source] = $entry;
             }
         }
-        delete_option(self::OPTION);
+
+        return $entries;
     }
 }

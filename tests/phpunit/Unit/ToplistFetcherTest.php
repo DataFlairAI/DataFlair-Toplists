@@ -82,7 +82,7 @@ final class ToplistFetcherTest extends TestCase
         $fetcher = new ToplistFetcher($http, $store, $this->neverErrorBuilder());
         $this->assertFalse($fetcher->fetchAndStore('https://x/api/v1/toplists/1', 'tok'));
 
-        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null;
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null;
         $this->assertIsArray($state, 'mismatch must be recorded for the admin notice');
         $this->assertSame('toplists', $state['source']);
         $this->assertSame('2.5.0', $state['min_plugin_version']);

@@ -23,6 +23,7 @@ namespace DataFlair\Toplists\Tests\Admin {
             public static array $registeredSettings = [];
             public static array $options          = [];
             public static array $echoedNotices    = [];
+            public static bool $currentUserCan    = true;
 
             public static function reset(): void
             {
@@ -32,6 +33,7 @@ namespace DataFlair\Toplists\Tests\Admin {
                 self::$registeredSettings = [];
                 self::$options            = [];
                 self::$echoedNotices      = [];
+                self::$currentUserCan     = true;
             }
         }
     }
@@ -145,6 +147,20 @@ namespace DataFlair\Toplists\Admin\Notices {
         function esc_html($text): string
         {
             return htmlspecialchars((string) $text, ENT_QUOTES);
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\esc_url')) {
+        function esc_url($url): string
+        {
+            return htmlspecialchars((string) $url, ENT_QUOTES);
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\current_user_can')) {
+        function current_user_can(string $capability): bool
+        {
+            return AdminStubs::$currentUserCan;
         }
     }
 }

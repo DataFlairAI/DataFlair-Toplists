@@ -155,6 +155,15 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.3.0</h4>
+<ul>
+  <li>Added: API contract handshake. Every API request now sends X-DataFlair-Plugin-Version and X-DataFlair-Expected-Contract headers; a backend that cannot serve the expected contract answers HTTP 409 and sync pauses loudly with a persistent admin notice instead of ingesting a response shape the plugin cannot render.</li>
+  <li>Added: contract canary. Page-1 sync payloads are deep-validated before any local write; renamed or retyped render-critical fields (offer, offerText, brand linkage, trackerLink, items/trackers types) abort the sync while the site keeps serving the last synced data.</li>
+  <li>Added: sync safety stop. An empty API payload against a populated site no longer wipes local toplists or brands; the wipe now always runs only after the response is fetched and validated, so a backend outage can never blank the site.</li>
+  <li>Added: API Contract Check diagnostic on the Tools page, and a contract_mismatch field on the /wp-json/dataflair/v1/health endpoint for external monitoring.</li>
+  <li>Fixed: casino card rendering now degrades cleanly on drifted data (retyped ratings, pros/cons, trackers, campaign names, product types) instead of emitting on-page notices or fatals under WP_DEBUG.</li>
+  <li>Security: upstream error messages are sanitized and escaped before rendering in wp-admin.</li>
+</ul>
 <h4>2.2.12</h4>
 <ul>
   <li><strong>Fixed: the Gutenberg block\'s <code>init</code> registration was duplicated between the legacy bootstrap and the canonical <code>Plugin::registerHooks()</code> path.</strong> A leftover call in the god-class\'s <code>init_hooks()</code> wired a second, independent <code>BlockRegistrar</code> to WordPress\'s <code>init</code> action alongside the one <code>Plugin::registerHooks()</code> already owns &mdash; always double-enqueuing the block editor\'s CSS, and, under real request timing, capable of tripping WordPress\'s own duplicate-registration notice into a fatal error on sites (e.g. Roots/Acorn-based) that elevate <code>WP_DEBUG</code> notices to exceptions. <code>Plugin::registerHooks()</code> is now the sole owner, matching how shortcode/redirect/assets registration already works.</li>

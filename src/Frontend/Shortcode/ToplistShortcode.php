@@ -117,7 +117,10 @@ final class ToplistShortcode
 
         $data = json_decode((string) ($toplist['data'] ?? ''), true);
 
-        if (!isset($data['data']['items'])) {
+        // The stored JSON is decoded once here for every renderer; items must
+        // be a real array or array_slice/count/foreach downstream fatal on
+        // drifted data (CardRenderer, TableRenderer, BrandMetaPrefetcher).
+        if (!isset($data['data']['items']) || !is_array($data['data']['items'])) {
             return '<p style="color: red;">DataFlair Error: Invalid toplist data</p>';
         }
 

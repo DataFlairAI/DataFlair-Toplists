@@ -20,14 +20,17 @@ use PHPUnit\Framework\TestCase;
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsQuery.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Rest/Controllers/HealthController.php';
 require_once __DIR__ . '/RestControllerTestStubs.php';
+require_once __DIR__ . '/SyncFunctionStubs.php';
 
 final class HealthControllerTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
+        \SyncFunctionStubsStore::reset();
         global $wpdb;
         $wpdb = new \wpdb();
     }
@@ -60,10 +63,12 @@ final class HealthControllerTest extends TestCase
 
     public function test_surfaces_contract_mismatch_state_when_recorded(): void
     {
-        $GLOBALS['dataflair_rest_test_options'][\DataFlair\Toplists\Sync\ContractMismatch::OPTION] = [
-            'message'            => 'Plugin below minimum version.',
-            'min_plugin_version' => '2.5.0',
-            'source'             => 'toplists',
+        \SyncFunctionStubsStore::$options[\DataFlair\Toplists\Sync\ContractMismatch::OPTION] = [
+            'toplists' => [
+                'message'            => 'Plugin below minimum version.',
+                'min_plugin_version' => '2.5.0',
+                'source'             => 'toplists',
+            ],
         ];
 
         $repo = new class implements ToplistsRepositoryInterface {
@@ -83,9 +88,7 @@ final class HealthControllerTest extends TestCase
         $data = (new HealthController($repo))->status()->get_data();
 
         $this->assertIsArray($data['contract_mismatch']);
-        $this->assertSame('2.5.0', $data['contract_mismatch']['min_plugin_version']);
-
-        unset($GLOBALS['dataflair_rest_test_options']);
+        $this->assertSame('2.5.0', $data['contract_mismatch']['toplists']['min_plugin_version']);
     }
 
     public function test_surfaces_wpdb_last_error_when_set(): void

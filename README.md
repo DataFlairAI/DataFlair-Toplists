@@ -427,6 +427,14 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.3.0
+- **Added: API contract handshake.** Every API request sends `X-DataFlair-Plugin-Version` and `X-DataFlair-Expected-Contract` headers. A backend that cannot serve the expected contract answers HTTP 409 (`error_code: contract_mismatch`) and sync pauses loudly with a persistent admin notice, per sync stream (toplists v1, brands v1/v2), instead of ingesting a response shape this plugin cannot render. Backends without the handshake, and older plugin versions, behave exactly as before: the handshake is strictly opt-in on both sides.
+- **Added: contract canary.** Page-1 sync payloads are deep-validated before any local write. Renamed or retyped render-critical fields (`offer`, `offerText`, brand linkage, `trackerLink`, `items`/`trackers` types) abort the sync with a clear message while the site keeps serving the last synced data. Collective all-or-nothing checks with a minimum sample threshold make false positives on legitimate partial data (null offers, empty trackers) impossible. Escape hatch: the `dataflair_contract_canary` filter.
+- **Added: sync safety stops.** The destructive page-1 wipe of `wp_dataflair_toplists`/`wp_dataflair_brands` now runs only AFTER the page-1 response is fetched and validated, so a backend outage can never blank the site. An empty payload against a populated site refuses the wipe (override: `dataflair_allow_empty_sync` filter), and low-budget requests retry before wiping rather than after.
+- **Added: visibility.** New "API Contract Check" diagnostic on the Tools page (probes live, resolves the base URL like real sync does, and reports recovery even while a mismatch is recorded), and a `contract_mismatch` field on `/wp-json/dataflair/v1/health` for external monitoring.
+- **Fixed: drift-resilient rendering.** Casino cards degrade cleanly on drifted data (retyped ratings, pros/cons entries, keyed tracker maps, campaign names, product types, missing brand/offer objects) instead of emitting on-page notices or fatals under `WP_DEBUG_DISPLAY`.
+- **Security:** upstream error messages are stripped, capped, and escaped before rendering anywhere in wp-admin.
+
 ### 2.2.12
 - **Fixed: the Gutenberg block's `init` registration was duplicated between the legacy bootstrap and the canonical `Plugin::registerHooks()` path.** A leftover call in the god-class's `init_hooks()` wired a second, independent `BlockRegistrar` to WordPress's `init` action alongside the one `Plugin::registerHooks()` already owns — always double-enqueuing the block editor's CSS, and, under real request timing, capable of tripping WordPress's own duplicate-registration notice into a fatal error on sites (e.g. Roots/Acorn-based) that elevate `WP_DEBUG` notices to exceptions. `Plugin::registerHooks()` is now the sole owner, matching how shortcode/redirect/assets registration already works.
 
@@ -791,4 +799,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.2.12 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.3.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0

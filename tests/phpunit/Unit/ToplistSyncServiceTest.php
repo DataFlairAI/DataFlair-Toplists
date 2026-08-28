@@ -297,7 +297,7 @@ final class ToplistSyncServiceTest extends TestCase
         $this->assertFalse($this->toplistsTableWasWiped());
         $this->assertSame([], $this->persister->storeCalls);
 
-        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null;
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null;
         $this->assertIsArray($state, 'mismatch must be recorded for the admin notice');
         $this->assertSame('2.5.0', $state['min_plugin_version']);
     }
@@ -379,7 +379,7 @@ final class ToplistSyncServiceTest extends TestCase
     public function test_completed_sync_clears_recorded_contract_mismatch(): void
     {
         \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
-            'message' => 'stale mismatch', 'min_plugin_version' => '2.5.0',
+            'toplists' => ['message' => 'stale mismatch', 'min_plugin_version' => '2.5.0', 'source' => 'toplists'],
         ];
         $this->http->responses[] = $this->bulkResponse(
             [['id' => 101, 'name' => 'Top 10 US Casinos']],
@@ -394,6 +394,80 @@ final class ToplistSyncServiceTest extends TestCase
             \SyncFunctionStubsStore::$options,
             'a fully completed sync proves the contract works: the notice must clear'
         );
+    }
+
+    public function test_completed_sync_with_persist_errors_keeps_mismatch(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
+        ];
+        $this->persister->storeReturn = false; // every store fails
+        $this->http->responses[]      = $this->bulkResponse(
+            [['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B'], ['id' => 3, 'name' => 'C']],
+            ['last_page' => 1]
+        );
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->isComplete);
+        $this->assertArrayHasKey(
+            'toplists',
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [],
+            'a completed sync with persist errors has not proven the contract works'
+        );
+    }
+
+    public function test_skipped_fallback_keeps_mismatch_and_completion_timestamps(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
+        ];
+        // A previous healthy sync of a single-page tenant cached last_page=1;
+        // this made zero-row fallbacks look "complete" pre-fix.
+        \SyncFunctionStubsStore::$transients['dataflair_toplists_batch_last_page'] = 1;
+        // Empty queue: bulk call and every fallback slice return WP_Error.
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->toArray()['skipped'] ?? false);
+        $this->assertArrayHasKey(
+            'toplists',
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [],
+            'a zero-row fallback must never dismiss the mismatch notice'
+        );
+        $this->assertArrayNotHasKey(
+            'dataflair_last_toplists_sync',
+            \SyncFunctionStubsStore::$options,
+            'a zero-row fallback must not stamp a fresh success timestamp'
+        );
+    }
+
+    public function test_retyped_data_key_fails_before_canary_and_wipe(): void
+    {
+        $this->http->responses[] = [
+            'body'     => json_encode(['data' => 'maintenance', 'meta' => ['last_page' => 1]]),
+            'response' => ['code' => 200],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('"data"', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'retyped data must never reach the wipe');
+        $this->assertArrayNotHasKey('dataflair_last_toplists_sync', \SyncFunctionStubsStore::$options);
+    }
+
+    public function test_empty_page1_against_populated_table_refuses_the_wipe(): void
+    {
+        $GLOBALS['wpdb']->countReturn = 25; // site currently has toplists
+        $this->http->responses[]      = $this->bulkResponse([], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('safety stop', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'an empty payload must never wipe a populated site');
+        $this->assertArrayHasKey('toplists', \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? []);
     }
 
     private function makeService(): ToplistSyncService
@@ -484,9 +558,12 @@ final class ToplistFakeWpdb
         return vsprintf(str_replace(['%d', '%s', '%f'], ['%s', '%s', '%s'], $sql), $flat);
     }
 
+    /** Returned by get_var (row-count queries in the safety-stop guard). */
+    public int $countReturn = 0;
+
     public function get_var(string $sql): int
     {
-        return 0;
+        return $this->countReturn;
     }
 
     public function get_results(string $sql): array

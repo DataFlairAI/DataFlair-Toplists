@@ -11,22 +11,22 @@ $brand    = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] :
 $offer    = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
 $position = isset($item['position']) && is_scalar($item['position']) ? $item['position'] : 0;
 
-foreach (array('offerText', 'bonus_code', 'bonus_wagering_requirement', 'minimum_deposit', 'payout_time', 'max_payout', 'bonus_expiry_date', 'tracking_url', 'url') as $df_scalar_field) {
-    if (isset($offer[$df_scalar_field]) && !is_scalar($offer[$df_scalar_field])) {
-        $offer[$df_scalar_field] = '';
+// Fields rendered as text below with no local type guard of their own.
+// Deliberately NOT listed: logo/local_logo/local_logo_url (the resolver
+// below unwraps array logo shapes) and url/tracking_url/review_url (their
+// consumers carry inline is_array guards).
+$df_scalarize = static function (array $data, array $fields): array {
+    foreach ($fields as $field) {
+        if (isset($data[$field]) && !is_scalar($data[$field])) {
+            $data[$field] = '';
+        }
     }
-}
-foreach (array('rating', 'games_count', 'reviewer') as $df_scalar_field) {
-    if (isset($item[$df_scalar_field]) && !is_scalar($item[$df_scalar_field])) {
-        $item[$df_scalar_field] = '';
-    }
-}
-foreach (array('name', 'slug', 'rating', 'review_url', 'review_url_override', 'url', 'local_logo_url', 'local_logo', 'logo') as $df_scalar_field) {
-    if (isset($brand[$df_scalar_field]) && !is_scalar($brand[$df_scalar_field])) {
-        $brand[$df_scalar_field] = '';
-    }
-}
-unset($df_scalar_field);
+    return $data;
+};
+$offer = $df_scalarize($offer, array('offerText', 'bonus_code', 'bonus_wagering_requirement', 'minimum_deposit', 'payout_time', 'max_payout'));
+$item  = $df_scalarize($item, array('rating', 'games_count', 'reviewer'));
+$brand = $df_scalarize($brand, array('name', 'slug', 'rating', 'review_url_override', 'type', 'productType', 'product_type'));
+unset($df_scalarize);
 
 $brand_name = esc_html((string) ($brand['name'] ?? ''));
 $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_name);
@@ -234,10 +234,13 @@ $has_valid_tracker = false;
 // First, check for trackerLink in trackers array (from API)
 // Trackers structure: offer.trackers[0].trackerLink and offer.trackers[0].campaignName
 if (!empty($offer['trackers']) && is_array($offer['trackers']) && count($offer['trackers']) > 0) {
-    $first_tracker = $offer['trackers'][0];
-    if (!empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
+    // reset() instead of [0]: an id-keyed trackers map must not warn.
+    $first_tracker = reset($offer['trackers']);
+    if (is_array($first_tracker) && !empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
         $tracker_url = $first_tracker['trackerLink'];
-        $campaign_name = !empty($first_tracker['campaignName']) ? $first_tracker['campaignName'] : '';
+        $campaign_name = (!empty($first_tracker['campaignName']) && is_scalar($first_tracker['campaignName']))
+            ? (string) $first_tracker['campaignName']
+            : '';
         
         // Store tracker URL in transient for redirect handler
         if (!empty($campaign_name) && !empty($tracker_url)) {
@@ -316,9 +319,11 @@ $show_read_review_link = !empty($brand['review_url_override'])
             
             <!-- Brand Column -->
             <div class="casino-brand-col">
+                <?php if ((int) $position > 0): ?>
                 <div class="casino-position-badge">
                     <?php echo esc_html($position); ?>
                 </div>
+                <?php endif; ?>
                 
                 <div class="casino-logo">
                     <a href="<?php echo esc_url($review_url); ?>">

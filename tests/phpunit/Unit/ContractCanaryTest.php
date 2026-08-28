@@ -168,4 +168,63 @@ final class ContractCanaryTest extends TestCase
         ])];
         $this->assertNull($this->canary->assess($payload));
     }
+
+    // ── Null tolerance: a present-but-null key is how the API says "no value" ─
+
+    public function test_null_items_on_a_toplist_passes(): void
+    {
+        $payload = [
+            ['id' => 1, 'name' => 'Empty list', 'items' => null],
+            $this->toplist([$this->item(), $this->item(), $this->item()]),
+        ];
+        $this->assertNull($this->canary->assess($payload));
+    }
+
+    public function test_null_trackers_on_offers_passes(): void
+    {
+        $payload = [$this->toplist([
+            $this->item(['trackers' => null]),
+            $this->item(['trackers' => null]),
+            $this->item(['trackers' => null]),
+        ])];
+        $this->assertNull($this->canary->assess($payload));
+    }
+
+    public function test_null_offers_keep_their_key_and_pass(): void
+    {
+        $payload = [$this->toplist([
+            $this->item([], ['offer' => null]),
+            $this->item([], ['offer' => null]),
+            $this->item([], ['offer' => null]),
+        ])];
+        $this->assertNull($this->canary->assess($payload));
+    }
+
+    public function test_offer_retyped_to_string_is_hard_failure(): void
+    {
+        $failure = $this->canary->assess([$this->toplist([
+            $this->item([], ['offer' => 'no longer an object']),
+            $this->item(),
+            $this->item(),
+        ])]);
+        $this->assertStringContainsString('"offer"', (string) $failure);
+    }
+
+    // ── Structural drift the sample-threshold must not launder ───────────────
+
+    public function test_non_list_collection_is_hard_failure(): void
+    {
+        $failure = $this->canary->assess(['results' => [$this->toplist([$this->item()])]]);
+        $this->assertStringContainsString('list', (string) $failure);
+    }
+
+    public function test_items_as_id_references_is_hard_failure(): void
+    {
+        $failure = $this->canary->assess([[
+            'id'    => 1,
+            'name'  => 'A',
+            'items' => [101, 102, 103],
+        ]]);
+        $this->assertStringContainsString('no longer objects', (string) $failure);
+    }
 }
