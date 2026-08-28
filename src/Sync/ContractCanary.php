@@ -55,6 +55,24 @@ final class ContractCanary
             return 'Toplists no longer expose a "name" field.';
         }
 
+        // Geo is read by the plugin's own render gate and, on sites that do
+        // their own geo targeting, by tenant code straight out of the stored
+        // payload. It is also the most actively changed part of the upstream
+        // response, so it earns an explicit check.
+        $anyGeoKey = false;
+        foreach ($toplists as $toplist) {
+            if (!is_array($toplist) || !array_key_exists('geo', $toplist)) {
+                continue;
+            }
+            $anyGeoKey = true;
+            if ($toplist['geo'] !== null && !is_array($toplist['geo'])) {
+                return 'Toplist "geo" is no longer an object.';
+            }
+        }
+        if (!$anyGeoKey) {
+            return 'No toplist exposes a "geo" field any more.';
+        }
+
         $items         = [];
         $rawItemCount  = 0;
         foreach ($toplists as $toplist) {

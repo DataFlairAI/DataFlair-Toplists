@@ -48,7 +48,12 @@ final class ContractCanaryTest extends TestCase
 
     private function toplist(array $items): array
     {
-        return ['id' => 101, 'name' => 'Top 10 US Casinos', 'items' => $items];
+        return [
+            'id'    => 101,
+            'name'  => 'Top 10 US Casinos',
+            'geo'   => ['geo_type' => 'country', 'name' => 'Italy', 'code' => 'IT', 'coveredCountries' => ['IT']],
+            'items' => $items,
+        ];
     }
 
     public function test_empty_payload_is_inconclusive(): void
@@ -66,7 +71,7 @@ final class ContractCanaryTest extends TestCase
     {
         // Bulk summaries without items must stay valid (small tenants, other
         // endpoints) — the sample threshold makes them inconclusive.
-        $this->assertNull($this->canary->assess([['id' => 1, 'name' => 'A']]));
+        $this->assertNull($this->canary->assess([['id' => 1, 'name' => 'A', 'geo' => null]]));
     }
 
     public function test_missing_toplist_id_is_hard_failure(): void
@@ -83,7 +88,7 @@ final class ContractCanaryTest extends TestCase
 
     public function test_items_retyped_to_string_is_hard_failure(): void
     {
-        $failure = $this->canary->assess([['id' => 1, 'name' => 'A', 'items' => 'oops']]);
+        $failure = $this->canary->assess([['id' => 1, 'name' => 'A', 'geo' => null, 'items' => 'oops']]);
         $this->assertStringContainsString('"items"', (string) $failure);
     }
 
@@ -174,7 +179,7 @@ final class ContractCanaryTest extends TestCase
     public function test_null_items_on_a_toplist_passes(): void
     {
         $payload = [
-            ['id' => 1, 'name' => 'Empty list', 'items' => null],
+            ['id' => 1, 'name' => 'Empty list', 'geo' => null, 'items' => null],
             $this->toplist([$this->item(), $this->item(), $this->item()]),
         ];
         $this->assertNull($this->canary->assess($payload));
@@ -210,6 +215,33 @@ final class ContractCanaryTest extends TestCase
         $this->assertStringContainsString('"offer"', (string) $failure);
     }
 
+    // ── Geo: read by the plugin gate and by tenant geo-targeting code ────────
+
+    public function test_null_geo_is_valid(): void
+    {
+        $payload = [$this->toplist([$this->item(), $this->item(), $this->item()])];
+        $payload[0]['geo'] = null;
+        $this->assertNull($this->canary->assess($payload));
+    }
+
+    public function test_geo_removed_everywhere_is_hard_failure(): void
+    {
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        unset($toplist['geo']);
+
+        $failure = $this->canary->assess([$toplist]);
+        $this->assertStringContainsString('"geo"', (string) $failure);
+    }
+
+    public function test_geo_retyped_to_string_is_hard_failure(): void
+    {
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        $toplist['geo'] = 'Italy';
+
+        $failure = $this->canary->assess([$toplist]);
+        $this->assertStringContainsString('no longer an object', (string) $failure);
+    }
+
     // ── Structural drift the sample-threshold must not launder ───────────────
 
     public function test_non_list_collection_is_hard_failure(): void
@@ -223,6 +255,7 @@ final class ContractCanaryTest extends TestCase
         $failure = $this->canary->assess([[
             'id'    => 1,
             'name'  => 'A',
+            'geo'   => null,
             'items' => [101, 102, 103],
         ]]);
         $this->assertStringContainsString('no longer objects', (string) $failure);

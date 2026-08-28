@@ -518,6 +518,16 @@ final class ToplistSyncServiceTest extends TestCase
      */
     private function bulkResponse(array $items, array $meta): array
     {
+        // The real v1 response always carries a geo object per toplist, and
+        // the canary checks for it. Default it in so fixtures stay realistic;
+        // drift cases override it explicitly.
+        $items = array_map(static function ($toplist) {
+            if (is_array($toplist) && !array_key_exists('geo', $toplist)) {
+                $toplist['geo'] = ['geo_type' => 'country', 'name' => 'Italy', 'code' => 'IT', 'coveredCountries' => ['IT']];
+            }
+            return $toplist;
+        }, $items);
+
         return [
             'body'     => json_encode([
                 'data' => $items,
