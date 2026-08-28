@@ -23,6 +23,7 @@ namespace DataFlair\Toplists\Tests\Admin {
             public static array $registeredSettings = [];
             public static array $options          = [];
             public static array $echoedNotices    = [];
+            public static bool $currentUserCan    = true;
 
             public static function reset(): void
             {
@@ -32,6 +33,7 @@ namespace DataFlair\Toplists\Tests\Admin {
                 self::$registeredSettings = [];
                 self::$options            = [];
                 self::$echoedNotices      = [];
+                self::$currentUserCan     = true;
             }
         }
     }
@@ -138,6 +140,52 @@ namespace DataFlair\Toplists\Admin\Notices {
         function admin_url(string $path = '', string $scheme = 'admin'): string
         {
             return 'http://example.test/wp-admin/' . ltrim($path, '/');
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\esc_html')) {
+        function esc_html($text): string
+        {
+            return htmlspecialchars((string) $text, ENT_QUOTES);
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\esc_url')) {
+        function esc_url($url): string
+        {
+            return htmlspecialchars((string) $url, ENT_QUOTES);
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\current_user_can')) {
+        function current_user_can(string $capability): bool
+        {
+            return AdminStubs::$currentUserCan;
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\add_query_arg')) {
+        function add_query_arg($key, $value = '', $url = '')
+        {
+            // Must honour $url: the notice passes an explicit admin_url base
+            // so the dismiss link can never reflect the request URI.
+            $base = $url !== '' ? $url : 'http://example.test/CURRENT_REQUEST_URI';
+            $sep  = str_contains($base, '?') ? '&' : '?';
+            return $base . $sep . $key . '=' . $value;
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\wp_nonce_url')) {
+        function wp_nonce_url(string $url, string $action = '-1'): string
+        {
+            return $url . '&_wpnonce=test-nonce';
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\wp_verify_nonce')) {
+        function wp_verify_nonce($nonce, $action = -1)
+        {
+            return $nonce === 'test-nonce' ? 1 : false;
         }
     }
 }

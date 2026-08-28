@@ -4,12 +4,31 @@
  * Using custom CSS classes for reliable styling
  */
 
-// Extract data
-$brand = $item['brand'];
-$offer = $item['offer'];
-$position = $item['position'];
+// Extract data. Contract-drift guard: a backend retype (object/array where a
+// string used to be, or a missing brand/offer object) must degrade to an
+// empty value — never emit on-page notices or TypeErrors under WP_DEBUG.
+$brand    = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
+$offer    = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
+$position = isset($item['position']) && is_scalar($item['position']) ? $item['position'] : 0;
 
-$brand_name = esc_html($brand['name']);
+// Fields rendered as text below with no local type guard of their own.
+// Deliberately NOT listed: logo/local_logo/local_logo_url (the resolver
+// below unwraps array logo shapes) and url/tracking_url/review_url (their
+// consumers carry inline is_array guards).
+$df_scalarize = static function (array $data, array $fields): array {
+    foreach ($fields as $field) {
+        if (isset($data[$field]) && !is_scalar($data[$field])) {
+            $data[$field] = '';
+        }
+    }
+    return $data;
+};
+$offer = $df_scalarize($offer, array('offerText', 'bonus_code', 'bonus_wagering_requirement', 'minimum_deposit', 'payout_time', 'max_payout'));
+$item  = $df_scalarize($item, array('rating', 'games_count', 'reviewer'));
+$brand = $df_scalarize($brand, array('name', 'slug', 'rating', 'review_url_override', 'type', 'productType', 'product_type'));
+unset($df_scalarize);
+
+$brand_name = esc_html((string) ($brand['name'] ?? ''));
 $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_name);
 
 // Product type and labels — resolve once, used throughout the template
@@ -157,16 +176,22 @@ if (empty($features) && function_exists('post_type_exists') && post_type_exists(
 }
 
 // 3. API item features when still empty
-if (empty($features) && !empty($item['features'])) {
+if (empty($features) && !empty($item['features']) && is_array($item['features'])) {
     $features = array_slice($item['features'], 0, 3);
 }
+// Drop non-scalar entries so esc_html() below can never receive an array.
+$features = array_values(array_filter($features, 'is_scalar'));
 
 $detail_pros = !empty($resolved_pros) ? $resolved_pros : (!empty($item['pros']) && is_array($item['pros']) ? $item['pros'] : array());
 $detail_cons = !empty($resolved_cons) ? $resolved_cons : (!empty($item['cons']) && is_array($item['cons']) ? $item['cons'] : array());
-$detail_pros = array_values(array_filter(array_map('trim', $detail_pros), function($value) {
+// trim() fatals on non-string input (PHP 8 TypeError) — cast scalars, drop the rest.
+$df_trim_scalar = static function ($value) {
+    return is_scalar($value) ? trim((string) $value) : '';
+};
+$detail_pros = array_values(array_filter(array_map($df_trim_scalar, $detail_pros), function($value) {
     return $value !== '';
 }));
-$detail_cons = array_values(array_filter(array_map('trim', $detail_cons), function($value) {
+$detail_cons = array_values(array_filter(array_map($df_trim_scalar, $detail_cons), function($value) {
     return $value !== '';
 }));
 
@@ -209,10 +234,13 @@ $has_valid_tracker = false;
 // First, check for trackerLink in trackers array (from API)
 // Trackers structure: offer.trackers[0].trackerLink and offer.trackers[0].campaignName
 if (!empty($offer['trackers']) && is_array($offer['trackers']) && count($offer['trackers']) > 0) {
-    $first_tracker = $offer['trackers'][0];
-    if (!empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
+    // reset() instead of [0]: an id-keyed trackers map must not warn.
+    $first_tracker = reset($offer['trackers']);
+    if (is_array($first_tracker) && !empty($first_tracker['trackerLink']) && !is_array($first_tracker['trackerLink'])) {
         $tracker_url = $first_tracker['trackerLink'];
-        $campaign_name = !empty($first_tracker['campaignName']) ? $first_tracker['campaignName'] : '';
+        $campaign_name = (!empty($first_tracker['campaignName']) && is_scalar($first_tracker['campaignName']))
+            ? (string) $first_tracker['campaignName']
+            : '';
         
         // Store tracker URL in transient for redirect handler
         if (!empty($campaign_name) && !empty($tracker_url)) {
@@ -258,7 +286,7 @@ if (!isset($review_url) || empty($review_url)) {
         $review_url = esc_url($brand['review_url']);
     } else {
         // Generate review URL: /reviews/{brand-slug}
-        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title((string) ($brand['name'] ?? ''));
         $review_url = home_url('/reviews/' . $brand_slug . '/');
     }
 }
@@ -291,9 +319,11 @@ $show_read_review_link = !empty($brand['review_url_override'])
             
             <!-- Brand Column -->
             <div class="casino-brand-col">
+                <?php if ((int) $position > 0): ?>
                 <div class="casino-position-badge">
                     <?php echo esc_html($position); ?>
                 </div>
+                <?php endif; ?>
                 
                 <div class="casino-logo">
                     <a href="<?php echo esc_url($review_url); ?>">

@@ -19,6 +19,9 @@
 declare(strict_types=1);
 
 namespace {
+    // Shared option store used by the Controllers-namespace get_option below.
+    require_once __DIR__ . '/SyncFunctionStubs.php';
+
     if (!class_exists('WP_REST_Response')) {
         class WP_REST_Response
         {
@@ -162,6 +165,15 @@ namespace DataFlair\Toplists\Rest\Controllers {
             $title = strtolower(trim($title));
             $title = preg_replace('/[^a-z0-9]+/', '-', $title) ?? '';
             return trim($title, '-');
+        }
+    }
+    // HealthController reads options directly (contract state, integration
+    // profile). Backed by the same store the Sync namespace stubs use, so a
+    // test seeds one place and both namespaces agree.
+    if (!function_exists(__NAMESPACE__ . '\\get_option')) {
+        function get_option($key, $default = false)
+        {
+            return \SyncFunctionStubsStore::$options[$key] ?? $default;
         }
     }
 }

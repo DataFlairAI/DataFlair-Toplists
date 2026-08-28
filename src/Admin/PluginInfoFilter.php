@@ -76,7 +76,7 @@ final class PluginInfoFilter
         $res->author        = '<a href="https://dataflair.ai">DataFlair</a>';
         $res->homepage      = 'https://dataflair.ai';
         $res->requires      = '6.3';
-        $res->tested        = '7.0';
+        $res->tested        = '6.9';
         $res->requires_php  = '8.1';
 
         $res->sections = [
@@ -133,6 +133,24 @@ final class PluginInfoFilter
   <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
 </ul>
 
+<h4>API Contract Safety</h4>
+<ul>
+  <li>Every API request identifies the plugin version and the API contract it was built for. A backend that cannot serve that contract answers HTTP 409 and sync pauses with a clear admin notice instead of storing a response the plugin cannot render.</li>
+  <li>Contract canary: sync payloads are deep-validated on every page before any local write. A renamed, removed, or retyped render-critical field stops the sync and names the field, rather than silently blanking cards.</li>
+  <li>Fail-safe sync ordering: the destructive stale-row wipe runs only after a response has been fetched and validated, so a backend outage can never empty a site. An empty payload against a populated site refuses the wipe.</li>
+  <li>Every contract failure ends with an action, either "update the plugin to version X" or "this is a DataFlair-side change, report it". The notice clears itself on the next successful sync.</li>
+  <li>The plugin announces DataFlair API version changes: a dismissible informational notice when the contract revision moves or a newer API version becomes available.</li>
+  <li>The database tables are a declared contract, locked by a test: additive only within a major version, with the data column storing the verbatim API payload for sites that read the tables directly.</li>
+  <li>Health endpoint reports paused streams plus an integration profile (geo targeting, API contract and revision, last sync times) for monitoring.</li>
+</ul>
+
+<h4>WP-CLI</h4>
+<ul>
+  <li><code>wp dataflair sync</code> runs a full sync (<code>--only=toplists</code> or <code>--only=brands</code> to scope it). Exits non-zero on failure so a real system cron can react, and backs off automatically on API rate limits.</li>
+  <li><code>wp dataflair logs</code> tails DataFlair log entries with <code>--since</code>, <code>--level</code> and <code>--limit</code> filters.</li>
+  <li><code>wp dataflair reconcile-reviews</code> backfills cached review post IDs for existing brand rows.</li>
+</ul>
+
 <h4>Automatic Updates</h4>
 <ul>
   <li>Self-updating via GitHub releases, no WordPress.org required</li>
@@ -145,7 +163,7 @@ final class PluginInfoFilter
   <li><strong>Dashboard:</strong> API health tile, stat tiles (brands synced, toplists count, last sync + next-in), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. Sync Brands and Sync Toplists buttons with live progress toast.</li>
   <li><strong>Toplists list:</strong> search, bulk re-sync and bulk delete, per-row accordion with Items tab (position/brand/offer/synced status per item) and Raw JSON tab (pretty-printed blob with copy + download).</li>
   <li><strong>Brands:</strong> full brand table with review URL override inline-edit cell.</li>
-  <li><strong>Tools:</strong> Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered DataFlair entries from debug.log, severity colouring, Download), API Preview tab.</li>
+  <li><strong>Tools:</strong> Tests runner including the API Contract Check diagnostic (per-test Run + Run All, persisted results), Logs tab (filtered DataFlair entries from debug.log, severity colouring, Download), API Preview tab.</li>
   <li><strong>Settings:</strong> API Connection tab (bearer token + Test Connection), Customizations tab (colour pickers with live preview), Sync Schedule tab (cadence selects, retry count, alert email — saves and reschedules WP-Cron hooks), Geo-Targeting tab (site-level on/off toggle for the render gate). Dirty-state amber pill + beforeunload guard.</li>
   <li>REST API endpoints for the block editor.</li>
 </ul>
@@ -155,6 +173,22 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.3.0</h4>
+<ul>
+  <li>Added: API contract handshake. Every API request now sends X-DataFlair-Plugin-Version, plus X-DataFlair-Expected-Contract on versioned endpoints; a backend that cannot serve the expected contract answers HTTP 409 and sync pauses loudly with a persistent admin notice instead of ingesting a response shape the plugin cannot render.</li>
+  <li>Added: contract canary. Sync payloads are deep-validated on every page before any local write; renamed or retyped render-critical fields (offer, offerText, brand linkage, trackerLink, items/trackers types) abort the sync while the site keeps serving the last synced data.</li>
+  <li>Added: sync safety stop. An empty API payload against a populated site no longer wipes local toplists or brands; the wipe now always runs only after the response is fetched and validated, so a backend outage can never blank the site.</li>
+  <li>Added: API Contract Check diagnostic on the Tools page, and a contract_mismatch field on the /wp-json/dataflair/v1/health endpoint for monitoring (requires a manage_options account, e.g. an Application Password).</li>
+  <li>Fixed: casino card rendering now degrades cleanly on drifted data (retyped ratings, pros/cons, trackers, campaign names, product types) instead of emitting on-page notices or fatals under WP_DEBUG.</li>
+  <li>Security: upstream error messages are sanitized and escaped before rendering in wp-admin.</li>
+  <li>Added: every failure mode now preserves local data. Backend downtime, 5xx errors, expired or revoked tokens, removed permissions, a wrong base URL, rate limiting, an HTML login wall instead of JSON, oversized or malformed responses, an empty payload, and field drift all leave the already-synced data serving. UPGRADING.md carries the full table.</li>
+  <li>Added: wp dataflair sync. The plugin ships no cron by design, and the Settings page already offered WP-CLI as an option, but no such command existed. It now does, with --only=toplists|brands, and exits non-zero on failure so a real system cron can react.</li>
+  <li>Added: the health endpoint reports an integration profile (geo targeting, API contract and revision, supported versions, last sync times) so support starts from facts.</li>
+  <li>Changed: clearer geo-targeting copy. The setting governs only the plugin shortcode and block, and disabling it is legitimate when your own code enforces geo restrictions.</li>
+  <li>Added: the plugin now tells you when the DataFlair API moves. Each full sync reads the backend /api/vN/meta endpoint and raises a dismissible informational notice when the contract revision changes or a newer API version becomes available. The first reading is a silent baseline, and nothing here is an error: revisions are additive within a version, and a newer API version cannot affect a site until it deliberately installs a plugin that uses it.</li>
+  <li>Added: the plugin database tables are now a declared contract. Sites that install the plugin as a sync engine and render from their own code read wp_dataflair_toplists and wp_dataflair_brands directly, so those column names are locked by a CI test: additive only inside a major version, and the data column keeps storing the verbatim API payload. UPGRADING.md lists the columns.</li>
+  <li>Added: every contract failure ends with an action, either "update the plugin to version X" or "this is a DataFlair-side change, report it". Field additions and JSON key or item order changes are explicitly safe and produce no message.</li>
+</ul>
 <h4>2.2.12</h4>
 <ul>
   <li><strong>Fixed: the Gutenberg block\'s <code>init</code> registration was duplicated between the legacy bootstrap and the canonical <code>Plugin::registerHooks()</code> path.</strong> A leftover call in the god-class\'s <code>init_hooks()</code> wired a second, independent <code>BlockRegistrar</code> to WordPress\'s <code>init</code> action alongside the one <code>Plugin::registerHooks()</code> already owns &mdash; always double-enqueuing the block editor\'s CSS, and, under real request timing, capable of tripping WordPress\'s own duplicate-registration notice into a fatal error on sites (e.g. Roots/Acorn-based) that elevate <code>WP_DEBUG</code> notices to exceptions. <code>Plugin::registerHooks()</code> is now the sole owner, matching how shortcode/redirect/assets registration already works.</li>

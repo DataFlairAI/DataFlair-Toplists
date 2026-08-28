@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.2.12
+ * Version: 2.3.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.2.12');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.3.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -494,6 +494,23 @@ class DataFlair_Toplists {
      *
      * @return \DataFlair\Toplists\Sync\ToplistSyncServiceInterface
      */
+    /**
+     * Public seams for `wp dataflair sync`. The services themselves stay
+     * private; WP-CLI needs an entry point and reflection is not one.
+     *
+     * @return \DataFlair\Toplists\Sync\ToplistSyncServiceInterface
+     */
+    public function cli_toplist_sync_service() {
+        return $this->toplist_sync_service();
+    }
+
+    /**
+     * @return \DataFlair\Toplists\Sync\BrandSyncServiceInterface
+     */
+    public function cli_brand_sync_service() {
+        return $this->brand_sync_service();
+    }
+
     private function toplist_sync_service() {
         if ($this->toplist_sync_service instanceof \DataFlair\Toplists\Sync\ToplistSyncServiceInterface) {
             return $this->toplist_sync_service;
@@ -1019,6 +1036,14 @@ class DataFlair_Toplists {
         // Phase 9.6 — plain-permalinks admin notice extracted to
         // \DataFlair\Toplists\Admin\Notices\PermalinkNotice.
         (new \DataFlair\Toplists\Admin\Notices\PermalinkNotice())->register();
+
+        // API Contract Safety — persistent warning while sync is paused on a
+        // backend contract-mismatch rejection (409 handshake).
+        (new \DataFlair\Toplists\Admin\Notices\ContractMismatchNotice())->register();
+
+        // API Contract Safety — informational notice when the backend
+        // announces a new contract revision or a newer API version.
+        (new \DataFlair\Toplists\Admin\Notices\ContractVersionNotice())->register();
     }
 
     /**
@@ -1674,5 +1699,11 @@ if (defined('WP_CLI') && WP_CLI) {
     \WP_CLI::add_command(
         'dataflair logs',
         \DataFlair\Toplists\Cli\LogsCommand::class
+    );
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/SyncCommand.php';
+    \WP_CLI::add_command(
+        'dataflair sync',
+        \DataFlair\Toplists\Cli\SyncCommand::class
     );
 }

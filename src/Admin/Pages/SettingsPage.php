@@ -253,8 +253,14 @@ final class SettingsPage implements PageInterface
                                     <p class="description" style="color:#b32d2e;">
                                         <strong>&#9888; Turning this off shows every toplist to every
                                         visitor</strong>, regardless of the operator licensing/geo
-                                        restrictions configured in DataFlair. Only disable this on
-                                        non-production, test, or demo sites.
+                                        restrictions configured in DataFlair. Only disable it if
+                                        something else enforces those restrictions: your own
+                                        geo-targeting in theme code, or a non-production site.
+                                    </p>
+                                    <p class="description">
+                                        This setting only affects the plugin&rsquo;s own shortcode and
+                                        Gutenberg block. If you render toplists from your own code, the
+                                        gate never runs for you and this checkbox changes nothing.
                                     </p>
                                 </td>
                             </tr>

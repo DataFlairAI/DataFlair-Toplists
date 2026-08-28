@@ -59,11 +59,6 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             'budget_seconds' => $request->budgetSeconds,
         ]);
 
-        if ($page === 1) {
-            $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
-            $this->resetSyncState();
-        }
-
         $budget = new WallClockBudget($request->budgetSeconds);
 
         // Sigma's /toplists already returns full items+brand+offer+tracker
@@ -116,6 +111,24 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if ($statusCode !== 200) {
+            // Contract-mismatch rejections apply to every endpoint equally, so
+            // per-ID fallback would only repeat the same 409 N times. Record
+            // the state for the admin notice and stop before any local write.
+            $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
+            if ($mismatch !== null) {
+                ContractMismatch::record($mismatch, $listUrl, 'toplists');
+                $this->logger->warning(
+                    'ToplistSync: contract mismatch on page ' . $page . ' — sync aborted before any local write'
+                );
+                $failureMessage = ContractMismatch::describe($mismatch);
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => $failureMessage,
+                ]);
+                return SyncResult::failure($page, $failureMessage);
+            }
+
             if (in_array($statusCode, [500, 502, 503, 504], true)) {
                 $this->logger->warning(
                     'ToplistSync: bulk HTTP ' . $statusCode
@@ -148,11 +161,117 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         if (json_last_error() !== JSON_ERROR_NONE) {
             return SyncResult::failure($page, 'JSON decode error: ' . json_last_error_msg());
         }
-        if (!isset($data['data'])) {
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            // A retyped `data` (string/object) must fail here, not launder
+            // through the canary as an empty payload and reach the wipe.
             return SyncResult::failure(
                 $page,
-                'Invalid response format from API. Expected "data" key in response.'
+                'Invalid response format from API. Expected "data" key with an array in response.'
             );
+        }
+
+        // Contract canary: deep-validate EVERY page before persisting it. A
+        // field rename inside data[].items passes the shallow gates above but
+        // would blank cards site-wide once stored; the canary turns that
+        // silent drift into a loud, data-preserving abort.
+        //
+        // Every page, not just page 1: a rename is a systematic backend change
+        // so page 1 catches it in practice, but a page-1 sample below the
+        // canary's threshold (few toplists, no items) would otherwise wave the
+        // remaining pages through unchecked. Filter escape hatch for
+        // emergencies only.
+        if ((bool) apply_filters('dataflair_contract_canary', true)) {
+            $canaryFailure = (new ContractCanary())->assess($data['data']);
+            if ($canaryFailure !== null) {
+                ContractMismatch::record(
+                    ['message' => $canaryFailure, 'min_plugin_version' => ''],
+                    $listUrl,
+                    'toplists'
+                );
+                $this->logger->warning('ToplistSync: contract canary failed on page ' . $page . ' — ' . $canaryFailure);
+
+                // Page 1 is the only page where aborting is safe, because the
+                // destructive reset below has not run yet. On later pages the
+                // table was already cleared and partially refilled, so
+                // aborting would leave the site missing most of its toplists
+                // and every retry would wipe and abort again. Record it, warn
+                // loudly, and finish the run: a complete catalogue with some
+                // degraded fields beats a mostly empty one.
+                if ($page === 1) {
+                    $failureMessage = 'DataFlair contract canary: ' . $canaryFailure
+                        . ' Sync aborted before any local write; your site continues to show the last synced data. '
+                        . ContractMismatch::whatToDo('');
+                    do_action('dataflair_sync_item_failed', [
+                        'type'  => 'toplists',
+                        'page'  => $page,
+                        'error' => $failureMessage,
+                    ]);
+                    return SyncResult::failure($page, $failureMessage);
+                }
+
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => 'DataFlair contract canary: ' . $canaryFailure
+                        . ' Detected on page ' . $page . ', after this run had already begun replacing local data,'
+                        . ' so the sync continued to avoid leaving the site with a partial catalogue. '
+                        . ContractMismatch::whatToDo(''),
+                ]);
+            }
+        }
+
+        // Safety stop: an empty page-1 payload against a populated local
+        // table is far more likely a backend scoping/auth regression than a
+        // deliberate delete-everything. Preserve local data and fail loudly;
+        // the filter is the deliberate override for a real wipe.
+        if ($page === 1 && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
+            global $wpdb;
+            $existingRows = (int) $wpdb->get_var(
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . DATAFLAIR_TABLE_NAME
+            );
+            if ($existingRows > 0) {
+                // Recorded without the "safety stop" prefix: the admin notice
+                // already opens with "DataFlair sync is paused:".
+                // Recorded text is the REASON only. The generic "report this"
+                // guidance is appended once by whichever surface renders it,
+                // so it can never appear twice in one message. The filter hint
+                // stays here because it is specific to this failure, and it is
+                // addressed to a developer, not to the admin reading the notice.
+                $recorded = 'the API returned zero toplists while this site has ' . $existingRows
+                    . ' stored, so the local data was preserved. If every toplist really was removed on purpose, '
+                    . 'a developer can allow the wipe with the dataflair_allow_empty_sync filter.';
+                $failureMessage = 'DataFlair sync safety stop: ' . $recorded . ' ' . ContractMismatch::whatToDo('');
+                ContractMismatch::record(
+                    ['message' => ucfirst($recorded), 'min_plugin_version' => ''],
+                    $listUrl,
+                    'toplists'
+                );
+                $this->logger->warning('ToplistSync: empty page-1 payload with ' . $existingRows . ' local rows — wipe refused');
+                do_action('dataflair_sync_item_failed', [
+                    'type'  => 'toplists',
+                    'page'  => $page,
+                    'error' => $failureMessage,
+                ]);
+                return SyncResult::failure($page, $failureMessage);
+            }
+        }
+
+        // Destructive page-1 reset runs only AFTER the page-1 response has
+        // been fetched and validated. Wiping before the fetch (the pre-2.3.0
+        // order) left the site with an empty toplists table whenever the
+        // backend errored, turning a backend outage into a front-end outage.
+        // When a slow fetch already burned the budget, skip the wipe but keep
+        // persisting (rows upsert): a partial retry here would loop in
+        // drivers with no partial cap, and the same slow fetch would trip
+        // the guard deterministically on every retry. Stale upstream-deleted
+        // rows simply persist until the next healthy run wipes them.
+        if ($page === 1) {
+            if ($budget->exceeded(8.0)) {
+                $this->logger->warning('ToplistSync: budget too low for the page-1 wipe — upserting without the stale-row wipe');
+            } else {
+                $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
+                $this->resetSyncState();
+            }
         }
 
         $synced    = 0;
@@ -203,7 +322,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if (!empty($endpoints)) {
-            $existing = get_option('dataflair_api_endpoints', '');
+            // Page 1 always rebuilds the cache from scratch: when the wipe
+            // was skipped (low budget) the reset did not blank the option,
+            // and appending would grow the autoloaded list without bound.
+            $existing = $page === 1 ? '' : get_option('dataflair_api_endpoints', '');
             $joined   = implode("\n", $endpoints);
             if (!empty($existing)) {
                 $joined = $existing . "\n" . $joined;
@@ -219,6 +341,20 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $isComplete = !$budgetExhausted && $page >= $lastPage;
         if ($isComplete) {
             $this->markSyncCompleted();
+            if ($synced > 0) {
+                // A validated sync that stored rows proves the contract
+                // works again. Row-level persist errors are local database
+                // problems, not contract problems, so they do not block the
+                // clear; zero-row and skipped runs still never clear.
+                ContractMismatch::clear('toplists');
+            }
+            // Ask what the backend now serves only after the data work is
+            // done: this call must never compete with the wall-clock budget
+            // or cost the run a single row.
+            $meta = ContractVersion::fetch($this->http, $this->baseUrl, $this->token);
+            if ($meta !== null) {
+                ContractVersion::record($meta);
+            }
         }
 
         $this->logger->info(
@@ -378,10 +514,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 . ' unrecoverable; every split failed. Attempts: '
                 . wp_json_encode($attemptLog)
             );
+            // Zero rows fetched: never stamp completion here — a fresh
+            // "last sync" timestamp would suppress staleness monitoring for
+            // a run that synced nothing.
             $isComplete = $page >= $naturalLastPage;
-            if ($isComplete) {
-                $this->markSyncCompleted();
-            }
             return SyncResult::success(
                 $page,
                 $naturalLastPage,
@@ -400,12 +536,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         // Budget may already be spent by the bulk HTTP retry attempts.
-        // Advance instead of re-queuing the same page forever.
+        // Advance instead of re-queuing the same page forever. Zero rows
+        // fetched, so completion is never stamped from this path either.
         if ($budget->exceeded(3.0)) {
             $isComplete = $page >= $naturalLastPage;
-            if ($isComplete) {
-                $this->markSyncCompleted();
-            }
             return SyncResult::success(
                 $page, $naturalLastPage, 0, 0, true, $isComplete,
                 ['fallback' => true, 'budget_skip' => true, 'next_page' => $page + 1]
@@ -434,19 +568,31 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if (!empty($endpoints)) {
-            $existing = get_option('dataflair_api_endpoints', '');
-            $joined   = implode("\n", $endpoints);
-            if (!empty($existing)) {
-                $joined = $existing . "\n" . $joined;
+            if ($page === 1) {
+                // Page 1 rebuilds the cache the way the bulk path's reset
+                // would have; appending here grew the autoloaded option
+                // without bound and pinned stale first entries forever.
+                if ($synced > 0) {
+                    $this->clearTrackerTransients();
+                }
+                update_option('dataflair_api_endpoints', implode("\n", $endpoints));
+            } else {
+                $existing = get_option('dataflair_api_endpoints', '');
+                $joined   = implode("\n", $endpoints);
+                if (!empty($existing)) {
+                    $joined = $existing . "\n" . $joined;
+                }
+                update_option('dataflair_api_endpoints', $joined);
             }
-            update_option('dataflair_api_endpoints', $joined);
         }
         if (function_exists('gc_collect_cycles')) {
             gc_collect_cycles();
         }
 
         $isComplete = !$budgetExhausted && $page >= $naturalLastPage;
-        if ($isComplete) {
+        if ($isComplete && $synced > 0) {
+            // Completion timestamps require rows actually fetched; an
+            // all-errors fallback must not look like a healthy sync.
             $this->markSyncCompleted();
         }
 

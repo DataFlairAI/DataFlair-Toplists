@@ -52,6 +52,10 @@ final class TestsRunner
                 'label'       => 'DB Schema Version',
                 'description' => 'Verifies dataflair_db_version option matches the expected installed schema.',
             ],
+            'contract_check' => [
+                'label'       => 'API Contract Check',
+                'description' => 'Fetches one toplists page and verifies the response still matches the field contract this plugin version renders from.',
+            ],
         ];
     }
 
@@ -220,6 +224,63 @@ final class TestsRunner
                     'status'  => $status,
                     'message' => "Brands: {$bLabel}. Toplists: {$tLabel}.",
                 ];
+            },
+
+            'contract_check' => function (): array {
+                $token = trim((string) get_option('dataflair_api_token', ''));
+                if ($token === '') {
+                    return ['status' => 'warn', 'message' => 'API token not configured. Contract check skipped.'];
+                }
+
+                // Always probe live, even while a mismatch is recorded: this
+                // is the one tool an operator reaches for to ask "does the
+                // contract work NOW?", so it must be able to observe recovery.
+                // Base URL goes through the same detector sync uses (option,
+                // cached endpoints, fallback) instead of the raw option.
+                $base = (new \DataFlair\Toplists\Http\ApiBaseUrlDetector(
+                    new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator())
+                ))->detect();
+
+                $url  = rtrim($base, '/') . '/toplists?per_page=1&page=1';
+                $resp = (new \DataFlair\Toplists\Http\ApiClient())->get($url, $token, 5, 0);
+                if (is_wp_error($resp)) {
+                    return ['status' => 'warn', 'message' => 'Could not reach API: ' . $resp->get_error_message()];
+                }
+
+                $code = (int) wp_remote_retrieve_response_code($resp);
+                $body = (string) wp_remote_retrieve_body($resp);
+
+                $mismatch = \DataFlair\Toplists\Sync\ContractMismatch::fromResponse($code, $body);
+                if ($mismatch !== null) {
+                    return ['status' => 'fail', 'message' => 'Backend rejected the contract: ' . $mismatch['message']];
+                }
+                if ($code !== 200) {
+                    return ['status' => 'warn', 'message' => "API responded HTTP {$code}."];
+                }
+
+                $data = json_decode($body, true);
+                if (!is_array($data) || !isset($data['data']) || !is_array($data['data'])) {
+                    return ['status' => 'fail', 'message' => 'Response no longer carries a "data" array. Contract drift.'];
+                }
+
+                // Honour the same escape hatch the sync gate uses, so a site
+                // that disabled the canary is not shown a permanent FAIL for
+                // a check its syncs no longer perform.
+                if ((bool) apply_filters('dataflair_contract_canary', true)) {
+                    $failure = (new \DataFlair\Toplists\Sync\ContractCanary())->assess($data['data']);
+                    if ($failure !== null) {
+                        return ['status' => 'fail', 'message' => 'Contract canary: ' . $failure];
+                    }
+                }
+
+                if (\DataFlair\Toplists\Sync\ContractMismatch::entries() !== []) {
+                    return [
+                        'status'  => 'warn',
+                        'message' => 'Live contract check passes, but sync is still paused from an earlier mismatch. Run a full sync to clear the notice.',
+                    ];
+                }
+
+                return ['status' => 'pass', 'message' => 'API contract matches what this plugin version expects.'];
             },
 
             'db_schema' => function (): array {

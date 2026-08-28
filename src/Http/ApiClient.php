@@ -72,7 +72,16 @@ final class ApiClient implements HttpClientInterface
         $headers = [
             'Accept'        => 'application/json',
             'Authorization' => 'Bearer ' . trim($token),
+            // Contract handshake: lets the backend reject a plugin/API version
+            // mismatch loudly (HTTP 409) instead of serving a shape this plugin
+            // cannot render. Backends without the handshake ignore both headers.
+            'X-DataFlair-Plugin-Version' => defined('DATAFLAIR_VERSION') ? DATAFLAIR_VERSION : 'unknown',
         ];
+
+        $expectedContract = $this->expectedContract($url);
+        if ($expectedContract !== null) {
+            $headers['X-DataFlair-Expected-Contract'] = $expectedContract;
+        }
 
         $parsed = parse_url($url);
         $host   = is_array($parsed) && isset($parsed['host']) ? (string) $parsed['host'] : '';
@@ -242,6 +251,23 @@ final class ApiClient implements HttpClientInterface
         if (function_exists('do_action')) {
             do_action('dataflair_http_call', $payload);
         }
+    }
+
+    /**
+     * API contract version this request is pinned to, derived from the URL.
+     *
+     * The `/api/vN` segment is the single source of truth for which contract
+     * the caller was built against, so the header can never disagree with the
+     * URL actually being hit. A URL with no such segment (custom base URLs)
+     * returns null and the header is omitted: claiming v1 there could make
+     * the backend reject a request whose real contract we cannot know.
+     */
+    private function expectedContract(string $url): ?string
+    {
+        if (preg_match('#/api/(v\d+)(?:/|\?|$)#i', $url, $matches)) {
+            return strtolower($matches[1]);
+        }
+        return null;
     }
 
     private function maybeForceHttps(string $url): string

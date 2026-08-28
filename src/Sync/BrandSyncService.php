@@ -68,12 +68,6 @@ final class BrandSyncService implements BrandSyncServiceInterface
             'budget_seconds' => $request->budgetSeconds,
         ]);
 
-        if ($page === 1) {
-            global $wpdb;
-            $brandsTable = $wpdb->prefix . 'dataflair_brands';
-            $this->deleteAllPaginated($brandsTable, 500);
-        }
-
         $budget = new WallClockBudget($request->budgetSeconds);
 
         $result = $this->syncBrandsPage($page, $budget, $request->perPage);
@@ -90,6 +84,12 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $partial    = !empty($result['partial']);
         $lastPage   = (int) $result['last_page'];
         $isComplete = !$partial && $page >= $lastPage;
+
+        if ($isComplete && (int) ($result['errors'] ?? 0) === 0 && (int) ($result['synced'] ?? 0) > 0) {
+            // Only a fully completed sync that actually stored rows,
+            // error-free, proves the brands contract works again.
+            ContractMismatch::clear('brands');
+        }
 
         do_action('dataflair_sync_batch_finished', [
             'type'            => 'brands',
@@ -143,6 +143,16 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $responseHeaders = wp_remote_retrieve_headers($response);
 
         if ($statusCode !== 200) {
+            // Contract-mismatch rejections abort before any local write and
+            // surface via the persistent admin notice (see ContractMismatch).
+            $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
+            if ($mismatch !== null) {
+                ContractMismatch::record($mismatch, $url, 'brands');
+                $msg = ContractMismatch::describe($mismatch);
+                $this->logger->error('BrandSync: ' . $msg);
+                return ['success' => false, 'message' => $msg];
+            }
+
             $msg = $this->buildDetailedApiError($statusCode, $body, $responseHeaders, $url);
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
@@ -154,10 +164,52 @@ final class BrandSyncService implements BrandSyncServiceInterface
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
         }
-        if (!isset($data['data'])) {
-            $msg = 'Invalid response format from API. Expected "data" key.';
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            // A retyped `data` must fail before the wipe: post-wipe it would
+            // fatal on count() with the brands table already emptied.
+            $msg = 'Invalid response format from API. Expected "data" key with an array.';
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
+        }
+
+        // Safety stop: an empty page-1 payload against a populated brands
+        // table is far more likely a backend regression than a deliberate
+        // delete-everything (same policy as ToplistSyncService).
+        if ($page === 1 && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
+            global $wpdb;
+            $existingRows = (int) $wpdb->get_var(
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . 'dataflair_brands'
+            );
+            if ($existingRows > 0) {
+                // Recorded without the "safety stop" prefix: the admin notice
+                // already opens with "DataFlair sync is paused:".
+                // Reason only; the rendering surface appends the generic
+                // "report this" guidance exactly once (see ToplistSyncService).
+                $recorded = 'the API returned zero brands while this site has ' . $existingRows
+                    . ' stored, so the local data was preserved. If every brand really was removed on purpose, '
+                    . 'a developer can allow the wipe with the dataflair_allow_empty_sync filter.';
+                $msg = 'DataFlair sync safety stop: ' . $recorded . ' ' . ContractMismatch::whatToDo('');
+                ContractMismatch::record(['message' => ucfirst($recorded), 'min_plugin_version' => ''], $url, 'brands');
+                $this->logger->error('BrandSync: ' . $msg);
+                return ['success' => false, 'message' => $msg];
+            }
+        }
+
+        // Destructive page-1 wipe runs only AFTER the page-1 response has
+        // been fetched and validated, so a backend outage can no longer
+        // empty the local brands table (same ordering as ToplistSyncService).
+        // When a slow fetch already burned the budget, skip the wipe but keep
+        // persisting (rows upsert): a partial retry here would loop forever
+        // in drivers with no partial cap, and the same slow fetch would trip
+        // the guard deterministically on every retry. Stale upstream-deleted
+        // rows simply persist until the next healthy run wipes them.
+        if ($page === 1) {
+            if ($budget->exceeded(8.0)) {
+                $this->logger->warning('BrandSync: budget too low for the page-1 wipe — upserting without the stale-row wipe');
+            } else {
+                global $wpdb;
+                $this->deleteAllPaginated($wpdb->prefix . 'dataflair_brands', 500);
+            }
         }
 
         $lastPage = isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : 1;

@@ -13,14 +13,17 @@ use Brain\Monkey;
 use Brain\Monkey\Functions;
 use DataFlair\Toplists\Database\ToplistDataStore;
 use DataFlair\Toplists\Http\HttpClientInterface;
+use DataFlair\Toplists\Sync\ContractMismatch;
 use DataFlair\Toplists\Sync\ToplistFetcher;
 use Mockery as M;
 use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/HttpClientInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistDataStore.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistFetcher.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpErrorStub.php';
+require_once __DIR__ . '/SyncFunctionStubs.php';
 
 final class ToplistFetcherTest extends TestCase
 {
@@ -28,6 +31,7 @@ final class ToplistFetcherTest extends TestCase
     {
         parent::setUp();
         Monkey\setUp();
+        \SyncFunctionStubsStore::reset();
 
         Functions\when('is_wp_error')->alias(static function ($thing) {
             return $thing instanceof \WP_Error;
@@ -58,6 +62,30 @@ final class ToplistFetcherTest extends TestCase
         return static function (int $status, string $body, $headers, string $endpoint): string {
             throw new \LogicException('errorBuilder must not be called on this path');
         };
+    }
+
+    public function test_contract_mismatch_409_records_state_and_skips_error_builder(): void
+    {
+        $http = M::mock(HttpClientInterface::class);
+        $http->shouldReceive('get')->once()->andReturn([
+            'response' => ['code' => 409],
+            'body'     => json_encode([
+                'error_code'         => 'contract_mismatch',
+                'message'            => 'Plugin 1.5.0 is below the minimum supported version.',
+                'min_plugin_version' => '2.5.0',
+            ]),
+        ]);
+
+        $store = M::mock(ToplistDataStore::class);
+        $store->shouldNotReceive('store');
+
+        $fetcher = new ToplistFetcher($http, $store, $this->neverErrorBuilder());
+        $this->assertFalse($fetcher->fetchAndStore('https://x/api/v1/toplists/1', 'tok'));
+
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null;
+        $this->assertIsArray($state, 'mismatch must be recorded for the admin notice');
+        $this->assertSame('toplists', $state['source']);
+        $this->assertSame('2.5.0', $state['min_plugin_version']);
     }
 
     public function test_returns_false_on_wp_error_without_calling_store(): void

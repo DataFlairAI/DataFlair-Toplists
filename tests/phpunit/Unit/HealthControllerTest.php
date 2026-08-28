@@ -20,14 +20,18 @@ use PHPUnit\Framework\TestCase;
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsQuery.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistsRepositoryInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractVersion.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Rest/Controllers/HealthController.php';
 require_once __DIR__ . '/RestControllerTestStubs.php';
+require_once __DIR__ . '/SyncFunctionStubs.php';
 
 final class HealthControllerTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
+        \SyncFunctionStubsStore::reset();
         global $wpdb;
         $wpdb = new \wpdb();
     }
@@ -55,6 +59,70 @@ final class HealthControllerTest extends TestCase
         $this->assertSame(42, $data['toplists']);
         $this->assertSame(DATAFLAIR_VERSION, $data['plugin_ver']);
         $this->assertNull($data['db_error']);
+        $this->assertNull($data['contract_mismatch']);
+
+        // Integration profile: how this site uses the plugin.
+        $this->assertTrue($data['integration']['geo_targeting'], 'geo targeting defaults on');
+        $this->assertArrayHasKey('api_contract', $data['integration']);
+        $this->assertArrayHasKey('last_toplists_sync', $data['integration']);
+    }
+
+    public function test_integration_profile_reports_geo_targeting_disabled(): void
+    {
+        \SyncFunctionStubsStore::$options['dataflair_geo_targeting_enabled'] = '0';
+        \SyncFunctionStubsStore::$options[\DataFlair\Toplists\Sync\ContractVersion::OPTION] = [
+            'using' => 'v1', 'rev' => '1.0.0', 'supported' => ['v1', 'v2'],
+        ];
+
+        $repo = new class implements ToplistsRepositoryInterface {
+            public function findByApiToplistId(int $api_toplist_id): ?array { return null; }
+            public function findBySlug(string $slug): ?array { return null; }
+            public function upsert(array $row) { return false; }
+            public function deleteByApiToplistId(int $api_toplist_id): bool { return true; }
+            public function collectGeoNames(): array { return []; }
+            public function listAllForOptions(): array { return []; }
+            public function countAll(): int { return 7; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return []; }
+        };
+
+        $data = (new HealthController($repo))->status()->get_data();
+
+        $this->assertFalse($data['integration']['geo_targeting']);
+        $this->assertSame('v1', $data['integration']['api_contract']);
+        $this->assertSame(['v1', 'v2'], $data['integration']['api_supported']);
+    }
+
+    public function test_surfaces_contract_mismatch_state_when_recorded(): void
+    {
+        \SyncFunctionStubsStore::$options[\DataFlair\Toplists\Sync\ContractMismatch::OPTION] = [
+            'toplists' => [
+                'message'            => 'Plugin below minimum version.',
+                'min_plugin_version' => '2.5.0',
+                'source'             => 'toplists',
+            ],
+        ];
+
+        $repo = new class implements ToplistsRepositoryInterface {
+            public function findByApiToplistId(int $api_toplist_id): ?array { return null; }
+            public function findBySlug(string $slug): ?array { return null; }
+            public function upsert(array $row) { return false; }
+            public function deleteByApiToplistId(int $api_toplist_id): bool { return true; }
+            public function collectGeoNames(): array { return []; }
+            public function listAllForOptions(): array { return []; }
+            public function countAll(): int { return 1; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return []; }
+        };
+
+        $data = (new HealthController($repo))->status()->get_data();
+
+        $this->assertIsArray($data['contract_mismatch']);
+        $this->assertSame('2.5.0', $data['contract_mismatch']['toplists']['min_plugin_version']);
     }
 
     public function test_surfaces_wpdb_last_error_when_set(): void

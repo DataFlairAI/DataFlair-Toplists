@@ -52,6 +52,17 @@ final class ToplistFetcher
         error_log('DataFlair API Response Code: ' . $statusCode . ' for endpoint: ' . $endpoint);
 
         if ($statusCode !== 200) {
+            // Contract-mismatch rejections also reach this per-ID path (single
+            // resync buttons, per-ID fallback). Record for the admin notice.
+            $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
+            if ($mismatch !== null) {
+                ContractMismatch::record($mismatch, $endpoint, 'toplists');
+                $errorMessage = ContractMismatch::describe($mismatch);
+                error_log('DataFlair fetch_and_store_toplist error: ' . $errorMessage);
+                add_settings_error('dataflair_messages', 'dataflair_api_error', $errorMessage, 'error');
+                return false;
+            }
+
             $errorMessage = ($this->errorBuilder)($statusCode, $body, $responseHeaders, $endpoint);
             error_log('DataFlair fetch_and_store_toplist error: ' . $errorMessage);
             add_settings_error('dataflair_messages', 'dataflair_api_error', $errorMessage, 'error');

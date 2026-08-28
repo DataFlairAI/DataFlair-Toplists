@@ -16,6 +16,7 @@ use DataFlair\Toplists\Http\HttpClientInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Logging\NullLogger;
 use DataFlair\Toplists\Support\WallClockBudget;
+use DataFlair\Toplists\Sync\ContractMismatch;
 use DataFlair\Toplists\Sync\SyncRequest;
 use DataFlair\Toplists\Sync\SyncResult;
 use DataFlair\Toplists\Sync\ToplistPersisterInterface;
@@ -31,6 +32,8 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistSyncServiceInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistPersisterInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractCanary.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistSyncService.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpErrorStub.php';
 require_once __DIR__ . '/SyncFunctionStubs.php';
@@ -112,7 +115,7 @@ final class ToplistSyncServiceTest extends TestCase
     public function test_is_complete_true_when_last_page_reached(): void
     {
         $this->http->responses[] = $this->bulkResponse(
-            [['id' => 101]],
+            [['id' => 101, 'name' => 'Top 10 US Casinos']],
             ['last_page' => 1]
         );
 
@@ -204,7 +207,7 @@ final class ToplistSyncServiceTest extends TestCase
     {
         $this->persister->storeReturn = false; // every store fails
         $this->http->responses[]      = $this->bulkResponse([
-            ['id' => 1], ['id' => 2], ['id' => 3],
+            ['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B'], ['id' => 3, 'name' => 'C'],
         ], ['last_page' => 1]);
 
         $svc    = $this->makeService();
@@ -213,6 +216,307 @@ final class ToplistSyncServiceTest extends TestCase
         $this->assertTrue($result->success);
         $this->assertSame(0, $result->synced);
         $this->assertSame(3, $result->errors);
+    }
+
+    // ── API Contract Safety: fail-safe reset ordering + 409 handshake ────────
+
+    /** True when any recorded query deletes from the local toplists table. */
+    private function toplistsTableWasWiped(): bool
+    {
+        foreach ($GLOBALS['wpdb']->queries as $sql) {
+            if (stripos($sql, 'DELETE') !== false && stripos($sql, 'dataflair_toplists') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function test_backend_failure_on_page1_leaves_local_table_untouched(): void
+    {
+        // Empty response queue: every HTTP call (bulk + per-ID fallback
+        // slices) returns WP_Error, simulating a dead or broken backend.
+        \SyncFunctionStubsStore::$options['dataflair_api_endpoints'] = 'https://old.example.com/api/v1/toplists/999';
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        // The bulk WP_Error → per-ID fallback path reports a skipped
+        // "success" so batch drivers move on; what matters here is that no
+        // local data was touched on the way.
+        $this->assertTrue($result->toArray()['skipped'] ?? false);
+        $this->assertFalse(
+            $this->toplistsTableWasWiped(),
+            'a failed page-1 fetch must never wipe the local toplists table'
+        );
+        $this->assertSame([], $this->persister->storeCalls);
+        $this->assertSame(
+            'https://old.example.com/api/v1/toplists/999',
+            \SyncFunctionStubsStore::$options['dataflair_api_endpoints'],
+            'cached endpoints must survive a failed sync'
+        );
+    }
+
+    public function test_page1_success_resets_local_state_before_persisting(): void
+    {
+        \SyncFunctionStubsStore::$options['dataflair_api_endpoints'] = 'https://old.example.com/api/v1/toplists/999';
+        $this->http->responses[] = $this->bulkResponse(
+            [['id' => 101, 'name' => 'Top 10 US Casinos']],
+            ['last_page' => 1]
+        );
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->success);
+        $this->assertTrue(
+            $this->toplistsTableWasWiped(),
+            'a validated page-1 response must still trigger the stale-row wipe'
+        );
+        $this->assertSame(
+            'https://api.example.com/v1/toplists/101',
+            \SyncFunctionStubsStore::$options['dataflair_api_endpoints'],
+            'endpoint cache must be rebuilt from scratch, not appended to the old list'
+        );
+    }
+
+    public function test_contract_mismatch_409_aborts_before_any_local_write(): void
+    {
+        \SyncFunctionStubsStore::$options['dataflair_api_endpoints'] = 'https://old.example.com/api/v1/toplists/999';
+        $this->http->responses[] = [
+            'body'     => json_encode([
+                'error_code'         => 'contract_mismatch',
+                'message'            => 'Plugin 1.5.0 is below the minimum supported version.',
+                'min_plugin_version' => '2.5.0',
+            ]),
+            'response' => ['code' => 409],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('2.5.0', (string) $result->message);
+        $this->assertCount(1, $this->http->calls, 'a contract mismatch must not trigger per-ID fallback retries');
+        $this->assertFalse($this->toplistsTableWasWiped());
+        $this->assertSame([], $this->persister->storeCalls);
+
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null;
+        $this->assertIsArray($state, 'mismatch must be recorded for the admin notice');
+        $this->assertSame('2.5.0', $state['min_plugin_version']);
+    }
+
+    public function test_plain_409_without_error_code_uses_generic_error_path(): void
+    {
+        $this->http->responses[] = [
+            'body'     => json_encode(['message' => 'Conflict']),
+            'response' => ['code' => 409],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('API error (409)', (string) $result->message);
+        $this->assertArrayNotHasKey(
+            ContractMismatch::OPTION,
+            \SyncFunctionStubsStore::$options,
+            'a generic 409 must never be recorded as a contract mismatch'
+        );
+    }
+
+    public function test_canary_aborts_on_renamed_offer_field_before_any_write(): void
+    {
+        \SyncFunctionStubsStore::$options['dataflair_api_endpoints'] = 'https://old.example.com/api/v1/toplists/999';
+
+        // Bucket-1 silent drift: `offer` renamed to `promotion` on every item.
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 101,
+            'name'  => 'Top 10 US Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('canary', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'canary must fire before the destructive reset');
+        $this->assertSame([], $this->persister->storeCalls);
+        $this->assertSame(
+            'https://old.example.com/api/v1/toplists/999',
+            \SyncFunctionStubsStore::$options['dataflair_api_endpoints']
+        );
+        $this->assertIsArray(
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null,
+            'canary failures must surface through the mismatch admin notice'
+        );
+    }
+
+    public function test_canary_on_a_later_page_records_but_does_not_strand_the_catalogue(): void
+    {
+        // Page 1 already wiped and refilled the table by the time page 7 is
+        // fetched. Aborting here would leave the site missing most of its
+        // toplists, and every retry would wipe and abort again. So the drift
+        // is recorded and surfaced, and the run finishes.
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 205,
+            'name'  => 'Top 10 DE Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 44]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(7));
+
+        $this->assertTrue($result->success, 'a later-page drift must not strand the catalogue');
+        $this->assertSame(1, $result->synced, 'the page still persists so the site keeps a full catalogue');
+        $this->assertIsArray(
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null,
+            'a later-page canary failure must still surface through the admin notice'
+        );
+    }
+
+    public function test_canary_on_page_one_still_aborts_before_any_write(): void
+    {
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 205,
+            'name'  => 'Top 10 DE Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 44]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('canary', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped());
+        $this->assertSame([], $this->persister->storeCalls);
+    }
+
+    public function test_canary_passes_healthy_full_payload_and_sync_proceeds(): void
+    {
+        $healthyItem = [
+            'position' => 1,
+            'brandId'  => 42,
+            'brand'    => ['id' => 42, 'name' => 'Betway'],
+            'offer'    => [
+                'offerText' => '100% up to $500',
+                'trackers'  => [['trackerLink' => 'https://t.example.com/c/1']],
+            ],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 101,
+            'name'  => 'Top 10 US Casinos',
+            'items' => [$healthyItem, $healthyItem, $healthyItem],
+        ]], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->success);
+        $this->assertSame(1, $result->synced);
+        $this->assertTrue($this->toplistsTableWasWiped());
+    }
+
+    public function test_completed_sync_clears_recorded_contract_mismatch(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'stale mismatch', 'min_plugin_version' => '2.5.0', 'source' => 'toplists'],
+        ];
+        $this->http->responses[] = $this->bulkResponse(
+            [['id' => 101, 'name' => 'Top 10 US Casinos']],
+            ['last_page' => 1]
+        );
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->isComplete);
+        $this->assertArrayNotHasKey(
+            ContractMismatch::OPTION,
+            \SyncFunctionStubsStore::$options,
+            'a fully completed sync proves the contract works: the notice must clear'
+        );
+    }
+
+    public function test_completed_sync_that_stored_nothing_keeps_the_mismatch(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
+        ];
+        $this->persister->storeReturn = false; // every store fails
+        $this->http->responses[]      = $this->bulkResponse(
+            [['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B'], ['id' => 3, 'name' => 'C']],
+            ['last_page' => 1]
+        );
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->isComplete);
+        $this->assertSame(0, $result->synced);
+        $this->assertArrayHasKey(
+            'toplists',
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [],
+            'a run that stored no rows has not proven the contract works'
+        );
+    }
+
+    public function test_skipped_fallback_keeps_mismatch_and_completion_timestamps(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
+        ];
+        // A previous healthy sync of a single-page tenant cached last_page=1;
+        // this made zero-row fallbacks look "complete" pre-fix.
+        \SyncFunctionStubsStore::$transients['dataflair_toplists_batch_last_page'] = 1;
+        // Empty queue: bulk call and every fallback slice return WP_Error.
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->toArray()['skipped'] ?? false);
+        $this->assertArrayHasKey(
+            'toplists',
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [],
+            'a zero-row fallback must never dismiss the mismatch notice'
+        );
+        $this->assertArrayNotHasKey(
+            'dataflair_last_toplists_sync',
+            \SyncFunctionStubsStore::$options,
+            'a zero-row fallback must not stamp a fresh success timestamp'
+        );
+    }
+
+    public function test_retyped_data_key_fails_before_canary_and_wipe(): void
+    {
+        $this->http->responses[] = [
+            'body'     => json_encode(['data' => 'maintenance', 'meta' => ['last_page' => 1]]),
+            'response' => ['code' => 200],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('"data"', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'retyped data must never reach the wipe');
+        $this->assertArrayNotHasKey('dataflair_last_toplists_sync', \SyncFunctionStubsStore::$options);
+    }
+
+    public function test_empty_page1_against_populated_table_refuses_the_wipe(): void
+    {
+        $GLOBALS['wpdb']->countReturn = 25; // site currently has toplists
+        $this->http->responses[]      = $this->bulkResponse([], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('safety stop', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'an empty payload must never wipe a populated site');
+        $this->assertArrayHasKey('toplists', \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? []);
     }
 
     private function makeService(): ToplistSyncService
@@ -236,6 +540,16 @@ final class ToplistSyncServiceTest extends TestCase
      */
     private function bulkResponse(array $items, array $meta): array
     {
+        // The real v1 response always carries a geo object per toplist, and
+        // the canary checks for it. Default it in so fixtures stay realistic;
+        // drift cases override it explicitly.
+        $items = array_map(static function ($toplist) {
+            if (is_array($toplist) && !array_key_exists('geo', $toplist)) {
+                $toplist['geo'] = ['geo_type' => 'country', 'name' => 'Italy', 'code' => 'IT', 'coveredCountries' => ['IT']];
+            }
+            return $toplist;
+        }, $items);
+
         return [
             'body'     => json_encode([
                 'data' => $items,
@@ -254,8 +568,12 @@ final class ToplistFakeHttp implements HttpClientInterface
     /** @var array<int, mixed> */
     public array $responses = [];
 
+    /** @var string[] URLs requested, in order. */
+    public array $calls = [];
+
     public function get(string $url, string $token, int $timeout = 12, int $max_retries = 2, ?WallClockBudget $budget = null)
     {
+        $this->calls[] = $url;
         return array_shift($this->responses) ?? new \WP_Error('no_response', 'test ran out of responses');
     }
 }
@@ -299,9 +617,12 @@ final class ToplistFakeWpdb
         return vsprintf(str_replace(['%d', '%s', '%f'], ['%s', '%s', '%s'], $sql), $flat);
     }
 
+    /** Returned by get_var (row-count queries in the safety-stop guard). */
+    public int $countReturn = 0;
+
     public function get_var(string $sql): int
     {
-        return 0;
+        return $this->countReturn;
     }
 
     public function get_results(string $sql): array
