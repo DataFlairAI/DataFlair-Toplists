@@ -4,12 +4,31 @@
  * Using custom CSS classes for reliable styling
  */
 
-// Extract data
-$brand = $item['brand'];
-$offer = $item['offer'];
-$position = $item['position'];
+// Extract data. Contract-drift guard: a backend retype (object/array where a
+// string used to be, or a missing brand/offer object) must degrade to an
+// empty value — never emit on-page notices or TypeErrors under WP_DEBUG.
+$brand    = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
+$offer    = isset($item['offer']) && is_array($item['offer']) ? $item['offer'] : array();
+$position = isset($item['position']) && is_scalar($item['position']) ? $item['position'] : 0;
 
-$brand_name = esc_html($brand['name']);
+foreach (array('offerText', 'bonus_code', 'bonus_wagering_requirement', 'minimum_deposit', 'payout_time', 'max_payout', 'bonus_expiry_date', 'tracking_url', 'url') as $df_scalar_field) {
+    if (isset($offer[$df_scalar_field]) && !is_scalar($offer[$df_scalar_field])) {
+        $offer[$df_scalar_field] = '';
+    }
+}
+foreach (array('rating', 'games_count', 'reviewer') as $df_scalar_field) {
+    if (isset($item[$df_scalar_field]) && !is_scalar($item[$df_scalar_field])) {
+        $item[$df_scalar_field] = '';
+    }
+}
+foreach (array('name', 'slug', 'rating', 'review_url', 'review_url_override', 'url', 'local_logo_url', 'local_logo', 'logo') as $df_scalar_field) {
+    if (isset($brand[$df_scalar_field]) && !is_scalar($brand[$df_scalar_field])) {
+        $brand[$df_scalar_field] = '';
+    }
+}
+unset($df_scalar_field);
+
+$brand_name = esc_html((string) ($brand['name'] ?? ''));
 $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand_name);
 
 // Product type and labels — resolve once, used throughout the template
@@ -157,16 +176,22 @@ if (empty($features) && function_exists('post_type_exists') && post_type_exists(
 }
 
 // 3. API item features when still empty
-if (empty($features) && !empty($item['features'])) {
+if (empty($features) && !empty($item['features']) && is_array($item['features'])) {
     $features = array_slice($item['features'], 0, 3);
 }
+// Drop non-scalar entries so esc_html() below can never receive an array.
+$features = array_values(array_filter($features, 'is_scalar'));
 
 $detail_pros = !empty($resolved_pros) ? $resolved_pros : (!empty($item['pros']) && is_array($item['pros']) ? $item['pros'] : array());
 $detail_cons = !empty($resolved_cons) ? $resolved_cons : (!empty($item['cons']) && is_array($item['cons']) ? $item['cons'] : array());
-$detail_pros = array_values(array_filter(array_map('trim', $detail_pros), function($value) {
+// trim() fatals on non-string input (PHP 8 TypeError) — cast scalars, drop the rest.
+$df_trim_scalar = static function ($value) {
+    return is_scalar($value) ? trim((string) $value) : '';
+};
+$detail_pros = array_values(array_filter(array_map($df_trim_scalar, $detail_pros), function($value) {
     return $value !== '';
 }));
-$detail_cons = array_values(array_filter(array_map('trim', $detail_cons), function($value) {
+$detail_cons = array_values(array_filter(array_map($df_trim_scalar, $detail_cons), function($value) {
     return $value !== '';
 }));
 
@@ -258,7 +283,7 @@ if (!isset($review_url) || empty($review_url)) {
         $review_url = esc_url($brand['review_url']);
     } else {
         // Generate review URL: /reviews/{brand-slug}
-        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title($brand['name']);
+        $brand_slug = !empty($brand['slug']) ? $brand['slug'] : sanitize_title((string) ($brand['name'] ?? ''));
         $review_url = home_url('/reviews/' . $brand_slug . '/');
     }
 }
