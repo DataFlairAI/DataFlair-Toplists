@@ -139,7 +139,8 @@ problem empties your pages.
 | Malformed JSON | "JSON decode error" | untouched |
 | `data` is no longer an array | Stopped before the destructive phase. | untouched |
 | Empty payload against a populated site | Safety stop (see above). | untouched |
-| A field renamed, removed, or retyped | Contract canary names the field and stops. | untouched |
+| A field renamed, removed, or retyped, detected on the first page | Contract canary names the field and stops before anything is written. | untouched |
+| The same, detected on a later page of a run | Recorded and surfaced in the admin notice, and the run finishes. Aborting mid-run would leave you with a partial catalogue, which is worse than a complete one with some degraded fields. | replaced by this run's data |
 | A field added | Ignored silently. This is the normal case for most backend releases. | fine |
 | JSON key order or item order changed | No effect. Keys are read by name, and display order comes from the explicit `position` field. | fine |
 | Response so slow it burns the sync time budget | The stale-row cleanup is skipped for that run and records are updated in place instead. | preserved |
@@ -154,7 +155,7 @@ you, here is exactly what protects you and what does not:
 | Protection | Applies to you? |
 |---|---|
 | Contract handshake, the 409 pause, and the admin notice | **Yes.** These live in the sync layer. |
-| Contract canary (drift stopped before anything is written) | **Yes.** This is your most important protection: it is what keeps drifted data out of the database you read from. |
+| Contract canary (drift stopped before anything is written) | **Yes, for the toplists stream**, which is what keeps drifted toplist data out of the database you read from. The brands stream gets the 409 handshake, the empty-payload safety stop, and the fail-safe wipe order, but no field-level canary; brand fields are covered by DataFlair's CI lock on the v1 contract. |
 | Fail-safe wipe order and the empty-payload safety stop | **Yes.** Your local data survives every backend failure. |
 | Drift-hardened rendering (templates degrade instead of erroring) | **No.** That hardening lives in the plugin's own card and table templates. Your rendering code is yours, and a retyped field will fail in it the way it would in any PHP. |
 

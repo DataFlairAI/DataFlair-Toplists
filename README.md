@@ -44,6 +44,8 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - **Render-time read-only guarantee (1.10.8+):** the render chain never issues HTTP, never sideloads media, and never writes to the `review` CPT. Logo URLs and review-post IDs are pre-computed at sync time on `wp_dataflair_brands` (`local_logo_url`, `cached_review_post_id`) and read verbatim by the template. Enforced by `RenderIsReadOnlyTest`.
 
 ### WP-CLI
+- `wp dataflair sync [--only=toplists|brands]` — runs a full sync. Exits non-zero on failure so a real system cron can react, and backs off automatically on API rate limits. The plugin ships no WP-Cron by design, so this is the supported way to schedule syncs.
+- `wp dataflair logs [--since=15m] [--level=warning] [--limit=50]` — tails DataFlair log entries.
 - `wp dataflair reconcile-reviews [--batch=500] [--dry-run]` — backfills `cached_review_post_id` for existing brand rows. Run once after upgrading to 1.10.8.
 
 ### Gutenberg Block & Shortcode
@@ -66,7 +68,7 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - **DataFlair → Dashboard:** API health tile, stat tiles (brands synced, toplists, last sync + next-run), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. One-click Sync Brands and Sync Toplists buttons with live toast feedback.
 - **DataFlair → Toplists:** search + sort, bulk re-sync and bulk delete, per-row accordion showing Items (position/brand/offer/status pill) and Raw JSON (copy + download) tabs.
 - **DataFlair → Brands:** full brand table with review URL override inline-edit cell.
-- **DataFlair → Tools:** Tests runner (per-test Run + Run All, persisted results), Logs tab (filtered `[DataFlair]` debug.log entries with severity colouring + Download), API Preview tab.
+- **DataFlair → Tools:** Tests runner including the **API Contract Check** diagnostic (per-test Run + Run All, persisted results), Logs tab (filtered `[DataFlair]` debug.log entries with severity colouring + Download), API Preview tab.
 - **DataFlair → Settings:** API Connection (bearer token + Test Connection), Customizations (colour pickers with live preview), Sync Schedule (cadence, retry count, alert email — reschedules WP-Cron on save), Geo-Targeting (site-level on/off toggle for the render gate). Dirty-state amber pill + `beforeunload` guard.
 - REST API endpoints for the block editor (`/wp-json/dataflair/v1/toplists`, `/wp-json/dataflair/v1/casinos`)
 
@@ -167,7 +169,7 @@ dataflair-toplists/
 │   ├── ProductTypeLabels.php       Label map for product types
 │   ├── DataIntegrityChecker.php    Validates API response structure
 │   └── Cli/
-│       └── ReconcileReviewsCommand.php  wp dataflair reconcile-reviews
+│       └── ReconcileReviewsCommand.php, SyncCommand.php  wp dataflair reconcile-reviews
 ├── src/                            Gutenberg block source (JS/JSX)
 ├── tests/
 │   └── phpunit/                    PHPUnit test suite
@@ -428,8 +430,8 @@ Brands that already match a published review post will be linked. Brands without
 ## Changelog
 
 ### 2.3.0
-- **Added: API contract handshake.** Every API request sends `X-DataFlair-Plugin-Version` and `X-DataFlair-Expected-Contract` headers. A backend that cannot serve the expected contract answers HTTP 409 (`error_code: contract_mismatch`) and sync pauses loudly with a persistent admin notice, per sync stream (toplists v1, brands v1/v2), instead of ingesting a response shape this plugin cannot render. Backends without the handshake, and older plugin versions, behave exactly as before: the handshake is strictly opt-in on both sides.
-- **Added: contract canary.** Page-1 sync payloads are deep-validated before any local write. Renamed or retyped render-critical fields (`offer`, `offerText`, brand linkage, `trackerLink`, `items`/`trackers` types) abort the sync with a clear message while the site keeps serving the last synced data. Collective all-or-nothing checks with a minimum sample threshold make false positives on legitimate partial data (null offers, empty trackers) impossible. Escape hatch: the `dataflair_contract_canary` filter.
+- **Added: API contract handshake.** Every API request sends `X-DataFlair-Plugin-Version`, plus `X-DataFlair-Expected-Contract` on versioned endpoints. A backend that cannot serve the expected contract answers HTTP 409 (`error_code: contract_mismatch`) and sync pauses loudly with a persistent admin notice, per sync stream (toplists v1, brands v1/v2), instead of ingesting a response shape this plugin cannot render. Backends without the handshake, and older plugin versions, behave exactly as before: the handshake is strictly opt-in on both sides.
+- **Added: contract canary.** Sync payloads are deep-validated on every page before any local write. Renamed or retyped render-critical fields (`offer`, `offerText`, brand linkage, `trackerLink`, `items`/`trackers` types) abort the sync with a clear message while the site keeps serving the last synced data. Collective all-or-nothing checks with a minimum sample threshold make false positives on legitimate partial data (null offers, empty trackers) impossible. Escape hatch: the `dataflair_contract_canary` filter.
 - **Added: sync safety stops.** The destructive page-1 wipe of `wp_dataflair_toplists`/`wp_dataflair_brands` now runs only AFTER the page-1 response is fetched and validated, so a backend outage can never blank the site. An empty payload against a populated site refuses the wipe (override: `dataflair_allow_empty_sync` filter), and low-budget requests retry before wiping rather than after.
 - **Added: visibility.** New "API Contract Check" diagnostic on the Tools page (probes live, resolves the base URL like real sync does, and reports recovery even while a mismatch is recorded), and a `contract_mismatch` field on `/wp-json/dataflair/v1/health` for monitoring (the endpoint requires a `manage_options` account, e.g. via an Application Password).
 - **Fixed: drift-resilient rendering.** Casino cards degrade cleanly on drifted data (retyped ratings, pros/cons entries, keyed tracker maps, campaign names, product types, missing brand/offer objects) instead of emitting on-page notices or fatals under `WP_DEBUG_DISPLAY`.
@@ -806,4 +808,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.0
+**Version:** 2.3.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
