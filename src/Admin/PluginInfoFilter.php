@@ -160,7 +160,7 @@ final class PluginInfoFilter
   <li>Added: API contract handshake. Every API request now sends X-DataFlair-Plugin-Version and X-DataFlair-Expected-Contract headers; a backend that cannot serve the expected contract answers HTTP 409 and sync pauses loudly with a persistent admin notice instead of ingesting a response shape the plugin cannot render.</li>
   <li>Added: contract canary. Page-1 sync payloads are deep-validated before any local write; renamed or retyped render-critical fields (offer, offerText, brand linkage, trackerLink, items/trackers types) abort the sync while the site keeps serving the last synced data.</li>
   <li>Added: sync safety stop. An empty API payload against a populated site no longer wipes local toplists or brands; the wipe now always runs only after the response is fetched and validated, so a backend outage can never blank the site.</li>
-  <li>Added: API Contract Check diagnostic on the Tools page, and a contract_mismatch field on the /wp-json/dataflair/v1/health endpoint for external monitoring.</li>
+  <li>Added: API Contract Check diagnostic on the Tools page, and a contract_mismatch field on the /wp-json/dataflair/v1/health endpoint for monitoring (requires a manage_options account, e.g. an Application Password).</li>
   <li>Fixed: casino card rendering now degrades cleanly on drifted data (retyped ratings, pros/cons, trackers, campaign names, product types) instead of emitting on-page notices or fatals under WP_DEBUG.</li>
   <li>Security: upstream error messages are sanitized and escaped before rendering in wp-admin.</li>
 </ul>

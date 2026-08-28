@@ -222,21 +222,22 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             }
         }
 
-        // The destructive phase plus the persist loop needs real budget
-        // headroom. Wiping and then running dry on the first item would leave
-        // an empty table until the retry; retrying BEFORE the wipe is free.
-        if ($page === 1 && $budget->exceeded(8.0)) {
-            $this->logger->warning('ToplistSync: budget too low for the destructive page-1 phase — retrying page without wipe');
-            return SyncResult::success($page, max(1, (int) ($data['meta']['last_page'] ?? 1)), 0, 0, true, false);
-        }
-
         // Destructive page-1 reset runs only AFTER the page-1 response has
         // been fetched and validated. Wiping before the fetch (the pre-2.3.0
         // order) left the site with an empty toplists table whenever the
         // backend errored, turning a backend outage into a front-end outage.
+        // When a slow fetch already burned the budget, skip the wipe but keep
+        // persisting (rows upsert): a partial retry here would loop in
+        // drivers with no partial cap, and the same slow fetch would trip
+        // the guard deterministically on every retry. Stale upstream-deleted
+        // rows simply persist until the next healthy run wipes them.
         if ($page === 1) {
-            $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
-            $this->resetSyncState();
+            if ($budget->exceeded(8.0)) {
+                $this->logger->warning('ToplistSync: budget too low for the page-1 wipe — upserting without the stale-row wipe');
+            } else {
+                $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
+                $this->resetSyncState();
+            }
         }
 
         $synced    = 0;
@@ -287,7 +288,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if (!empty($endpoints)) {
-            $existing = get_option('dataflair_api_endpoints', '');
+            // Page 1 always rebuilds the cache from scratch: when the wipe
+            // was skipped (low budget) the reset did not blank the option,
+            // and appending would grow the autoloaded list without bound.
+            $existing = $page === 1 ? '' : get_option('dataflair_api_endpoints', '');
             $joined   = implode("\n", $endpoints);
             if (!empty($existing)) {
                 $joined = $existing . "\n" . $joined;
@@ -303,10 +307,10 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $isComplete = !$budgetExhausted && $page >= $lastPage;
         if ($isComplete) {
             $this->markSyncCompleted();
-            if ($errors === 0) {
-                // Only a validated, error-free bulk sync proves the toplists
-                // contract works again. Fallback and skip paths never clear:
-                // they can complete with zero rows fetched.
+            if ($errors === 0 && $synced > 0) {
+                // Only a validated bulk sync that actually stored rows,
+                // error-free, proves the toplists contract works again.
+                // Fallback, skip, and zero-row paths never clear.
                 ContractMismatch::clear('toplists');
             }
         }

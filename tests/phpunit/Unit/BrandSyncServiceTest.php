@@ -253,7 +253,10 @@ final class BrandSyncServiceTest extends TestCase
             'toplists' => ['message' => 'v1 mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
             'brands'   => ['message' => 'brands mismatch', 'min_plugin_version' => '', 'source' => 'brands'],
         ];
-        $this->http->response = $this->mockBrandsApiResponse([]);
+        // Clearing requires rows actually stored: sync one real brand.
+        $this->http->response = $this->mockBrandsApiResponse([
+            $this->brandPayload(42, 'Betway', 'Active', ['US'], []),
+        ]);
 
         $this->makeService()->syncPage(SyncRequest::brands(1));
 

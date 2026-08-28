@@ -90,16 +90,19 @@ sync-history entry. Notice copy (no em-dashes in UI copy):
 DataFlair API. Your site continues to show the last synced data. Please update the
 plugin to version X.Y or newer."
 
-**P3 — Pre-sync canary check** *(proposed)*
-Before a full sync: (a) `GET /meta` — on 404/error, skip the handshake entirely and
-proceed as today (old-backend fallback); (b) fetch ONE toplist and run
-`DataIntegrityChecker` with a new hard/soft classification:
-- **hard** (abort whole sync before any write + admin notice): `items` not an array,
-  item missing `offer` object or `brand` linkage, `trackers[].trackerLink` absent
-  when trackers exist, top-level `id/name/items` missing.
-- **soft** (proceed; recorded in `sync_warnings` as today): everything else.
-Escape hatch: `dataflair_strict_contract_check` filter, default true; hard list kept
-deliberately minimal so real-world partial data never false-positives.
+**P3 — Pre-sync canary check** *(shipped in 2.3.0 — refined during implementation)*
+The page-1 bulk response itself is the canary: no extra HTTP call and no `/meta`
+dependency. `ContractCanary::assess()` deep-validates the already-fetched page-1
+payload BEFORE the destructive phase. Hard failures (abort before any write +
+admin notice): collection no longer a list, toplists missing `id`/`name` keys,
+`items`/`offer`/`trackers` retyped, items turned into ID references, and
+collective all-or-nothing key-absence checks for `offer`, `brand`/`brandId`,
+`offerText`, `trackerLink` (minimum sample of 3; present-but-null keys are always
+valid). Everything else stays a soft `sync_warnings` entry as today.
+Also shipped alongside: an empty-payload safety stop (a page-1 `data: []` against
+a populated local table refuses the wipe; override via `dataflair_allow_empty_sync`
+filter) and a budget headroom guard (retry before the wipe, never after).
+Escape hatch: `dataflair_contract_canary` filter, default true.
 
 **P4 — Render hardening audit** *(proposed, defense in depth)*
 Audit the ~60 consumed fields for reads that would emit notices/fatals on a type

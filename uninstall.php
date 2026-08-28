@@ -27,6 +27,7 @@ delete_option('dataflair_ribbon_text_color');
 delete_option('dataflair_cta_bg_color');
 delete_option('dataflair_cta_text_color');
 delete_option('dataflair_db_version');
+delete_option('dataflair_contract_mismatch');
 
 // Clear scheduled cron events
 wp_clear_scheduled_hook('dataflair_sync_cron');

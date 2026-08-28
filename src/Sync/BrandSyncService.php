@@ -85,9 +85,9 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $lastPage   = (int) $result['last_page'];
         $isComplete = !$partial && $page >= $lastPage;
 
-        if ($isComplete && (int) ($result['errors'] ?? 0) === 0) {
-            // A fully completed, error-free sync proves the brands contract
-            // works again.
+        if ($isComplete && (int) ($result['errors'] ?? 0) === 0 && (int) ($result['synced'] ?? 0) > 0) {
+            // Only a fully completed sync that actually stored rows,
+            // error-free, proves the brands contract works again.
             ContractMismatch::clear('brands');
         }
 
@@ -189,27 +189,21 @@ final class BrandSyncService implements BrandSyncServiceInterface
             }
         }
 
-        // Retry before the wipe when the fetch already burned the budget:
-        // wiping and then running dry would blank brands until the retry.
-        if ($page === 1 && $budget->exceeded(8.0)) {
-            $this->logger->warning('BrandSync: budget too low for the destructive page-1 phase — retrying page without wipe');
-            return [
-                'success'      => true,
-                'partial'      => true,
-                'last_page'    => isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : 1,
-                'synced'       => 0,
-                'errors'       => 0,
-                'total_synced' => 0,
-                'total_brands' => isset($data['meta']['total']) ? (int) $data['meta']['total'] : 0,
-            ];
-        }
-
         // Destructive page-1 wipe runs only AFTER the page-1 response has
         // been fetched and validated, so a backend outage can no longer
         // empty the local brands table (same ordering as ToplistSyncService).
+        // When a slow fetch already burned the budget, skip the wipe but keep
+        // persisting (rows upsert): a partial retry here would loop forever
+        // in drivers with no partial cap, and the same slow fetch would trip
+        // the guard deterministically on every retry. Stale upstream-deleted
+        // rows simply persist until the next healthy run wipes them.
         if ($page === 1) {
-            global $wpdb;
-            $this->deleteAllPaginated($wpdb->prefix . 'dataflair_brands', 500);
+            if ($budget->exceeded(8.0)) {
+                $this->logger->warning('BrandSync: budget too low for the page-1 wipe — upserting without the stale-row wipe');
+            } else {
+                global $wpdb;
+                $this->deleteAllPaginated($wpdb->prefix . 'dataflair_brands', 500);
+            }
         }
 
         $lastPage = isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : 1;

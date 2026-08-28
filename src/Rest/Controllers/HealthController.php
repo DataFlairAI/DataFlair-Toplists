@@ -33,8 +33,8 @@ final class HealthController
             'plugin_ver' => DATAFLAIR_VERSION,
             'db_error'   => ($wpdb instanceof \wpdb && !empty($wpdb->last_error)) ? $wpdb->last_error : null,
             // Non-null while any sync stream is paused on a contract mismatch
-            // (keyed by stream) — lets external monitoring catch it without
-            // scraping wp-admin.
+            // (keyed by stream) — lets authenticated monitoring (this route
+            // requires manage_options) catch it without scraping wp-admin.
             'contract_mismatch' => $mismatches !== [] ? $mismatches : null,
         ]);
     }

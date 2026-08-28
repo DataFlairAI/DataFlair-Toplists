@@ -164,10 +164,4 @@ namespace DataFlair\Toplists\Rest\Controllers {
             return trim($title, '-');
         }
     }
-    if (!function_exists(__NAMESPACE__ . '\\get_option')) {
-        function get_option($key, $default = false)
-        {
-            return $GLOBALS['dataflair_rest_test_options'][$key] ?? $default;
-        }
-    }
 }

@@ -17,7 +17,12 @@ namespace DataFlair\Toplists\Frontend\Render {
     if (!function_exists(__NAMESPACE__ . '\\sanitize_title')) {
         function sanitize_title($value)
         {
-            return strtolower(preg_replace('/[^a-z0-9\-]+/', '-', strtolower(trim((string) $value))));
+            // MUST byte-match the global stub in the Integration render tests:
+            // this namespace-local version shadows it for CardRenderer etc.
+            $value = strtolower(trim((string) $value));
+            $value = str_replace('.', '-', $value);
+            $value = preg_replace('/[^a-z0-9\-]+/', '-', $value);
+            return trim((string) $value, '-');
         }
     }
 }
@@ -59,6 +64,28 @@ final class ProsConsResolverDriftTest extends TestCase
         );
 
         $this->assertSame(['Override pro'], $result['pros']);
+    }
+
+    public function test_retyped_brand_name_does_not_warn_on_the_override_path(): void
+    {
+        // The resolver receives the RAW item; a retyped brand.name must not
+        // emit an Array-to-string warning while building candidate keys.
+        $warnings = [];
+        set_error_handler(static function (int $errno, string $errstr) use (&$warnings): bool {
+            $warnings[] = $errstr;
+            return true;
+        });
+        try {
+            $result = $this->resolver->resolve_pros_cons_for_table_item(
+                ['brand' => ['name' => ['weird' => 'object']], 'pros' => [], 'cons' => []],
+                ['casino-item-999' => ['pros' => ['Unmatched'], 'cons' => []]]
+            );
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame([], $warnings);
+        $this->assertSame([], $result['pros']);
     }
 
     public function test_healthy_string_lists_are_unchanged(): void

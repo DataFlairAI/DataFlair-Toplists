@@ -263,9 +263,14 @@ final class TestsRunner
                     return ['status' => 'fail', 'message' => 'Response no longer carries a "data" array. Contract drift.'];
                 }
 
-                $failure = (new \DataFlair\Toplists\Sync\ContractCanary())->assess($data['data']);
-                if ($failure !== null) {
-                    return ['status' => 'fail', 'message' => 'Contract canary: ' . $failure];
+                // Honour the same escape hatch the sync gate uses, so a site
+                // that disabled the canary is not shown a permanent FAIL for
+                // a check its syncs no longer perform.
+                if ((bool) apply_filters('dataflair_contract_canary', true)) {
+                    $failure = (new \DataFlair\Toplists\Sync\ContractCanary())->assess($data['data']);
+                    if ($failure !== null) {
+                        return ['status' => 'fail', 'message' => 'Contract canary: ' . $failure];
+                    }
                 }
 
                 if (\DataFlair\Toplists\Sync\ContractMismatch::entries() !== []) {

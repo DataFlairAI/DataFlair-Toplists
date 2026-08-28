@@ -43,7 +43,9 @@ trait ProsConsResolver
         }
 
         $brand = isset($item['brand']) && is_array($item['brand']) ? $item['brand'] : array();
-        $brand_name = isset($brand['name']) ? (string) $brand['name'] : '';
+        // Drift guard: the caller hands us the RAW item, so a retyped
+        // brand.name must not warn on the (string) cast.
+        $brand_name = isset($brand['name']) && is_scalar($brand['name']) ? (string) $brand['name'] : '';
         $brand_slug = sanitize_title($brand_name);
         $position = isset($item['position']) ? (int) $item['position'] : 0;
         $item_id = isset($item['id']) ? (int) $item['id'] : 0;
