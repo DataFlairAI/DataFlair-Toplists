@@ -140,4 +140,11 @@ namespace DataFlair\Toplists\Admin\Notices {
             return 'http://example.test/wp-admin/' . ltrim($path, '/');
         }
     }
+
+    if (!function_exists(__NAMESPACE__ . '\\esc_html')) {
+        function esc_html($text): string
+        {
+            return htmlspecialchars((string) $text, ENT_QUOTES);
+        }
+    }
 }

@@ -116,7 +116,7 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             // the state for the admin notice and stop before any local write.
             $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
             if ($mismatch !== null) {
-                ContractMismatch::record($mismatch, $listUrl);
+                ContractMismatch::record($mismatch, $listUrl, 'toplists');
                 $this->logger->warning(
                     'ToplistSync: contract mismatch on page ' . $page . ' — sync aborted before any local write'
                 );
@@ -537,8 +537,8 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $ts = time();
         update_option('dataflair_last_toplists_sync', $ts);
         update_option('dataflair_last_toplists_cron_run', $ts);
-        // A fully completed sync proves the contract works again.
-        ContractMismatch::clear();
+        // A fully completed sync proves the toplists contract works again.
+        ContractMismatch::clear('toplists');
     }
 
     private function emitBatchFinished(

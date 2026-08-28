@@ -19,6 +19,7 @@ use DataFlair\Toplists\Http\LogoDownloaderInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Logging\NullLogger;
 use DataFlair\Toplists\Sync\BrandSyncService;
+use DataFlair\Toplists\Sync\ContractMismatch;
 use DataFlair\Toplists\Sync\BrandSyncServiceInterface;
 use DataFlair\Toplists\Sync\SyncRequest;
 use DataFlair\Toplists\Sync\SyncResult;
@@ -34,6 +35,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepositoryInterface.php'
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncServiceInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncService.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpErrorStub.php';
 require_once __DIR__ . '/SyncFunctionStubs.php';
@@ -201,6 +203,69 @@ final class BrandSyncServiceTest extends TestCase
             static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
         );
         $this->assertEmpty($deletes);
+    }
+
+    // ── API Contract Safety: fail-safe wipe ordering + 409 handshake ─────────
+
+    public function test_backend_failure_on_page1_leaves_brands_table_untouched(): void
+    {
+        $this->http->response = new \WP_Error('timeout', 'dead backend');
+
+        $result = $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertFalse($result->success);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
+        );
+        $this->assertEmpty($deletes, 'a failed page-1 fetch must never wipe the local brands table');
+    }
+
+    public function test_contract_mismatch_409_records_state_and_aborts(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode([
+                'error_code'         => 'contract_mismatch',
+                'message'            => 'Plugin 1.5.0 is below the minimum supported version.',
+                'min_plugin_version' => '2.5.0',
+            ]),
+            'response' => ['code' => 409],
+        ];
+
+        $result = $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('2.5.0', $result->message);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
+        );
+        $this->assertEmpty($deletes);
+
+        $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null;
+        $this->assertIsArray($state);
+        $this->assertSame('brands', $state['source']);
+    }
+
+    public function test_completed_brands_sync_clears_only_brands_mismatch(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'message' => 'v1 mismatch', 'min_plugin_version' => '', 'source' => 'toplists',
+        ];
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertArrayHasKey(
+            ContractMismatch::OPTION,
+            \SyncFunctionStubsStore::$options,
+            'a brands success must not hide a toplists mismatch'
+        );
+
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['source'] = 'brands';
+        $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertArrayNotHasKey(ContractMismatch::OPTION, \SyncFunctionStubsStore::$options);
     }
 
     public function test_success_result_exposes_total_keys_for_ajax_payload(): void

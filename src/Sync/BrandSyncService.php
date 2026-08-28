@@ -68,12 +68,6 @@ final class BrandSyncService implements BrandSyncServiceInterface
             'budget_seconds' => $request->budgetSeconds,
         ]);
 
-        if ($page === 1) {
-            global $wpdb;
-            $brandsTable = $wpdb->prefix . 'dataflair_brands';
-            $this->deleteAllPaginated($brandsTable, 500);
-        }
-
         $budget = new WallClockBudget($request->budgetSeconds);
 
         $result = $this->syncBrandsPage($page, $budget, $request->perPage);
@@ -90,6 +84,11 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $partial    = !empty($result['partial']);
         $lastPage   = (int) $result['last_page'];
         $isComplete = !$partial && $page >= $lastPage;
+
+        if ($isComplete) {
+            // A fully completed sync proves the brands contract works again.
+            ContractMismatch::clear('brands');
+        }
 
         do_action('dataflair_sync_batch_finished', [
             'type'            => 'brands',
@@ -143,6 +142,20 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $responseHeaders = wp_remote_retrieve_headers($response);
 
         if ($statusCode !== 200) {
+            // Contract-mismatch rejections abort before any local write and
+            // surface via the persistent admin notice (see ContractMismatch).
+            $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
+            if ($mismatch !== null) {
+                ContractMismatch::record($mismatch, $url, 'brands');
+                $msg = 'DataFlair API contract mismatch: ' . $mismatch['message']
+                    . ($mismatch['min_plugin_version'] !== ''
+                        ? ' Update the DataFlair Toplists plugin to version ' . $mismatch['min_plugin_version'] . ' or newer.'
+                        : '')
+                    . ' Your site continues to show the last synced data.';
+                $this->logger->error('BrandSync: ' . $msg);
+                return ['success' => false, 'message' => $msg];
+            }
+
             $msg = $this->buildDetailedApiError($statusCode, $body, $responseHeaders, $url);
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
@@ -158,6 +171,14 @@ final class BrandSyncService implements BrandSyncServiceInterface
             $msg = 'Invalid response format from API. Expected "data" key.';
             $this->logger->error('BrandSync: ' . $msg);
             return ['success' => false, 'message' => $msg];
+        }
+
+        // Destructive page-1 wipe runs only AFTER the page-1 response has
+        // been fetched and validated, so a backend outage can no longer
+        // empty the local brands table (same ordering as ToplistSyncService).
+        if ($page === 1) {
+            global $wpdb;
+            $this->deleteAllPaginated($wpdb->prefix . 'dataflair_brands', 500);
         }
 
         $lastPage = isset($data['meta']['last_page']) ? (int) $data['meta']['last_page'] : 1;

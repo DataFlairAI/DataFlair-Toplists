@@ -74,7 +74,8 @@ final class ContractMismatchTest extends TestCase
     {
         ContractMismatch::record(
             ['message' => 'Mismatch.', 'min_plugin_version' => '2.5.0'],
-            'https://api.example.com/api/v1/toplists'
+            'https://api.example.com/api/v1/toplists',
+            'toplists'
         );
 
         $state = \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null;
@@ -82,10 +83,27 @@ final class ContractMismatchTest extends TestCase
         $this->assertSame('Mismatch.', $state['message']);
         $this->assertSame('2.5.0', $state['min_plugin_version']);
         $this->assertSame('https://api.example.com/api/v1/toplists', $state['url']);
+        $this->assertSame('toplists', $state['source']);
         $this->assertSame(DATAFLAIR_VERSION, $state['plugin_version']);
         $this->assertGreaterThan(0, $state['detected_at']);
 
         ContractMismatch::clear();
+        $this->assertArrayNotHasKey(ContractMismatch::OPTION, \SyncFunctionStubsStore::$options);
+    }
+
+    public function test_clear_is_source_scoped(): void
+    {
+        ContractMismatch::record(
+            ['message' => 'Brands v2 mismatch.', 'min_plugin_version' => ''],
+            'https://api.example.com/api/v2/brands',
+            'brands'
+        );
+
+        // A toplists (v1) success must never hide a brands (v2) mismatch.
+        ContractMismatch::clear('toplists');
+        $this->assertArrayHasKey(ContractMismatch::OPTION, \SyncFunctionStubsStore::$options);
+
+        ContractMismatch::clear('brands');
         $this->assertArrayNotHasKey(ContractMismatch::OPTION, \SyncFunctionStubsStore::$options);
     }
 }

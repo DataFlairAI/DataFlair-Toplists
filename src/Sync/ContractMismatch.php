@@ -50,21 +50,37 @@ final class ContractMismatch
      * overwritten on every detection: only the latest mismatch matters.
      *
      * @param array{message: string, min_plugin_version: string} $info
+     * @param string $source Which sync stream hit the mismatch ('toplists'|'brands').
      */
-    public static function record(array $info, string $url): void
+    public static function record(array $info, string $url, string $source): void
     {
         update_option(self::OPTION, [
             'message'            => $info['message'],
             'min_plugin_version' => $info['min_plugin_version'],
             'url'                => $url,
+            'source'             => $source,
             'plugin_version'     => defined('DATAFLAIR_VERSION') ? DATAFLAIR_VERSION : '',
             'detected_at'        => time(),
         ]);
     }
 
-    /** Called when a sync completes successfully: the contract works again. */
-    public static function clear(): void
+    /**
+     * Called when a sync stream completes successfully: that stream's
+     * contract works again. Only clears a mismatch recorded by the SAME
+     * stream, so a toplists (v1) success can never hide a still-broken
+     * brands (v2) mismatch or vice versa. Pass null to clear regardless.
+     */
+    public static function clear(?string $source = null): void
     {
+        if ($source !== null) {
+            $state          = get_option(self::OPTION);
+            $recordedSource = is_array($state) ? ($state['source'] ?? null) : null;
+            // A record with no source (defensive: record() always sets one)
+            // is clearable by any stream.
+            if ($recordedSource !== null && $recordedSource !== $source) {
+                return;
+            }
+        }
         delete_option(self::OPTION);
     }
 }

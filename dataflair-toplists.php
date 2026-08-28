@@ -1019,6 +1019,10 @@ class DataFlair_Toplists {
         // Phase 9.6 — plain-permalinks admin notice extracted to
         // \DataFlair\Toplists\Admin\Notices\PermalinkNotice.
         (new \DataFlair\Toplists\Admin\Notices\PermalinkNotice())->register();
+
+        // API Contract Safety — persistent warning while sync is paused on a
+        // backend contract-mismatch rejection (409 handshake).
+        (new \DataFlair\Toplists\Admin\Notices\ContractMismatchNotice())->register();
     }
 
     /**
