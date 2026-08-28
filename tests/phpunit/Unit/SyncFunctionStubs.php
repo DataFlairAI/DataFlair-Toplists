@@ -72,6 +72,13 @@ namespace DataFlair\Toplists\Sync {
             return true;
         }
     }
+    if (!function_exists(__NAMESPACE__ . '\\delete_option')) {
+        function delete_option($key)
+        {
+            unset(\SyncFunctionStubsStore::$options[$key]);
+            return true;
+        }
+    }
     if (!function_exists(__NAMESPACE__ . '\\wp_json_encode')) {
         function wp_json_encode($value) { return json_encode($value); }
     }

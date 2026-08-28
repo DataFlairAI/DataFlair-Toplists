@@ -59,11 +59,6 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             'budget_seconds' => $request->budgetSeconds,
         ]);
 
-        if ($page === 1) {
-            $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
-            $this->resetSyncState();
-        }
-
         $budget = new WallClockBudget($request->budgetSeconds);
 
         // Sigma's /toplists already returns full items+brand+offer+tracker
@@ -116,6 +111,25 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         }
 
         if ($statusCode !== 200) {
+            // Contract-mismatch rejections apply to every endpoint equally, so
+            // per-ID fallback would only repeat the same 409 N times. Record
+            // the state for the admin notice and stop before any local write.
+            $mismatch = ContractMismatch::fromResponse((int) $statusCode, (string) $body);
+            if ($mismatch !== null) {
+                ContractMismatch::record($mismatch, $listUrl);
+                $this->logger->warning(
+                    'ToplistSync: contract mismatch on page ' . $page . ' — sync aborted before any local write'
+                );
+                return SyncResult::failure(
+                    $page,
+                    'DataFlair API contract mismatch: ' . $mismatch['message']
+                    . ($mismatch['min_plugin_version'] !== ''
+                        ? ' Update the DataFlair Toplists plugin to version ' . $mismatch['min_plugin_version'] . ' or newer.'
+                        : '')
+                    . ' Your site continues to show the last synced data.'
+                );
+            }
+
             if (in_array($statusCode, [500, 502, 503, 504], true)) {
                 $this->logger->warning(
                     'ToplistSync: bulk HTTP ' . $statusCode
@@ -153,6 +167,15 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 $page,
                 'Invalid response format from API. Expected "data" key in response.'
             );
+        }
+
+        // Destructive page-1 reset runs only AFTER the page-1 response has
+        // been fetched and validated. Wiping before the fetch (the pre-2.3.0
+        // order) left the site with an empty toplists table whenever the
+        // backend errored, turning a backend outage into a front-end outage.
+        if ($page === 1) {
+            $this->logger->info('ToplistSync.reset_state page=1 — clearing transients + truncating toplists table');
+            $this->resetSyncState();
         }
 
         $synced    = 0;
@@ -514,6 +537,8 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $ts = time();
         update_option('dataflair_last_toplists_sync', $ts);
         update_option('dataflair_last_toplists_cron_run', $ts);
+        // A fully completed sync proves the contract works again.
+        ContractMismatch::clear();
     }
 
     private function emitBatchFinished(
