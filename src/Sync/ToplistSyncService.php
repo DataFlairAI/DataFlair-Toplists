@@ -192,7 +192,8 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 $failureMessage = 'DataFlair contract canary: ' . $canaryFailure . ' '
                     . ($page === 1
                         ? 'Sync aborted before any local write; your site continues to show the last synced data.'
-                        : 'Sync stopped at page ' . $page . '; pages already synced are kept, the rest are left unchanged.');
+                        : 'Sync stopped at page ' . $page . '; pages already synced are kept, the rest are left unchanged.')
+                    . ' ' . ContractMismatch::whatToDo('');
                 do_action('dataflair_sync_item_failed', [
                     'type'  => 'toplists',
                     'page'  => $page,
@@ -214,8 +215,14 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             if ($existingRows > 0) {
                 // Recorded without the "safety stop" prefix: the admin notice
                 // already opens with "DataFlair sync is paused:".
+                // Two audiences in one sentence: the admin gets a real next
+                // step (report it), the developer gets the filter name. Never
+                // tell a site admin to "enable a filter" as if it were a
+                // setting they can click.
                 $recorded = 'the API returned zero toplists while this site has ' . $existingRows
-                    . ' stored, so the local data was preserved. If removing all toplists is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                    . ' stored, so the local data was preserved. This is almost always a change or fault on the DataFlair side, '
+                    . 'such as an API credential losing access to its site. Send this message to DataFlair support. '
+                    . 'If every toplist really was removed on purpose, a developer can allow the wipe with the dataflair_allow_empty_sync filter.';
                 $failureMessage = 'DataFlair sync safety stop: ' . $recorded;
                 ContractMismatch::record(
                     ['message' => ucfirst($recorded), 'min_plugin_version' => ''],

@@ -184,7 +184,9 @@ final class BrandSyncService implements BrandSyncServiceInterface
                 // Recorded without the "safety stop" prefix: the admin notice
                 // already opens with "DataFlair sync is paused:".
                 $recorded = 'the API returned zero brands while this site has ' . $existingRows
-                    . ' stored, so the local data was preserved. If removing all brands is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                    . ' stored, so the local data was preserved. This is almost always a change or fault on the DataFlair side, '
+                    . 'such as an API credential losing access to its site. Send this message to DataFlair support. '
+                    . 'If every brand really was removed on purpose, a developer can allow the wipe with the dataflair_allow_empty_sync filter.';
                 $msg = 'DataFlair sync safety stop: ' . $recorded;
                 ContractMismatch::record(['message' => ucfirst($recorded), 'min_plugin_version' => ''], $url, 'brands');
                 $this->logger->error('BrandSync: ' . $msg);

@@ -47,6 +47,11 @@ final class ContractMismatchNotice
                 echo ' Please update the DataFlair Toplists plugin to version '
                    . esc_html($min)
                    . ' or newer on the <a href="' . esc_url(admin_url('plugins.php')) . '">Plugins</a> page.';
+            } else {
+                // Never leave the admin without a next step: everything that
+                // reaches this branch is a DataFlair-side change they cannot
+                // fix from WordPress.
+                echo ' ' . esc_html(ContractMismatch::whatToDo(''));
             }
 
             echo '</p></div>';

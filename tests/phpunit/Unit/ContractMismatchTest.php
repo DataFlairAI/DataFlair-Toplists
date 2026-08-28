@@ -100,6 +100,19 @@ final class ContractMismatchTest extends TestCase
         $this->assertStringNotContainsString('or newer', $noMin);
     }
 
+    public function test_every_failure_gives_the_admin_a_next_step(): void
+    {
+        // The invariant: an operator reading any contract failure must never
+        // be left without an action. Either update the plugin, or report it.
+        $withMin = ContractMismatch::describe(['message' => 'x', 'min_plugin_version' => '2.5.0']);
+        $this->assertStringContainsString('Update the DataFlair Toplists plugin', $withMin);
+
+        $withoutMin = ContractMismatch::describe(['message' => 'x', 'min_plugin_version' => '']);
+        $this->assertStringContainsString('DataFlair support', $withoutMin);
+        $this->assertStringContainsString('not a problem with your site', $withoutMin);
+        $this->assertStringContainsString('Syncing again will not help', $withoutMin);
+    }
+
     public function test_record_keeps_one_entry_per_stream(): void
     {
         ContractMismatch::record(

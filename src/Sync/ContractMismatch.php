@@ -70,13 +70,24 @@ final class ContractMismatch
      */
     public static function describe(array $info): string
     {
-        $min = (string) ($info['min_plugin_version'] ?? '');
-
         return 'DataFlair API contract mismatch: ' . (string) ($info['message'] ?? '')
-            . ($min !== ''
-                ? ' Update the DataFlair Toplists plugin to version ' . $min . ' or newer.'
-                : '')
+            . ' ' . self::whatToDo((string) ($info['min_plugin_version'] ?? ''))
             . ' Your site continues to show the last synced data.';
+    }
+
+    /**
+     * The action sentence every contract failure ends with. Two outcomes only:
+     * a version mismatch the admin fixes by updating, or an API-side change
+     * they cannot fix and should report. Never leave them without a next step.
+     */
+    public static function whatToDo(string $minPluginVersion): string
+    {
+        if ($minPluginVersion !== '') {
+            return 'Update the DataFlair Toplists plugin to version ' . $minPluginVersion . ' or newer.';
+        }
+
+        return 'This is a change on the DataFlair side, not a problem with your site or its settings. '
+            . 'Send this message to DataFlair support. Syncing again will not help until the API is fixed.';
     }
 
     /**
