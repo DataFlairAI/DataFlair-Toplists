@@ -233,6 +233,45 @@ final class ContractCanaryTest extends TestCase
         $this->assertStringContainsString('"geo"', (string) $failure);
     }
 
+    public function test_geo_code_removed_everywhere_is_hard_failure(): void
+    {
+        // GeoRenderGate is default-deny: without `code`, every country
+        // toplist silently renders nothing for shortcode/block sites.
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        unset($toplist['geo']['code']);
+
+        $failure = $this->canary->assess([$toplist]);
+        $this->assertStringContainsString('"code"', (string) $failure);
+        $this->assertStringContainsString('stop rendering', (string) $failure);
+    }
+
+    public function test_geo_covered_countries_removed_everywhere_is_hard_failure(): void
+    {
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        unset($toplist['geo']['coveredCountries']);
+
+        $failure = $this->canary->assess([$toplist]);
+        $this->assertStringContainsString('"coveredCountries"', (string) $failure);
+    }
+
+    public function test_null_geo_values_keep_their_keys_and_pass(): void
+    {
+        // A global toplist legitimately has null code and null covered
+        // countries; the keys are what matter, not the values.
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        $toplist['geo'] = ['geo_type' => 'global', 'name' => 'Global', 'code' => null, 'coveredCountries' => null];
+
+        $this->assertNull($this->canary->assess([$toplist]));
+    }
+
+    public function test_all_geos_null_does_not_trip_the_code_checks(): void
+    {
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        $toplist['geo'] = null;
+
+        $this->assertNull($this->canary->assess([$toplist]));
+    }
+
     public function test_geo_retyped_to_string_is_hard_failure(): void
     {
         $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);

@@ -59,18 +59,39 @@ final class ContractCanary
         // their own geo targeting, by tenant code straight out of the stored
         // payload. It is also the most actively changed part of the upstream
         // response, so it earns an explicit check.
-        $anyGeoKey = false;
+        $anyGeoKey     = false;
+        $geoObjects    = 0;
+        $anyGeoCode    = false;
+        $anyGeoCovered = false;
         foreach ($toplists as $toplist) {
             if (!is_array($toplist) || !array_key_exists('geo', $toplist)) {
                 continue;
             }
             $anyGeoKey = true;
-            if ($toplist['geo'] !== null && !is_array($toplist['geo'])) {
+            if ($toplist['geo'] === null) {
+                continue;
+            }
+            if (!is_array($toplist['geo'])) {
                 return 'Toplist "geo" is no longer an object.';
             }
+            $geoObjects++;
+            $anyGeoCode    = $anyGeoCode    || array_key_exists('code', $toplist['geo']);
+            $anyGeoCovered = $anyGeoCovered || array_key_exists('coveredCountries', $toplist['geo']);
         }
         if (!$anyGeoKey) {
             return 'No toplist exposes a "geo" field any more.';
+        }
+
+        // GeoRenderGate matches on `code` (country) and `coveredCountries`
+        // (market) and is DEFAULT-DENY: if either key disappears, every
+        // country or market toplist silently renders nothing rather than
+        // erroring. The upstream resource emits both keys on every geo
+        // object, so absence from all of them is drift, never partial data.
+        if ($geoObjects > 0 && !$anyGeoCode) {
+            return 'No toplist geo exposes a "code" field any more (geo-targeted toplists would stop rendering).';
+        }
+        if ($geoObjects > 0 && !$anyGeoCovered) {
+            return 'No toplist geo exposes a "coveredCountries" field any more (market-targeted toplists would stop rendering).';
         }
 
         $items         = [];
