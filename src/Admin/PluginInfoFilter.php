@@ -163,6 +163,8 @@ final class PluginInfoFilter
   <li>Added: API Contract Check diagnostic on the Tools page, and a contract_mismatch field on the /wp-json/dataflair/v1/health endpoint for monitoring (requires a manage_options account, e.g. an Application Password).</li>
   <li>Fixed: casino card rendering now degrades cleanly on drifted data (retyped ratings, pros/cons, trackers, campaign names, product types) instead of emitting on-page notices or fatals under WP_DEBUG.</li>
   <li>Security: upstream error messages are sanitized and escaped before rendering in wp-admin.</li>
+  <li>Added: every failure mode now preserves local data. Backend downtime, 5xx errors, expired or revoked tokens, removed permissions, a wrong base URL, rate limiting, an HTML login wall instead of JSON, oversized or malformed responses, an empty payload, and field drift all leave the already-synced data serving. UPGRADING.md carries the full table.</li>
+  <li>Added: every contract failure ends with an action, either "update the plugin to version X" or "this is a DataFlair-side change, report it". Field additions and JSON key or item order changes are explicitly safe and produce no message.</li>
 </ul>
 <h4>2.2.12</h4>
 <ul>

@@ -65,6 +65,32 @@ requires a `manage_options` account, so use an Application Password.
 - Backend downtime. Your sync fails, your pages keep serving the last good data,
   and they go stale until the backend returns.
 
+### Every failure mode, and what happens to your data
+
+The column that matters is the last one. In every case, the data your site is
+already serving survives. There is no failure mode where a DataFlair-side
+problem empties your pages.
+
+| What goes wrong | What you see | Your data |
+|---|---|---|
+| Backend down, DNS failure, or timeout | Retried twice with backoff, then a per-item fallback, then a clear error | untouched |
+| HTTP 500 | "Server error (500)... a server-side issue, not a plugin configuration problem... Contact DataFlair support if this persists." | untouched |
+| HTTP 502 / 503 / 504 (deploy in progress) | Retried, then "Server unavailable... could be a deployment in progress... Try again in a few minutes." | untouched |
+| API token expired or revoked | Names the cause and tells you to generate a new one in DataFlair > Configuration > API Credentials. Also detects the wrong token type (`dfk_` instead of `dfp_`) and stray whitespace from copy-paste. | untouched |
+| Site behind HTTP Basic Auth (staging) | Detects it and tells you to fill in HTTP Auth Username and Password in plugin settings, and that those are web server credentials, not your API token. | untouched |
+| Token permissions or scope removed | "your token does not have permission... Check that your API credential has the correct permissions and is marked as active." | untouched |
+| Endpoint moved, or wrong API Base URL | "Endpoint not found (404)... Expected format: https://tenant.dataflair.ai/api/v1" plus the URL you currently have configured. | untouched |
+| Rate limited (429) | "Wait a few minutes and try again, or check your API credential rate limit settings." | untouched |
+| HTML returned instead of JSON (login wall, redirect) | Detected specifically, and explains the web server is blocking the request before it reaches the API. | untouched |
+| Response larger than 15 MB | Hard cap with a structured error. No memory exhaustion. | untouched |
+| Malformed JSON | "JSON decode error" | untouched |
+| `data` is no longer an array | Stopped before the destructive phase. | untouched |
+| Empty payload against a populated site | Safety stop (see above). | untouched |
+| A field renamed, removed, or retyped | Contract canary names the field and stops. | untouched |
+| A field added | Ignored silently. This is the normal case for most backend releases. | fine |
+| JSON key order or item order changed | No effect. Keys are read by name, and display order comes from the explicit `position` field. | fine |
+| Response so slow it burns the sync time budget | The stale-row cleanup is skipped for that run and records are updated in place instead. | preserved |
+
 ### If you have custom code reading the payload
 
 Two integration points hand you raw API data, and neither is covered by the

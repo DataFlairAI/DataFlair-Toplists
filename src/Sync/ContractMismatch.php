@@ -86,8 +86,10 @@ final class ContractMismatch
             return 'Update the DataFlair Toplists plugin to version ' . $minPluginVersion . ' or newer.';
         }
 
+        // Name the actor. "until the API is fixed" leaves the reader guessing
+        // whether they are the one who has to fix something.
         return 'This is a change on the DataFlair side, not a problem with your site or its settings. '
-            . 'Send this message to DataFlair support. Syncing again will not help until the API is fixed.';
+            . 'Send this message to DataFlair support. Syncing again will not help until DataFlair fixes it.';
     }
 
     /**
