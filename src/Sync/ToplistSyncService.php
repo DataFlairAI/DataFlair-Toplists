@@ -170,17 +170,6 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
         }
 
-        // Once per full sync, ask the backend what it now serves so the admin
-        // can be told the API moved instead of finding out when something
-        // breaks. Never fails the sync: an old backend has no /meta and this
-        // quietly does nothing.
-        if ($page === 1) {
-            $meta = ContractVersion::fetch($this->http, $this->baseUrl, $this->token);
-            if ($meta !== null) {
-                ContractVersion::record($meta);
-            }
-        }
-
         // Contract canary: deep-validate EVERY page before persisting it. A
         // field rename inside data[].items passes the shallow gates above but
         // would blank cards site-wide once stored; the canary turns that
@@ -200,17 +189,34 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                     'toplists'
                 );
                 $this->logger->warning('ToplistSync: contract canary failed on page ' . $page . ' — ' . $canaryFailure);
-                $failureMessage = 'DataFlair contract canary: ' . $canaryFailure . ' '
-                    . ($page === 1
-                        ? 'Sync aborted before any local write; your site continues to show the last synced data.'
-                        : 'Sync stopped at page ' . $page . '; pages already synced are kept, the rest are left unchanged.')
-                    . ' ' . ContractMismatch::whatToDo('');
+
+                // Page 1 is the only page where aborting is safe, because the
+                // destructive reset below has not run yet. On later pages the
+                // table was already cleared and partially refilled, so
+                // aborting would leave the site missing most of its toplists
+                // and every retry would wipe and abort again. Record it, warn
+                // loudly, and finish the run: a complete catalogue with some
+                // degraded fields beats a mostly empty one.
+                if ($page === 1) {
+                    $failureMessage = 'DataFlair contract canary: ' . $canaryFailure
+                        . ' Sync aborted before any local write; your site continues to show the last synced data. '
+                        . ContractMismatch::whatToDo('');
+                    do_action('dataflair_sync_item_failed', [
+                        'type'  => 'toplists',
+                        'page'  => $page,
+                        'error' => $failureMessage,
+                    ]);
+                    return SyncResult::failure($page, $failureMessage);
+                }
+
                 do_action('dataflair_sync_item_failed', [
                     'type'  => 'toplists',
                     'page'  => $page,
-                    'error' => $failureMessage,
+                    'error' => 'DataFlair contract canary: ' . $canaryFailure
+                        . ' Detected on page ' . $page . ', after this run had already begun replacing local data,'
+                        . ' so the sync continued to avoid leaving the site with a partial catalogue. '
+                        . ContractMismatch::whatToDo(''),
                 ]);
-                return SyncResult::failure($page, $failureMessage);
             }
         }
 
@@ -335,11 +341,19 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
         $isComplete = !$budgetExhausted && $page >= $lastPage;
         if ($isComplete) {
             $this->markSyncCompleted();
-            if ($errors === 0 && $synced > 0) {
-                // Only a validated bulk sync that actually stored rows,
-                // error-free, proves the toplists contract works again.
-                // Fallback, skip, and zero-row paths never clear.
+            if ($synced > 0) {
+                // A validated sync that stored rows proves the contract
+                // works again. Row-level persist errors are local database
+                // problems, not contract problems, so they do not block the
+                // clear; zero-row and skipped runs still never clear.
                 ContractMismatch::clear('toplists');
+            }
+            // Ask what the backend now serves only after the data work is
+            // done: this call must never compete with the wall-clock budget
+            // or cost the run a single row.
+            $meta = ContractVersion::fetch($this->http, $this->baseUrl, $this->token);
+            if ($meta !== null) {
+                ContractVersion::record($meta);
             }
         }
 

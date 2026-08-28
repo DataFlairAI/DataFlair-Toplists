@@ -30,7 +30,7 @@ final class ContractVersion
      */
     public static function fetch(HttpClientInterface $http, string $baseUrl, string $token): ?array
     {
-        $base = rtrim($baseUrl, '/');
+        $base     = rtrim($baseUrl, '/');
         $response = $http->get($base . '/meta', $token, 5, 0);
 
         if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
@@ -38,7 +38,7 @@ final class ContractVersion
         }
 
         $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($decoded) || !isset($decoded['api_version'])) {
+        if (!is_array($decoded)) {
             return null;
         }
 
@@ -49,10 +49,20 @@ final class ContractVersion
             }
         }
 
+        // `using` is derived from the URL WE requested, never from the
+        // response. A backend reporting the newest contract it serves would
+        // otherwise suppress the very "a newer version exists" notice this
+        // feature is for, and would tell the admin they are on a version they
+        // are not.
+        $using = preg_match('#/api/(v\d+)$#i', $base, $m) ? strtolower($m[1]) : '';
+        if ($using === '') {
+            return null;
+        }
+
         return [
             'rev'           => is_scalar($decoded['contract_rev'] ?? null) ? (string) $decoded['contract_rev'] : '',
             'supported'     => $supported,
-            'using'         => (string) $decoded['api_version'],
+            'using'         => $using,
             'latest_plugin' => is_scalar($decoded['latest_plugin_version'] ?? null) ? (string) $decoded['latest_plugin_version'] : '',
         ];
     }
@@ -63,15 +73,55 @@ final class ContractVersion
         $stored = get_option(self::OPTION);
         $stored = is_array($stored) ? $stored : [];
 
+        $rev       = (string) ($meta['rev'] ?? '');
+        $supported = (array) ($meta['supported'] ?? []);
+
+        // Seed the baseline HERE, on the first recording, not on the first
+        // admin page view. A site synced by cron for a fortnight before
+        // anyone opens wp-admin would otherwise baseline against whatever
+        // the API had drifted to and never announce the move.
+        $seenRev       = (string) ($stored['seen_rev'] ?? '');
+        $seenSupported = (array) ($stored['seen_supported'] ?? []);
+        if ($seenRev === '' && !array_key_exists('seen_supported', $stored)) {
+            $seenRev       = $rev;
+            $seenSupported = $supported;
+        }
+
         update_option(self::OPTION, [
-            'rev'            => (string) ($meta['rev'] ?? ''),
-            'supported'      => (array) ($meta['supported'] ?? []),
+            'rev'            => $rev,
+            'supported'      => $supported,
             'using'          => (string) ($meta['using'] ?? ''),
             'latest_plugin'  => (string) ($meta['latest_plugin'] ?? ''),
-            'seen_rev'       => (string) ($stored['seen_rev'] ?? ''),
-            'seen_supported' => (array) ($stored['seen_supported'] ?? []),
+            'seen_rev'       => $seenRev,
+            'seen_supported' => $seenSupported,
             'checked_at'     => time(),
         ]);
+    }
+
+    /**
+     * Tolerant read of the recorded state for display surfaces (the health
+     * probe, diagnostics). Mirrors ContractMismatch::entries(): a corrupted
+     * option can never fatal or warn its way into a monitoring endpoint.
+     *
+     * @return array{using: string, rev: string, supported: array<int,string>}
+     */
+    public static function profile(): array
+    {
+        $state = get_option(self::OPTION);
+        $state = is_array($state) ? $state : [];
+
+        $supported = [];
+        foreach ((array) ($state['supported'] ?? []) as $contract) {
+            if (is_string($contract) && $contract !== '') {
+                $supported[] = $contract;
+            }
+        }
+
+        return [
+            'using'     => is_scalar($state['using'] ?? null) ? (string) $state['using'] : '',
+            'rev'       => is_scalar($state['rev'] ?? null) ? (string) $state['rev'] : '',
+            'supported' => array_values($supported),
+        ];
     }
 
     /**
@@ -90,6 +140,13 @@ final class ContractVersion
             return null;
         }
 
+        // Read-only: the baseline is seeded by record(), so asking what is
+        // pending never consumes the answer. A second caller (diagnostics,
+        // a status command) must be able to ask the same question safely.
+        if (!array_key_exists('seen_supported', $state)) {
+            return null; // pre-baseline state written by an older version
+        }
+
         $rev      = (string) $state['rev'];
         $seenRev  = (string) ($state['seen_rev'] ?? '');
         $using    = (string) ($state['using'] ?? '');
@@ -97,15 +154,7 @@ final class ContractVersion
         $seenNew  = self::newerThan($using, (array) ($state['seen_supported'] ?? []));
 
         $revIsNew   = $seenRev !== '' && $rev !== $seenRev;
-        $firstEver  = $seenRev === '';
         $versionNew = array_values(array_diff($newer, $seenNew)) !== [];
-
-        // First reading establishes a baseline silently. Announcing "the API
-        // is at 1.0.0" to every site on upgrade day would be pure noise.
-        if ($firstEver) {
-            self::acknowledge();
-            return null;
-        }
 
         if (!$revIsNew && !$versionNew) {
             return null;

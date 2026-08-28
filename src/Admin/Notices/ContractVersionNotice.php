@@ -34,7 +34,12 @@ final class ContractVersionNotice
         if (empty($_GET[self::ACK_PARAM]) || !current_user_can('manage_options')) {
             return;
         }
-        if (!wp_verify_nonce((string) ($_GET['_wpnonce'] ?? ''), self::NONCE)) {
+
+        // is_scalar first: `?_wpnonce[]=x` would otherwise raise an
+        // Array-to-string warning on every admin screen, including
+        // admin-ajax.php, which fires admin_init too.
+        $nonce = $_GET['_wpnonce'] ?? null;
+        if (!is_scalar($nonce) || !wp_verify_nonce((string) $nonce, self::NONCE)) {
             return;
         }
 
@@ -71,8 +76,11 @@ final class ContractVersionNotice
             return;
         }
 
+        // Pinned to a known admin URL rather than add_query_arg()'s default
+        // of the raw REQUEST_URI, so the link this notice invites an admin to
+        // click can never carry an attacker-chosen path or query.
         $dismiss = wp_nonce_url(
-            add_query_arg(self::ACK_PARAM, '1'),
+            add_query_arg(self::ACK_PARAM, '1', admin_url('admin.php?page=dataflair')),
             self::NONCE
         );
 

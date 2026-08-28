@@ -19,6 +19,9 @@
 declare(strict_types=1);
 
 namespace {
+    // Shared option store used by the Controllers-namespace get_option below.
+    require_once __DIR__ . '/SyncFunctionStubs.php';
+
     if (!class_exists('WP_REST_Response')) {
         class WP_REST_Response
         {

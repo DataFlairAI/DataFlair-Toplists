@@ -26,8 +26,7 @@ final class HealthController
         global $wpdb;
 
         $mismatches = \DataFlair\Toplists\Sync\ContractMismatch::entries();
-        $version    = get_option(\DataFlair\Toplists\Sync\ContractVersion::OPTION);
-        $version    = is_array($version) ? $version : [];
+        $version    = \DataFlair\Toplists\Sync\ContractVersion::profile();
 
         return rest_ensure_response([
             'status'     => 'ok',
@@ -39,9 +38,9 @@ final class HealthController
             // their setup, and it stays accurate as their setup changes.
             'integration' => [
                 'geo_targeting'      => get_option('dataflair_geo_targeting_enabled', '1') !== '0',
-                'api_contract'       => (string) ($version['using'] ?? ''),
-                'api_contract_rev'   => (string) ($version['rev'] ?? ''),
-                'api_supported'      => (array) ($version['supported'] ?? []),
+                'api_contract'       => $version['using'],
+                'api_contract_rev'   => $version['rev'],
+                'api_supported'      => $version['supported'],
                 'last_toplists_sync' => (int) get_option('dataflair_last_toplists_sync', 0),
                 'last_brands_sync'   => (int) get_option('dataflair_last_brands_sync', 0),
             ],

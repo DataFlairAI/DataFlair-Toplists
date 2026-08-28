@@ -240,7 +240,7 @@ final class ContractCanaryTest extends TestCase
         $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
         unset($toplist['geo']['code']);
 
-        $failure = $this->canary->assess([$toplist]);
+        $failure = $this->canary->assess([$toplist, $toplist, $toplist]);
         $this->assertStringContainsString('"code"', (string) $failure);
         $this->assertStringContainsString('stop rendering', (string) $failure);
     }
@@ -250,7 +250,7 @@ final class ContractCanaryTest extends TestCase
         $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
         unset($toplist['geo']['coveredCountries']);
 
-        $failure = $this->canary->assess([$toplist]);
+        $failure = $this->canary->assess([$toplist, $toplist, $toplist]);
         $this->assertStringContainsString('"coveredCountries"', (string) $failure);
     }
 
@@ -268,6 +268,15 @@ final class ContractCanaryTest extends TestCase
     {
         $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
         $toplist['geo'] = null;
+
+        $this->assertNull($this->canary->assess([$toplist]));
+    }
+
+    public function test_single_toplist_page_is_too_small_to_conclude_geo_drift(): void
+    {
+        // A one-row page is not evidence enough to pause a whole site.
+        $toplist = $this->toplist([$this->item(), $this->item(), $this->item()]);
+        unset($toplist['geo']['code']);
 
         $this->assertNull($this->canary->assess([$toplist]));
     }

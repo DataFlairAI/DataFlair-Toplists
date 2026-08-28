@@ -87,10 +87,12 @@ final class ContractCanary
         // country or market toplist silently renders nothing rather than
         // erroring. The upstream resource emits both keys on every geo
         // object, so absence from all of them is drift, never partial data.
-        if ($geoObjects > 0 && !$anyGeoCode) {
+        // Gated on MIN_SAMPLE like every other collective check: a page
+        // holding a single toplist is not enough evidence to pause a site.
+        if ($geoObjects >= self::MIN_SAMPLE && !$anyGeoCode) {
             return 'No toplist geo exposes a "code" field any more (geo-targeted toplists would stop rendering).';
         }
-        if ($geoObjects > 0 && !$anyGeoCovered) {
+        if ($geoObjects >= self::MIN_SAMPLE && !$anyGeoCovered) {
             return 'No toplist geo exposes a "coveredCountries" field any more (market-targeted toplists would stop rendering).';
         }
 

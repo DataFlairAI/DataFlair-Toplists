@@ -165,9 +165,13 @@ namespace DataFlair\Toplists\Admin\Notices {
     }
 
     if (!function_exists(__NAMESPACE__ . '\\add_query_arg')) {
-        function add_query_arg($key, $value = '')
+        function add_query_arg($key, $value = '', $url = '')
         {
-            return 'http://example.test/wp-admin/admin.php?' . $key . '=' . $value;
+            // Must honour $url: the notice passes an explicit admin_url base
+            // so the dismiss link can never reflect the request URI.
+            $base = $url !== '' ? $url : 'http://example.test/CURRENT_REQUEST_URI';
+            $sep  = str_contains($base, '?') ? '&' : '?';
+            return $base . $sep . $key . '=' . $value;
         }
     }
 

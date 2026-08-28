@@ -352,10 +352,12 @@ final class ToplistSyncServiceTest extends TestCase
         );
     }
 
-    public function test_canary_runs_on_later_pages_not_just_page_one(): void
+    public function test_canary_on_a_later_page_records_but_does_not_strand_the_catalogue(): void
     {
-        // Page 1 can be a thin sample (few toplists, no items) and pass as
-        // inconclusive; the remaining pages must still be checked.
+        // Page 1 already wiped and refilled the table by the time page 7 is
+        // fetched. Aborting here would leave the site missing most of its
+        // toplists, and every retry would wipe and abort again. So the drift
+        // is recorded and surfaced, and the run finishes.
         $driftedItem = [
             'position'  => 1,
             'brandId'   => 42,
@@ -369,14 +371,33 @@ final class ToplistSyncServiceTest extends TestCase
 
         $result = $this->makeService()->syncPage(SyncRequest::toplists(7));
 
-        $this->assertFalse($result->success);
-        $this->assertStringContainsString('canary', $result->message);
-        $this->assertStringContainsString('page 7', $result->message);
-        $this->assertSame([], $this->persister->storeCalls, 'the drifted page must not be persisted');
+        $this->assertTrue($result->success, 'a later-page drift must not strand the catalogue');
+        $this->assertSame(1, $result->synced, 'the page still persists so the site keeps a full catalogue');
         $this->assertIsArray(
             \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null,
-            'a later-page canary failure must surface through the admin notice'
+            'a later-page canary failure must still surface through the admin notice'
         );
+    }
+
+    public function test_canary_on_page_one_still_aborts_before_any_write(): void
+    {
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 205,
+            'name'  => 'Top 10 DE Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 44]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('canary', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped());
+        $this->assertSame([], $this->persister->storeCalls);
     }
 
     public function test_canary_passes_healthy_full_payload_and_sync_proceeds(): void
@@ -423,7 +444,7 @@ final class ToplistSyncServiceTest extends TestCase
         );
     }
 
-    public function test_completed_sync_with_persist_errors_keeps_mismatch(): void
+    public function test_completed_sync_that_stored_nothing_keeps_the_mismatch(): void
     {
         \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
             'toplists' => ['message' => 'mismatch', 'min_plugin_version' => '', 'source' => 'toplists'],
@@ -437,10 +458,11 @@ final class ToplistSyncServiceTest extends TestCase
         $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
 
         $this->assertTrue($result->isComplete);
+        $this->assertSame(0, $result->synced);
         $this->assertArrayHasKey(
             'toplists',
             \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? [],
-            'a completed sync with persist errors has not proven the contract works'
+            'a run that stored no rows has not proven the contract works'
         );
     }
 

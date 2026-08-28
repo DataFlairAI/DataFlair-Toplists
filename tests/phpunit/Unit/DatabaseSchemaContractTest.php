@@ -14,8 +14,11 @@
  * UPGRADING.md note). Renaming, removing, or repurposing one is BREAKING and
  * needs a documented migration in UPGRADING.md plus a major version bump.
  *
- * This pins the column names at the source, so a rename fails here rather
- * than on a tenant's site.
+ * The snapshot covers the columns a live table actually ends up with, which
+ * is the union of EVERY `CREATE TABLE` block for that table (there are three
+ * install paths) plus every `ALTER TABLE ... ADD COLUMN` upgrade. Pinning
+ * only the first CREATE block would miss columns that exist on every real
+ * install and give false confidence.
  */
 
 declare(strict_types=1);
@@ -33,33 +36,98 @@ final class DatabaseSchemaContractTest extends TestCase
         . "\nkeep the old column, or ship a documented migration and a major version bump.";
 
     /**
-     * Column names declared in one `CREATE TABLE` block of SchemaMigrator.
+     * SQL-string variables, ALTER variables, and generated-column methods
+     * that build each table. Generated columns are added as
+     * `ADD COLUMN $column` from a name => json-path map, so their names have
+     * to be read from that map rather than from the SQL.
+     */
+    private const SOURCES = [
+        'toplists' => [
+            'sql'       => ['toplists_sql', 'sql'],
+            'alter'     => ['table_name'],
+            'generated' => ['ensureToplistsGeoVirtualColumns'],
+        ],
+        'brands' => [
+            'sql'       => ['brands_sql'],
+            'alter'     => ['brands_table_name', 'brands_table'],
+            'generated' => [],
+        ],
+        'alts' => [
+            'sql'       => ['alternatives_sql'],
+            'alter'     => [],
+            'generated' => [],
+        ],
+    ];
+
+    private function source(): string
+    {
+        return (string) file_get_contents(DATAFLAIR_PLUGIN_DIR . self::MIGRATOR);
+    }
+
+    /**
+     * Every column a live copy of this table ends up with.
      *
      * @return array<int, string>
      */
-    private function columnsOf(string $sqlVariable): array
+    private function liveColumns(string $table): array
     {
-        $source = (string) file_get_contents(DATAFLAIR_PLUGIN_DIR . self::MIGRATOR);
-
-        $pattern = '/\$' . preg_quote($sqlVariable, '/') . '\s*=\s*"CREATE TABLE IF NOT EXISTS[^(]*\((.*?)\)\s*\$charset_collate;/s';
-        $this->assertSame(1, preg_match($pattern, $source, $m), "Could not locate \${$sqlVariable} in " . self::MIGRATOR);
-
+        $source  = $this->source();
         $columns = [];
-        foreach (explode("\n", $m[1]) as $line) {
-            $line = trim($line);
-            if ($line === '') {
+        $blocks  = 0;
+
+        foreach (self::SOURCES[$table]['sql'] as $variable) {
+            $pattern = '/\$' . preg_quote($variable, '/')
+                . '\s*=\s*"CREATE TABLE IF NOT EXISTS[^(]*\((.*?)\)\s*\$charset_collate;/s';
+            if (!preg_match_all($pattern, $source, $matches)) {
                 continue;
             }
-            // Skip index/key declarations; they are not part of the read contract.
-            if (preg_match('/^(PRIMARY\s+KEY|UNIQUE\s+KEY|KEY|INDEX)\b/i', $line)) {
-                continue;
-            }
-            if (preg_match('/^([a-z_][a-z0-9_]*)\s+/i', $line, $col)) {
-                $columns[] = strtolower($col[1]);
+            foreach ($matches[1] as $body) {
+                $blocks++;
+                foreach (explode("\n", $body) as $line) {
+                    $line = trim($line);
+                    if ($line === '' || preg_match('/^(PRIMARY\s+KEY|UNIQUE\s+KEY|KEY|INDEX)\b/i', $line)) {
+                        continue;
+                    }
+                    if (preg_match('/^`?([a-z_][a-z0-9_]*)`?\s+/i', $line, $col)) {
+                        $columns[] = strtolower($col[1]);
+                    }
+                }
             }
         }
 
-        return $columns;
+        $this->assertGreaterThan(0, $blocks, "No CREATE TABLE block found for {$table} in " . self::MIGRATOR);
+
+        foreach (self::SOURCES[$table]['alter'] as $variable) {
+            $pattern = '/ALTER TABLE \$' . preg_quote($variable, '/') . '\s+ADD COLUMN\s+`?([a-z_][a-z0-9_]*)`?/is';
+            if (preg_match_all($pattern, $source, $matches)) {
+                foreach ($matches[1] as $col) {
+                    $columns[] = strtolower($col);
+                }
+            }
+        }
+
+        foreach (self::SOURCES[$table]['generated'] as $method) {
+            $body = $this->methodBody($source, $method);
+            if (preg_match_all("/'([a-z_][a-z0-9_]*)'\s*=>\s*'\\\$\./i", $body, $matches)) {
+                foreach ($matches[1] as $col) {
+                    $columns[] = strtolower($col);
+                }
+            }
+        }
+
+        return array_values(array_unique($columns));
+    }
+
+    /** Source text of one method, from its signature to the next one. */
+    private function methodBody(string $source, string $method): string
+    {
+        $start = strpos($source, 'function ' . $method . '(');
+        $this->assertNotFalse($start, "Method {$method}() not found in " . self::MIGRATOR);
+
+        $next = strpos($source, "\n    private function ", $start + 1);
+        $next = $next === false ? strlen($source) : $next;
+
+        return substr($source, $start, $next - $start);
     }
 
     public function test_toplists_table_columns_match_the_locked_contract(): void
@@ -77,7 +145,12 @@ final class DatabaseSchemaContractTest extends TestCase
             'data',
             'version',
             'last_synced',
-        ], $this->columnsOf('toplists_sql'), 'wp_dataflair_toplists' . self::HINT);
+            // Generated columns added by the geo index migration; queried by
+            // name in ToplistsRepository.
+            'list_template_id_virtual',
+            'geo_type_virtual',
+            'geo_code_virtual',
+        ], $this->liveColumns('toplists'), 'wp_dataflair_toplists' . self::HINT);
     }
 
     public function test_brands_table_columns_match_the_locked_contract(): void
@@ -98,7 +171,12 @@ final class DatabaseSchemaContractTest extends TestCase
             'is_disabled',
             'data',
             'last_synced',
-        ], $this->columnsOf('brands_sql'), 'wp_dataflair_brands' . self::HINT);
+            // Render-critical, added by the v1.10 upgrade and read by name in
+            // BrandMetaPrefetcher; absent from the createTables() block.
+            'local_logo_url',
+            'cached_review_post_id',
+            'external_id_virtual',
+        ], $this->liveColumns('brands'), 'wp_dataflair_brands' . self::HINT);
     }
 
     public function test_alternative_toplists_table_columns_match_the_locked_contract(): void
@@ -110,20 +188,67 @@ final class DatabaseSchemaContractTest extends TestCase
             'alternative_toplist_id',
             'created_at',
             'updated_at',
-        ], $this->columnsOf('alternatives_sql'), 'wp_dataflair_alternative_toplists' . self::HINT);
+        ], $this->liveColumns('alts'), 'wp_dataflair_alternative_toplists' . self::HINT);
     }
 
-    public function test_data_column_still_stores_the_verbatim_api_payload(): void
+    public function test_every_create_block_for_a_table_declares_the_same_columns(): void
     {
-        // Tenants parse this column directly. If the store ever begins writing
-        // a transformed shape instead of the raw response, every one of those
-        // integrations breaks silently.
-        $store = (string) file_get_contents(DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistDataStore.php');
+        // Three install paths build the brands table. If they drift, sites
+        // that file-deploy get a different shape from sites that upgrade.
+        $source = $this->source();
+        preg_match_all(
+            '/\$brands_sql\s*=\s*"CREATE TABLE IF NOT EXISTS[^(]*\((.*?)\)\s*\$charset_collate;/s',
+            $source,
+            $matches
+        );
+        $this->assertGreaterThanOrEqual(2, count($matches[1]), 'expected multiple brands CREATE blocks');
 
-        $this->assertStringContainsString(
-            "'data'           => \$rawJson,",
+        $sets = [];
+        foreach ($matches[1] as $body) {
+            $cols = [];
+            foreach (explode("\n", $body) as $line) {
+                $line = trim($line);
+                if ($line === '' || preg_match('/^(PRIMARY\s+KEY|UNIQUE\s+KEY|KEY|INDEX)\b/i', $line)) {
+                    continue;
+                }
+                if (preg_match('/^`?([a-z_][a-z0-9_]*)`?\s+/i', $line, $col)) {
+                    $cols[] = strtolower($col[1]);
+                }
+            }
+            sort($cols);
+            $sets[] = $cols;
+        }
+
+        // Known, accepted divergence: createTables() omits the two v1.10
+        // columns that upgradeDatabase() adds by ALTER on every install.
+        $accepted = ['cached_review_post_id', 'local_logo_url'];
+        $union    = array_unique(array_merge(...$sets));
+        foreach ($sets as $i => $cols) {
+            $missing = array_values(array_diff($union, $cols, $accepted));
+            $this->assertSame(
+                [],
+                $missing,
+                "brands CREATE block #{$i} is missing columns another block declares" . self::HINT
+            );
+        }
+    }
+
+    public function test_the_data_column_stores_the_payload_the_api_returned(): void
+    {
+        // Tenants parse this column directly. Each writer must persist the
+        // API's own object rather than a reshaped one.
+        $store = (string) file_get_contents(DATAFLAIR_PLUGIN_DIR . 'src/Database/ToplistDataStore.php');
+        $this->assertMatchesRegularExpression(
+            "/'data'\s*=>\s*\\\$rawJson,/",
             $store,
-            'The data column must keep storing the verbatim API payload.' . self::HINT
+            'ToplistDataStore must store the verbatim response body.' . self::HINT
+        );
+
+        $sync = (string) file_get_contents(DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistSyncService.php');
+        $this->assertMatchesRegularExpression(
+            "/wp_json_encode\(\['data'\s*=>\s*\\\$toplist\]\)/",
+            $sync,
+            'The bulk path must wrap each toplist as {"data": ...}, the same shape the show-endpoint returns.' . self::HINT
         );
     }
 }
