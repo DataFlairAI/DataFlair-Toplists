@@ -106,6 +106,40 @@ final class ContractMismatchNoticeTest extends TestCase
         $this->assertStringNotContainsString('plugins.php', $html);
     }
 
+    public function test_guidance_appears_exactly_once_per_notice(): void
+    {
+        // Recorded messages carry the REASON only; the notice appends the
+        // generic guidance. A recorded message that also carried guidance
+        // would print "Send this message to DataFlair support" twice.
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => [
+                'message'            => 'The API returned zero toplists while this site has 220 stored, so the local data was preserved.',
+                'min_plugin_version' => '',
+            ],
+        ];
+
+        $html = $this->render();
+
+        $this->assertSame(1, substr_count($html, 'Send this message to DataFlair support'));
+        $this->assertSame(1, substr_count($html, 'last synced data'));
+    }
+
+    public function test_version_mismatch_shows_the_update_route_not_the_report_route(): void
+    {
+        \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
+            'toplists' => ['message' => 'Plugin too old.', 'min_plugin_version' => '2.5.0'],
+        ];
+
+        $html = $this->render();
+
+        $this->assertStringContainsString('plugins.php', $html);
+        $this->assertStringNotContainsString(
+            'Send this message to DataFlair support',
+            $html,
+            'an update-fixable mismatch must not also tell them to report it'
+        );
+    }
+
     public function test_escapes_untrusted_backend_message(): void
     {
         \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] = [
