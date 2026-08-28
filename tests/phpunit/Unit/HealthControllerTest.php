@@ -55,6 +55,37 @@ final class HealthControllerTest extends TestCase
         $this->assertSame(42, $data['toplists']);
         $this->assertSame(DATAFLAIR_VERSION, $data['plugin_ver']);
         $this->assertNull($data['db_error']);
+        $this->assertNull($data['contract_mismatch']);
+    }
+
+    public function test_surfaces_contract_mismatch_state_when_recorded(): void
+    {
+        $GLOBALS['dataflair_rest_test_options'][\DataFlair\Toplists\Sync\ContractMismatch::OPTION] = [
+            'message'            => 'Plugin below minimum version.',
+            'min_plugin_version' => '2.5.0',
+            'source'             => 'toplists',
+        ];
+
+        $repo = new class implements ToplistsRepositoryInterface {
+            public function findByApiToplistId(int $api_toplist_id): ?array { return null; }
+            public function findBySlug(string $slug): ?array { return null; }
+            public function upsert(array $row) { return false; }
+            public function deleteByApiToplistId(int $api_toplist_id): bool { return true; }
+            public function collectGeoNames(): array { return []; }
+            public function listAllForOptions(): array { return []; }
+            public function countAll(): int { return 1; }
+            public function findPaginated(\DataFlair\Toplists\Database\ToplistsQuery $q): \DataFlair\Toplists\Database\ToplistsPage { return new \DataFlair\Toplists\Database\ToplistsPage([], 0, 1, 25); }
+            public function findItemSummaryByApiToplistId(int $id): array { return []; }
+            public function findRawDataByApiToplistId(int $id): ?array { return null; }
+            public function findFamilyByTemplateId(int $templateId): array { return []; }
+        };
+
+        $data = (new HealthController($repo))->status()->get_data();
+
+        $this->assertIsArray($data['contract_mismatch']);
+        $this->assertSame('2.5.0', $data['contract_mismatch']['min_plugin_version']);
+
+        unset($GLOBALS['dataflair_rest_test_options']);
     }
 
     public function test_surfaces_wpdb_last_error_when_set(): void
