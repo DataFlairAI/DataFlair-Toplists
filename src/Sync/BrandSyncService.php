@@ -181,9 +181,12 @@ final class BrandSyncService implements BrandSyncServiceInterface
                 'SELECT COUNT(*) FROM ' . $wpdb->prefix . 'dataflair_brands'
             );
             if ($existingRows > 0) {
-                $msg = 'DataFlair sync safety stop: the API returned zero brands while this site has '
-                    . $existingRows . ' stored. Local data preserved. If removing all brands is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
-                ContractMismatch::record(['message' => $msg, 'min_plugin_version' => ''], $url, 'brands');
+                // Recorded without the "safety stop" prefix: the admin notice
+                // already opens with "DataFlair sync is paused:".
+                $recorded = 'the API returned zero brands while this site has ' . $existingRows
+                    . ' stored, so the local data was preserved. If removing all brands is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                $msg = 'DataFlair sync safety stop: ' . $recorded;
+                ContractMismatch::record(['message' => ucfirst($recorded), 'min_plugin_version' => ''], $url, 'brands');
                 $this->logger->error('BrandSync: ' . $msg);
                 return ['success' => false, 'message' => $msg];
             }

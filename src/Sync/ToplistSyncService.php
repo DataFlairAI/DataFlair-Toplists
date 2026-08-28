@@ -212,10 +212,13 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                 'SELECT COUNT(*) FROM ' . $wpdb->prefix . DATAFLAIR_TABLE_NAME
             );
             if ($existingRows > 0) {
-                $failureMessage = 'DataFlair sync safety stop: the API returned zero toplists while this site has '
-                    . $existingRows . ' stored. Local data preserved. If removing all toplists is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                // Recorded without the "safety stop" prefix: the admin notice
+                // already opens with "DataFlair sync is paused:".
+                $recorded = 'the API returned zero toplists while this site has ' . $existingRows
+                    . ' stored, so the local data was preserved. If removing all toplists is intentional, enable the dataflair_allow_empty_sync filter and sync again.';
+                $failureMessage = 'DataFlair sync safety stop: ' . $recorded;
                 ContractMismatch::record(
-                    ['message' => $failureMessage, 'min_plugin_version' => ''],
+                    ['message' => ucfirst($recorded), 'min_plugin_version' => ''],
                     $listUrl,
                     'toplists'
                 );
