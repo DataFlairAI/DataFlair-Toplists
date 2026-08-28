@@ -178,4 +178,46 @@ final class ApiClientTest extends TestCase
         $client = new ApiClient(new NullLogger());
         $this->assertInstanceOf(\DataFlair\Toplists\Http\HttpClientInterface::class, $client);
     }
+
+    /**
+     * Capture the headers wp_remote_get() is called with for a given URL.
+     *
+     * @return array<string, string>
+     */
+    private function capturedHeadersFor(string $url): array
+    {
+        $captured = [];
+        Functions\expect('wp_remote_get')
+            ->once()
+            ->andReturnUsing(static function ($request_url, $args) use (&$captured) {
+                $captured = $args['headers'] ?? [];
+                return ['body' => '{}', 'response' => ['code' => 200]];
+            });
+
+        (new ApiClient(new NullLogger()))->get($url, 'tok');
+
+        return $captured;
+    }
+
+    public function test_sends_plugin_version_and_expected_contract_headers(): void
+    {
+        $headers = $this->capturedHeadersFor('https://api.example.com/api/v1/toplists');
+
+        $this->assertSame(DATAFLAIR_VERSION, $headers['X-DataFlair-Plugin-Version'] ?? null);
+        $this->assertSame('v1', $headers['X-DataFlair-Expected-Contract'] ?? null);
+    }
+
+    public function test_expected_contract_header_tracks_v2_urls(): void
+    {
+        $headers = $this->capturedHeadersFor('https://api.example.com/api/v2/brands?page=1');
+
+        $this->assertSame('v2', $headers['X-DataFlair-Expected-Contract'] ?? null);
+    }
+
+    public function test_expected_contract_defaults_to_v1_for_unversioned_urls(): void
+    {
+        $headers = $this->capturedHeadersFor('https://api.example.com/toplists');
+
+        $this->assertSame('v1', $headers['X-DataFlair-Expected-Contract'] ?? null);
+    }
 }
