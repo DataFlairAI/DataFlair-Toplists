@@ -352,6 +352,33 @@ final class ToplistSyncServiceTest extends TestCase
         );
     }
 
+    public function test_canary_runs_on_later_pages_not_just_page_one(): void
+    {
+        // Page 1 can be a thin sample (few toplists, no items) and pass as
+        // inconclusive; the remaining pages must still be checked.
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 205,
+            'name'  => 'Top 10 DE Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 44]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(7));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('canary', $result->message);
+        $this->assertStringContainsString('page 7', $result->message);
+        $this->assertSame([], $this->persister->storeCalls, 'the drifted page must not be persisted');
+        $this->assertIsArray(
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION]['toplists'] ?? null,
+            'a later-page canary failure must surface through the admin notice'
+        );
+    }
+
     public function test_canary_passes_healthy_full_payload_and_sync_proceeds(): void
     {
         $healthyItem = [

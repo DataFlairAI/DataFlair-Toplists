@@ -170,12 +170,17 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
         }
 
-        // Contract canary: deep-validate the page-1 payload BEFORE the
-        // destructive phase. A field rename inside data[].items passes the
-        // shallow gates above but would blank cards site-wide once stored;
-        // the canary turns that silent drift into a loud, data-preserving
-        // abort. Filter escape hatch for emergencies only.
-        if ($page === 1 && (bool) apply_filters('dataflair_contract_canary', true)) {
+        // Contract canary: deep-validate EVERY page before persisting it. A
+        // field rename inside data[].items passes the shallow gates above but
+        // would blank cards site-wide once stored; the canary turns that
+        // silent drift into a loud, data-preserving abort.
+        //
+        // Every page, not just page 1: a rename is a systematic backend change
+        // so page 1 catches it in practice, but a page-1 sample below the
+        // canary's threshold (few toplists, no items) would otherwise wave the
+        // remaining pages through unchecked. Filter escape hatch for
+        // emergencies only.
+        if ((bool) apply_filters('dataflair_contract_canary', true)) {
             $canaryFailure = (new ContractCanary())->assess($data['data']);
             if ($canaryFailure !== null) {
                 ContractMismatch::record(
@@ -183,9 +188,11 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
                     $listUrl,
                     'toplists'
                 );
-                $this->logger->warning('ToplistSync: contract canary failed — ' . $canaryFailure);
-                $failureMessage = 'DataFlair contract canary: ' . $canaryFailure
-                    . ' Sync aborted before any local write; your site continues to show the last synced data.';
+                $this->logger->warning('ToplistSync: contract canary failed on page ' . $page . ' — ' . $canaryFailure);
+                $failureMessage = 'DataFlair contract canary: ' . $canaryFailure . ' '
+                    . ($page === 1
+                        ? 'Sync aborted before any local write; your site continues to show the last synced data.'
+                        : 'Sync stopped at page ' . $page . '; pages already synced are kept, the rest are left unchanged.');
                 do_action('dataflair_sync_item_failed', [
                     'type'  => 'toplists',
                     'page'  => $page,

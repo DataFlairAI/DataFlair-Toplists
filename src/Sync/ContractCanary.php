@@ -1,13 +1,14 @@
 <?php
 /**
- * API Contract Safety P3 — deep page-1 payload validation ("canary").
+ * API Contract Safety P3 — deep sync-payload validation ("canary").
  *
  * A backend field rename inside `data[].items` passes the shallow sync gates
  * (200, valid JSON, `data` key) and would previously be persisted wholesale,
  * silently blanking offer text, bonus codes, or tracker links on every card.
- * This class inspects the already-fetched page-1 bulk payload BEFORE the
- * destructive reset + persist phase and reports a hard failure when a
- * render-critical field has vanished from the response shape.
+ * This class inspects each already-fetched bulk payload BEFORE it is
+ * persisted (and, on page 1, before the destructive reset) and reports a
+ * hard failure when a render-critical field has vanished from the response
+ * shape.
  *
  * False-positive safety: a key that is PRESENT with a null value is always
  * valid (that is how the API serializes "no value"), and every field check
@@ -29,7 +30,7 @@ final class ContractCanary
     private const MAX_SAMPLE = 50;
 
     /**
-     * Inspect a page-1 bulk `data` payload.
+     * Inspect one page's bulk `data` payload.
      *
      * @param array<int|string, mixed> $toplists Decoded `data` array of the bulk response.
      * @return string|null Human-readable hard-failure reason, or null when safe.
