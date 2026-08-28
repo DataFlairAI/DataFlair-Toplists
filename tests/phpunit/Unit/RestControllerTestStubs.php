@@ -164,4 +164,13 @@ namespace DataFlair\Toplists\Rest\Controllers {
             return trim($title, '-');
         }
     }
+    // HealthController reads options directly (contract state, integration
+    // profile). Backed by the same store the Sync namespace stubs use, so a
+    // test seeds one place and both namespaces agree.
+    if (!function_exists(__NAMESPACE__ . '\\get_option')) {
+        function get_option($key, $default = false)
+        {
+            return \SyncFunctionStubsStore::$options[$key] ?? $default;
+        }
+    }
 }

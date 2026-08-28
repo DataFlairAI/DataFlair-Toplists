@@ -65,6 +65,26 @@ requires a `manage_options` account, so use an Application Password.
 - Backend downtime. Your sync fails, your pages keep serving the last good data,
   and they go stale until the backend returns.
 
+### Running syncs from the command line
+
+The plugin ships **no cron**, by design: nothing may change your data without
+a deliberate trigger. From 2.3.0 there is a supported way to automate that
+trigger:
+
+```bash
+wp dataflair sync                  # toplists, then brands
+wp dataflair sync --only=toplists
+wp dataflair sync --only=brands
+```
+
+It exits non-zero on failure, so a real system cron or a CI job can react. Use
+that rather than WP-cron, which fires on visitor page views and would run a
+multi-minute sync on an unlucky visitor's request.
+
+Every safety gate described above applies identically here: nothing is written
+until the response validates, and a paused sync reports the reason and exits
+non-zero.
+
 ### How you find out when the DataFlair API changes
 
 You asked to be told when the API version moves rather than discovering it

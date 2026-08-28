@@ -494,6 +494,23 @@ class DataFlair_Toplists {
      *
      * @return \DataFlair\Toplists\Sync\ToplistSyncServiceInterface
      */
+    /**
+     * Public seams for `wp dataflair sync`. The services themselves stay
+     * private; WP-CLI needs an entry point and reflection is not one.
+     *
+     * @return \DataFlair\Toplists\Sync\ToplistSyncServiceInterface
+     */
+    public function cli_toplist_sync_service() {
+        return $this->toplist_sync_service();
+    }
+
+    /**
+     * @return \DataFlair\Toplists\Sync\BrandSyncServiceInterface
+     */
+    public function cli_brand_sync_service() {
+        return $this->brand_sync_service();
+    }
+
     private function toplist_sync_service() {
         if ($this->toplist_sync_service instanceof \DataFlair\Toplists\Sync\ToplistSyncServiceInterface) {
             return $this->toplist_sync_service;
@@ -1682,5 +1699,11 @@ if (defined('WP_CLI') && WP_CLI) {
     \WP_CLI::add_command(
         'dataflair logs',
         \DataFlair\Toplists\Cli\LogsCommand::class
+    );
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'includes/Cli/SyncCommand.php';
+    \WP_CLI::add_command(
+        'dataflair sync',
+        \DataFlair\Toplists\Cli\SyncCommand::class
     );
 }

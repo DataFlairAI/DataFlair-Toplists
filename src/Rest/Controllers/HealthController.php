@@ -26,12 +26,25 @@ final class HealthController
         global $wpdb;
 
         $mismatches = \DataFlair\Toplists\Sync\ContractMismatch::entries();
+        $version    = get_option(\DataFlair\Toplists\Sync\ContractVersion::OPTION);
+        $version    = is_array($version) ? $version : [];
 
         return rest_ensure_response([
             'status'     => 'ok',
             'toplists'   => $this->repo->countAll(),
             'plugin_ver' => DATAFLAIR_VERSION,
             'db_error'   => ($wpdb instanceof \wpdb && !empty($wpdb->last_error)) ? $wpdb->last_error : null,
+            // Integration profile: how THIS site uses the plugin. Support
+            // starts from facts instead of asking the tenant to describe
+            // their setup, and it stays accurate as their setup changes.
+            'integration' => [
+                'geo_targeting'      => get_option('dataflair_geo_targeting_enabled', '1') !== '0',
+                'api_contract'       => (string) ($version['using'] ?? ''),
+                'api_contract_rev'   => (string) ($version['rev'] ?? ''),
+                'api_supported'      => (array) ($version['supported'] ?? []),
+                'last_toplists_sync' => (int) get_option('dataflair_last_toplists_sync', 0),
+                'last_brands_sync'   => (int) get_option('dataflair_last_brands_sync', 0),
+            ],
             // Non-null while any sync stream is paused on a contract mismatch
             // (keyed by stream) — lets authenticated monitoring (this route
             // requires manage_options) catch it without scraping wp-admin.
