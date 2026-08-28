@@ -169,6 +169,28 @@ final class ToplistSyncService implements ToplistSyncServiceInterface
             );
         }
 
+        // Contract canary: deep-validate the page-1 payload BEFORE the
+        // destructive phase. A field rename inside data[].items passes the
+        // shallow gates above but would blank cards site-wide once stored;
+        // the canary turns that silent drift into a loud, data-preserving
+        // abort. Filter escape hatch for emergencies only.
+        if ($page === 1 && (bool) apply_filters('dataflair_contract_canary', true)) {
+            $canaryFailure = (new ContractCanary())->assess(is_array($data['data']) ? $data['data'] : []);
+            if ($canaryFailure !== null) {
+                ContractMismatch::record(
+                    ['message' => $canaryFailure, 'min_plugin_version' => ''],
+                    $listUrl,
+                    'toplists'
+                );
+                $this->logger->warning('ToplistSync: contract canary failed — ' . $canaryFailure);
+                return SyncResult::failure(
+                    $page,
+                    'DataFlair contract canary: ' . $canaryFailure
+                    . ' Sync aborted before any local write; your site continues to show the last synced data.'
+                );
+            }
+        }
+
         // Destructive page-1 reset runs only AFTER the page-1 response has
         // been fetched and validated. Wiping before the fetch (the pre-2.3.0
         // order) left the site with an empty toplists table whenever the

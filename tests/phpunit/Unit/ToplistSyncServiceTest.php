@@ -32,6 +32,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistSyncServiceInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistPersisterInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractCanary.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistSyncService.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpErrorStub.php';
@@ -114,7 +115,7 @@ final class ToplistSyncServiceTest extends TestCase
     public function test_is_complete_true_when_last_page_reached(): void
     {
         $this->http->responses[] = $this->bulkResponse(
-            [['id' => 101]],
+            [['id' => 101, 'name' => 'Top 10 US Casinos']],
             ['last_page' => 1]
         );
 
@@ -206,7 +207,7 @@ final class ToplistSyncServiceTest extends TestCase
     {
         $this->persister->storeReturn = false; // every store fails
         $this->http->responses[]      = $this->bulkResponse([
-            ['id' => 1], ['id' => 2], ['id' => 3],
+            ['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B'], ['id' => 3, 'name' => 'C'],
         ], ['last_page' => 1]);
 
         $svc    = $this->makeService();
@@ -317,6 +318,62 @@ final class ToplistSyncServiceTest extends TestCase
             \SyncFunctionStubsStore::$options,
             'a generic 409 must never be recorded as a contract mismatch'
         );
+    }
+
+    public function test_canary_aborts_on_renamed_offer_field_before_any_write(): void
+    {
+        \SyncFunctionStubsStore::$options['dataflair_api_endpoints'] = 'https://old.example.com/api/v1/toplists/999';
+
+        // Bucket-1 silent drift: `offer` renamed to `promotion` on every item.
+        $driftedItem = [
+            'position'  => 1,
+            'brandId'   => 42,
+            'promotion' => ['offerText' => '100% up to $500'],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 101,
+            'name'  => 'Top 10 US Casinos',
+            'items' => [$driftedItem, $driftedItem, $driftedItem],
+        ]], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('canary', $result->message);
+        $this->assertFalse($this->toplistsTableWasWiped(), 'canary must fire before the destructive reset');
+        $this->assertSame([], $this->persister->storeCalls);
+        $this->assertSame(
+            'https://old.example.com/api/v1/toplists/999',
+            \SyncFunctionStubsStore::$options['dataflair_api_endpoints']
+        );
+        $this->assertIsArray(
+            \SyncFunctionStubsStore::$options[ContractMismatch::OPTION] ?? null,
+            'canary failures must surface through the mismatch admin notice'
+        );
+    }
+
+    public function test_canary_passes_healthy_full_payload_and_sync_proceeds(): void
+    {
+        $healthyItem = [
+            'position' => 1,
+            'brandId'  => 42,
+            'brand'    => ['id' => 42, 'name' => 'Betway'],
+            'offer'    => [
+                'offerText' => '100% up to $500',
+                'trackers'  => [['trackerLink' => 'https://t.example.com/c/1']],
+            ],
+        ];
+        $this->http->responses[] = $this->bulkResponse([[
+            'id'    => 101,
+            'name'  => 'Top 10 US Casinos',
+            'items' => [$healthyItem, $healthyItem, $healthyItem],
+        ]], ['last_page' => 1]);
+
+        $result = $this->makeService()->syncPage(SyncRequest::toplists(1));
+
+        $this->assertTrue($result->success);
+        $this->assertSame(1, $result->synced);
+        $this->assertTrue($this->toplistsTableWasWiped());
     }
 
     public function test_completed_sync_clears_recorded_contract_mismatch(): void
