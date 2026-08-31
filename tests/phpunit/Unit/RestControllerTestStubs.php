@@ -159,12 +159,12 @@ namespace DataFlair\Toplists\Rest\Controllers {
             return new \WP_REST_Response($data);
         }
     }
+    require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpSanitizeTitleFake.php';
+
     if (!function_exists(__NAMESPACE__ . '\\sanitize_title')) {
-        function sanitize_title(string $title): string
+        function sanitize_title($title): string
         {
-            $title = strtolower(trim($title));
-            $title = preg_replace('/[^a-z0-9]+/', '-', $title) ?? '';
-            return trim($title, '-');
+            return \WpSanitizeTitleFake::sanitize((string) $title);
         }
     }
     // HealthController reads options directly (contract state, integration
