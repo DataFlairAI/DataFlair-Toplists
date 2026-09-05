@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.3.2] - 2026-09-05
+
+### Fixed
+- Block-level pros/cons overrides no longer vanish after a toplist reorder. Legacy Gutenberg keys (`casino-{position}-{slug}`) are resolved at any position for the brand on the frontend, and the block editor auto-migrates them to stable brand/item/slug keys when casinos load. The toplist id is unchanged across reorder versions; only ranks move.
+
+### Tests
+- `ProsConsResolverDriftTest`: reorder survival, stable-key precedence over legacy keys, sanitized brand-name slug matching.
+
 ## [2.3.1] - 2026-09-05
 
 ### Fixed
@@ -122,6 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activation/deactivation hooks
 - Uninstall cleanup script
 
+[2.3.2]: https://github.com/DataFlairAI/DataFlair-Toplists/releases/tag/v2.3.2
 [2.3.1]: https://github.com/DataFlairAI/DataFlair-Toplists/releases/tag/v2.3.1
 [1.2.0]: https://github.com/dataflair/toplists/releases/tag/v1.2.0
 [1.1.0]: https://github.com/dataflair/toplists/releases/tag/v1.1.0

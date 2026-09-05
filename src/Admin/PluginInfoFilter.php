@@ -173,6 +173,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.3.2</h4>
+<ul>
+  <li><strong>Fixed: block pros/cons no longer disappear after a toplist reorder.</strong> Custom pros/cons live on the WordPress page, not in the DataFlair API. Older blocks keyed them as <code>casino-{position}-{slug}</code>; reordering keeps the same toplist id but changes ranks, so the frontend stopped matching until an editor clicked &ldquo;+ Add Pro&rdquo;. <code>ProsConsResolver</code> now finds legacy keys at any position for the brand, and the Gutenberg editor auto-migrates them to stable <code>casino-brand-{id}</code> / item / slug keys when casinos load.</li>
+  <li><strong>Tests:</strong> <code>ProsConsResolverDriftTest</code> covers reorder survival, stable-key precedence, and sanitized-name slug matching.</li>
+</ul>
 <h4>2.3.1</h4>
 <ul>
   <li><strong>Fixed: Gutenberg block editor preview ribbon/star CSS.</strong> Editor styles now enqueue on <code>enqueue_block_assets</code> (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously <code>enqueue_block_editor_assets</code> left <code>editor.css</code> in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and a broken &ldquo;OUR TOP CHOICE&rdquo; layout. Added SVG max-width / ~18px containment for <code>.ribbon-star</code> in <code>assets/editor.css</code>. Touched: <code>BlockRegistrar.php</code>, <code>EditorAssets.php</code>, <code>assets/editor.css</code>, and related unit tests.</li>
