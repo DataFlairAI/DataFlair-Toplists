@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
+
+## [2.3.1] - 2026-09-05
+
+### Fixed
+- Gutenberg ServerSideRender preview in the WP 6.3+ iframed block canvas: enqueue `editor.css` via `enqueue_block_assets` (admin-only) so styles reach the editor iframe. Previously `enqueue_block_editor_assets` left `editor.css` in the parent chrome only, which produced a huge ribbon SVG and a broken “OUR TOP CHOICE” layout in the block editor.
+- Ribbon star containment in `assets/editor.css`: `.ribbon-star` / `svg.ribbon-star` capped with `max-width` / ~18px sizing so admin CSS resets cannot blow out the SVG.
+
+### Changed
+- Related implementation and tests: `src/Block/BlockRegistrar.php`, `src/Block/EditorAssets.php`, `assets/editor.css`, `tests/phpunit/Unit/BlockRegistrarTest.php`, `tests/phpunit/Unit/EditorAssetsTest.php`, `tests/phpunit/Unit/BlockTestStubs.php`.
+
+### Notes
+- **Deploy:** Production deploys must use `composer install --no-dev` or `composer run install-prod`. Never ship a partial or development Composer `vendor/` tree — a broken vendor that still required mockery caused a production critical error (unrelated to the editor CSS fix itself).
+
 ## [1.3.0] - 2024-12-XX
 
 ### Added
@@ -108,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Activation/deactivation hooks
 - Uninstall cleanup script
 
+[2.3.1]: https://github.com/DataFlairAI/DataFlair-Toplists/releases/tag/v2.3.1
 [1.2.0]: https://github.com/dataflair/toplists/releases/tag/v1.2.0
 [1.1.0]: https://github.com/dataflair/toplists/releases/tag/v1.1.0
 [1.0.0]: https://github.com/dataflair/toplists/releases/tag/v1.0.0
