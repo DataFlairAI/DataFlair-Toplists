@@ -3,7 +3,7 @@
  * Phase 7 — pins BlockRegistrar behaviour.
  *
  * Responsibilities under test:
- *   - `register()` wires init + enqueue_block_editor_assets hooks.
+ *   - `register()` wires init + enqueue_block_assets hooks.
  *   - `registerBlock()` calls WP's `register_block_type` with the correct
  *     block.json path and args.
  *   - `registerBlock()` falls back from build/ to src/ and silently no-ops
@@ -40,7 +40,7 @@ final class BlockRegistrarTest extends TestCase
 
         $hooks = array_column(BlockStubs::$actions, 'hook');
         $this->assertContains('init', $hooks, 'must hook into init for register_block_type');
-        $this->assertContains('enqueue_block_editor_assets', $hooks, 'must hook editor assets enqueue');
+        $this->assertContains('enqueue_block_assets', $hooks, 'must hook editor canvas assets (iframe)');
     }
 
     public function test_register_block_registers_with_built_block_json(): void

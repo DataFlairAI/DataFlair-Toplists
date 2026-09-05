@@ -429,6 +429,9 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.3.1
+- **Fixed: Gutenberg block editor preview ribbon/star CSS.** Editor styles now enqueue on `enqueue_block_assets` (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously `enqueue_block_editor_assets` left `editor.css` in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and stacked layout. Added SVG max-width containment for `.ribbon-star` in the editor stylesheet.
+
 ### 2.3.0
 - **Added: API contract handshake.** Every API request sends `X-DataFlair-Plugin-Version`, plus `X-DataFlair-Expected-Contract` on versioned endpoints. A backend that cannot serve the expected contract answers HTTP 409 (`error_code: contract_mismatch`) and sync pauses loudly with a persistent admin notice, per sync stream (toplists v1, brands v1/v2), instead of ingesting a response shape this plugin cannot render. Backends without the handshake, and older plugin versions, behave exactly as before: the handshake is strictly opt-in on both sides.
 - **Added: contract canary.** Sync payloads are deep-validated on every page before any local write. Renamed or retyped render-critical fields (`offer`, `offerText`, brand linkage, `trackerLink`, `items`/`trackers` types) abort the sync with a clear message while the site keeps serving the last synced data. Collective all-or-nothing checks with a minimum sample threshold make false positives on legitimate partial data (null offers, empty trackers) impossible. Escape hatch: the `dataflair_contract_canary` filter.
@@ -808,4 +811,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.0 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.3.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

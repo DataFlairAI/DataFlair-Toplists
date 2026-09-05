@@ -21,12 +21,15 @@ namespace DataFlair\Toplists\Tests\Block {
             public static array $registered     = [];
             public static array $enqueuedStyles = [];
             public static array $actions        = [];
+            /** @var bool Simulated is_admin() for EditorAssets front-end skip tests. */
+            public static bool $isAdmin         = true;
 
             public static function reset(): void
             {
                 self::$registered     = [];
                 self::$enqueuedStyles = [];
                 self::$actions        = [];
+                self::$isAdmin        = true;
             }
         }
     }
@@ -71,6 +74,17 @@ namespace DataFlair\Toplists\Block {
                 'ver'    => $ver,
                 'media'  => $media,
             ];
+        }
+    }
+
+    /**
+     * Toggleable is_admin() so EditorAssets can be tested for front-end skip.
+     * Default true — unit tests run in an "admin" context unless overridden.
+     */
+    if (!function_exists(__NAMESPACE__ . '\\is_admin')) {
+        function is_admin(): bool
+        {
+            return BlockStubs::$isAdmin;
         }
     }
 
