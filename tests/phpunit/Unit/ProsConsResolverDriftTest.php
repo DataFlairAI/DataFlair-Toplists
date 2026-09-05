@@ -98,5 +98,85 @@ final class ProsConsResolverDriftTest extends TestCase
         $this->assertSame(['Fast payouts', 'Great odds'], $result['pros']);
         $this->assertSame(['No live chat'], $result['cons']);
     }
+
+    /**
+     * Reordering a toplist keeps the same toplist id but changes positions.
+     * Legacy Gutenberg keys were `casino-{position}-{slug}` — the frontend
+     * must still resolve overrides saved under the old position.
+     */
+    public function test_legacy_override_survives_position_reorder(): void
+    {
+        $result = $this->resolver->resolve_pros_cons_for_table_item(
+            [
+                'position' => 4,
+                'brand' => [
+                    'id' => 99,
+                    'name' => 'BC.GAME',
+                    'slug' => 'bc-game',
+                ],
+                'pros' => [],
+                'cons' => [],
+            ],
+            [
+                // Saved when this brand was still #2 — never migrated to stable key.
+                'casino-2-bc-game' => [
+                    'pros' => ['Fast crypto payouts', 'Great odds'],
+                    'cons' => ['Limited support hours'],
+                ],
+            ]
+        );
+
+        $this->assertSame(['Fast crypto payouts', 'Great odds'], $result['pros']);
+        $this->assertSame(['Limited support hours'], $result['cons']);
+    }
+
+    public function test_stable_brand_key_wins_over_legacy_position_key(): void
+    {
+        $result = $this->resolver->resolve_pros_cons_for_table_item(
+            [
+                'position' => 4,
+                'brand' => [
+                    'id' => 99,
+                    'name' => 'BC.GAME',
+                ],
+                'pros' => [],
+                'cons' => [],
+            ],
+            [
+                'casino-brand-99' => [
+                    'pros' => ['Stable key pro'],
+                    'cons' => [],
+                ],
+                'casino-2-bc-game' => [
+                    'pros' => ['Legacy key pro'],
+                    'cons' => [],
+                ],
+            ]
+        );
+
+        $this->assertSame(['Stable key pro'], $result['pros']);
+    }
+
+    public function test_legacy_override_matches_sanitized_brand_name_slug(): void
+    {
+        $result = $this->resolver->resolve_pros_cons_for_table_item(
+            [
+                'position' => 1,
+                'brand' => [
+                    'name' => 'Stake Casino',
+                ],
+                'pros' => [],
+                'cons' => [],
+            ],
+            [
+                'casino-7-stake-casino' => [
+                    'pros' => ['Kept after reorder'],
+                    'cons' => [],
+                ],
+            ]
+        );
+
+        $this->assertSame(['Kept after reorder'], $result['pros']);
+    }
 }
 }

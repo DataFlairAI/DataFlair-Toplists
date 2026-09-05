@@ -91,13 +91,13 @@ registerBlockType(metadata.name, {
 				return legacyKey;
 			}
 
-			const slugSuffix = `-${brandSlug}`;
-			return Object.keys(currentProsCons).find((key) => (
-				key.startsWith('casino-')
-				&& key !== legacyKey
-				&& key.endsWith(slugSuffix)
-				&& /^casino-\d+-/.test(key)
-			)) || null;
+			// WHY: After a toplist reorder the brand keeps its identity but the
+			// position in casino-{N}-{slug} no longer matches. Exact slug match
+			// (not endsWith) so "game" cannot steal "bc-game"'s override.
+			return Object.keys(currentProsCons).find((key) => {
+				const match = key.match(/^casino-\d+-(.+)$/);
+				return match && match[1] === brandSlug;
+			}) || null;
 		};
 
 		const getCasinoOverrideState = (casino, currentProsCons) => {
@@ -123,6 +123,42 @@ registerBlockType(metadata.name, {
 			pros: Array.isArray(overrideData?.pros) ? [...overrideData.pros] : [...(fallbackData.pros || [])],
 			cons: Array.isArray(overrideData?.cons) ? [...overrideData.cons] : [...(fallbackData.cons || [])]
 		});
+
+		/**
+		 * Rewrite legacy casino-{position}-{slug} override keys onto stable
+		 * brand/item/slug keys whenever casinos load. The toplist id does not
+		 * change on reorder — only ranks do — so without this migration the
+		 * frontend loses custom pros/cons until an editor manually clicks
+		 * "+ Add Pro" (which used to trigger the rewrite as a side effect).
+		 */
+		useEffect(() => {
+			if (!casinos.length) {
+				return;
+			}
+
+			const currentProsCons = prosCons || {};
+			const nextProsCons = { ...currentProsCons };
+			let changed = false;
+
+			casinos.forEach((casino) => {
+				const { stableKey, resolvedKey, overrideData } = getCasinoOverrideState(casino, nextProsCons);
+
+				if (!resolvedKey || resolvedKey === stableKey || !overrideData) {
+					return;
+				}
+
+				// Prefer an existing stable entry; only copy when missing.
+				if (!nextProsCons[stableKey]) {
+					nextProsCons[stableKey] = createCasinoOverrideData(overrideData);
+				}
+				delete nextProsCons[resolvedKey];
+				changed = true;
+			});
+
+			if (changed) {
+				setAttributes({ prosCons: nextProsCons });
+			}
+		}, [casinos, prosCons]);
 
 		const updateCasinoOverride = (casino, transform, fallbackData = { pros: [], cons: [] }) => {
 			const currentProsCons = prosCons || {};

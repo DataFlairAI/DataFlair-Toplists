@@ -429,6 +429,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.3.2
+- **Fixed: block pros/cons no longer disappear after a toplist reorder.** Custom pros/cons are stored on the WordPress page (not in the DataFlair API). Older blocks keyed them as `casino-{position}-{slug}`; reordering keeps the same toplist id but changes ranks, so the frontend stopped matching those overrides until an editor clicked “+ Add Pro” (which migrated the key as a side effect). `ProsConsResolver` now finds legacy keys at any position for the brand, and the Gutenberg editor auto-migrates them to stable `casino-brand-{id}` / item / slug keys when casinos load.
+- **Tests:** `ProsConsResolverDriftTest` covers reorder survival, stable-key precedence, and sanitized-name slug matching.
+
 ### 2.3.1
 - **Fixed: Gutenberg block editor preview ribbon/star CSS.** Editor styles now enqueue on `enqueue_block_assets` (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously `enqueue_block_editor_assets` left `editor.css` in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and a broken “OUR TOP CHOICE” layout. Added SVG max-width / ~18px containment for `.ribbon-star` in `assets/editor.css`. Touched: `BlockRegistrar.php`, `EditorAssets.php`, `assets/editor.css`, and related unit tests.
 - **Deploy note:** Production deploys must use `composer install --no-dev` or `composer run install-prod`. Never ship a partial or development Composer `vendor/` tree — a broken vendor requiring mockery caused a production critical error unrelated to the editor CSS fix.
@@ -812,4 +816,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.1 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.3.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
