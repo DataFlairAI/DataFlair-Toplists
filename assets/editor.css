@@ -51,8 +51,11 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	flex-wrap: nowrap;
 	gap: 0.5rem;
 	height: 44px;
+	max-height: 44px;
+	overflow: hidden;
 	background: linear-gradient(135deg, #5b5bfa 0%, #7c70ff 100%);
 	color: white;
 	font-size: 0.875rem;
@@ -63,9 +66,30 @@
 	box-shadow: 0 2px 8px rgba(91, 91, 250, 0.3);
 }
 
-.ribbon-star {
-	width: 18px;
-	height: 18px;
+/*
+ * Contain ribbon / card SVGs in the editor canvas.
+ * Without fixed dimensions (or when admin reset rules expand svg to 100%
+ * width), the star fills the block and stacks "OUR TOP CHOICE" / rank / logo.
+ */
+.casino-card-ribbon .ribbon-star,
+svg.ribbon-star {
+	width: 18px !important;
+	height: 18px !important;
+	max-width: 18px !important;
+	max-height: 18px !important;
+	flex-shrink: 0;
+	display: block;
+}
+
+.casino-card-wrapper svg.rating-star,
+.casino-card-wrapper svg.review-arrow,
+.casino-card-wrapper svg.feature-check,
+.casino-card-wrapper svg.toggle-arrow,
+.casino-card-wrapper svg.heading-icon,
+.casino-card-wrapper svg.reviewer-icon {
+	flex-shrink: 0;
+	max-width: 24px;
+	height: auto;
 }
 
 /* Main Card */

@@ -29,11 +29,15 @@ final class BlockRegistrar
 
     /**
      * Wire WP action hooks. Called from the god-class boot path.
+     *
+     * Editor CSS uses `enqueue_block_assets` (with an is_admin() guard inside
+     * EditorAssets) so styles reach the iframed block canvas (WP 6.3+).
+     * `enqueue_block_editor_assets` only styles the parent editor chrome.
      */
     public function register(): void
     {
         add_action('init', [$this, 'registerBlock']);
-        add_action('enqueue_block_editor_assets', [$this->editorAssets, 'enqueue']);
+        add_action('enqueue_block_assets', [$this->editorAssets, 'enqueue']);
     }
 
     /**

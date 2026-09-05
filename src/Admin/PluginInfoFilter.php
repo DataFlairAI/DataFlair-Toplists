@@ -173,6 +173,10 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.3.1</h4>
+<ul>
+  <li><strong>Fixed: Gutenberg block editor preview ribbon/star CSS.</strong> Editor styles now enqueue on <code>enqueue_block_assets</code> (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously <code>enqueue_block_editor_assets</code> left <code>editor.css</code> in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and stacked layout. Added SVG max-width containment for <code>.ribbon-star</code> in the editor stylesheet.</li>
+</ul>
 <h4>2.3.0</h4>
 <ul>
   <li>Added: API contract handshake. Every API request now sends X-DataFlair-Plugin-Version, plus X-DataFlair-Expected-Contract on versioned endpoints; a backend that cannot serve the expected contract answers HTTP 409 and sync pauses loudly with a persistent admin notice instead of ingesting a response shape the plugin cannot render.</li>
