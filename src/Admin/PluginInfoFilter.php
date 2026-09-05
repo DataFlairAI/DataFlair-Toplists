@@ -175,7 +175,8 @@ final class PluginInfoFilter
         return '
 <h4>2.3.1</h4>
 <ul>
-  <li><strong>Fixed: Gutenberg block editor preview ribbon/star CSS.</strong> Editor styles now enqueue on <code>enqueue_block_assets</code> (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously <code>enqueue_block_editor_assets</code> left <code>editor.css</code> in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and stacked layout. Added SVG max-width containment for <code>.ribbon-star</code> in the editor stylesheet.</li>
+  <li><strong>Fixed: Gutenberg block editor preview ribbon/star CSS.</strong> Editor styles now enqueue on <code>enqueue_block_assets</code> (admin-only) so they reach the iframed block canvas (WP 6.3+). Previously <code>enqueue_block_editor_assets</code> left <code>editor.css</code> in the parent chrome only, so ServerSideRender showed an oversized ribbon SVG and a broken &ldquo;OUR TOP CHOICE&rdquo; layout. Added SVG max-width / ~18px containment for <code>.ribbon-star</code> in <code>assets/editor.css</code>. Touched: <code>BlockRegistrar.php</code>, <code>EditorAssets.php</code>, <code>assets/editor.css</code>, and related unit tests.</li>
+  <li><strong>Deploy note:</strong> Production deploys must use <code>composer install --no-dev</code> or <code>composer run install-prod</code>. Never ship a partial or development Composer <code>vendor/</code> tree &mdash; a broken vendor requiring mockery caused a production critical error unrelated to the editor CSS fix.</li>
 </ul>
 <h4>2.3.0</h4>
 <ul>
