@@ -705,7 +705,11 @@ class DataFlair_Toplists {
      * Phase 9.6 — lazy SettingsPage getter. Closure injection keeps the
      * extracted page from referencing the legacy class symbol while still
      * letting it call `get_api_base_url()` and `format_last_sync_label()`,
-     * both of which are still private on this class.
+     * both of which are still private on this class. The third closure
+     * exposes `BrandsApiUrlBuilder::effectiveBase()` so the page can show
+     * the version-rewritten URL brand sync actually uses, not just the raw
+     * stored option — the stored value can read `/v1` while V2 is selected
+     * and in effect, which reads as a broken sync when it isn't one.
      */
     private function settings_page_obj() {
         if ($this->settings_page_obj instanceof \DataFlair\Toplists\Admin\Pages\SettingsPage) {
@@ -713,7 +717,8 @@ class DataFlair_Toplists {
         }
         $this->settings_page_obj = new \DataFlair\Toplists\Admin\Pages\SettingsPage(
             \Closure::fromCallable([$this, 'get_api_base_url']),
-            \Closure::fromCallable([$this, 'format_last_sync_label'])
+            \Closure::fromCallable([$this, 'format_last_sync_label']),
+            \Closure::fromCallable([$this->brands_api_url_builder(), 'effectiveBase'])
         );
         return $this->settings_page_obj;
     }

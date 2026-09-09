@@ -13,8 +13,8 @@
  * What this unit test pins is the contract that future refactors must keep:
  *   1. The class lives in the Admin\Pages namespace.
  *   2. It implements PageInterface.
- *   3. The constructor accepts exactly two `\Closure` parameters
- *      (apiBaseUrlResolver, lastSyncLabelFormatter).
+ *   3. The constructor accepts exactly three `\Closure` parameters
+ *      (apiBaseUrlResolver, lastSyncLabelFormatter, brandsEffectiveBaseResolver).
  *   4. `render()` exists, returns void, and is callable.
  *
  * Anything that breaks one of these breaks the wiring inside
@@ -42,19 +42,20 @@ final class SettingsPageTest extends TestCase
     {
         $page = new SettingsPage(
             static fn() => 'http://api.test',
-            static fn(string $option) => 'never'
+            static fn(string $option) => 'never',
+            static fn() => 'http://api.test/api/v1'
         );
         $this->assertInstanceOf(PageInterface::class, $page);
     }
 
-    public function test_constructor_accepts_two_closure_parameters(): void
+    public function test_constructor_accepts_three_closure_parameters(): void
     {
         $reflection  = new ReflectionClass(SettingsPage::class);
         $constructor = $reflection->getConstructor();
         $this->assertNotNull($constructor, 'SettingsPage must declare a constructor');
 
         $params = $constructor->getParameters();
-        $this->assertCount(2, $params, 'constructor takes exactly 2 parameters');
+        $this->assertCount(3, $params, 'constructor takes exactly 3 parameters');
 
         foreach ($params as $param) {
             $type = $param->getType();
@@ -64,6 +65,7 @@ final class SettingsPageTest extends TestCase
 
         $this->assertSame('apiBaseUrlResolver', $params[0]->getName());
         $this->assertSame('lastSyncLabelFormatter', $params[1]->getName());
+        $this->assertSame('brandsEffectiveBaseResolver', $params[2]->getName());
     }
 
     public function test_render_method_exists_and_is_void(): void
