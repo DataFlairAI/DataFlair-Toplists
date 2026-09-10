@@ -14,22 +14,29 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
+use DataFlair\Toplists\Support\UrlTransformer;
 
 final class TestApiConnectionHandler implements AjaxHandlerInterface
 {
+    public function __construct(private ApiBaseUrlDetector $base)
+    {
+    }
+
     public function handle(array $request): array
     {
-        $token    = trim((string) get_option('dataflair_api_token', ''));
-        $base_url = trim((string) get_option('dataflair_api_base_url', ''));
+        $token = trim((string) get_option('dataflair_api_token', ''));
 
         if ($token === '') {
             return ['success' => false, 'data' => ['message' => 'API token is not configured.']];
         }
-        if ($base_url === '') {
+        if (! $this->base->isConfigured()) {
             return ['success' => false, 'data' => ['message' => 'API base URL is not configured.']];
         }
 
-        $endpoint = rtrim($base_url, '/') . '/toplists';
+        // Toplists always use v1, regardless of the Brands API Version radio.
+        $base_url = UrlTransformer::withApiVersion($this->base->detect(), 'v1');
+        $endpoint = $base_url . '/toplists';
         $start    = microtime(true);
         $resp     = wp_remote_get($endpoint, [
             'timeout' => 5,

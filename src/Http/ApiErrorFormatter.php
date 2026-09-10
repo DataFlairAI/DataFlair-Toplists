@@ -77,8 +77,7 @@ final class ApiErrorFormatter
             case 404:
                 return 'Endpoint not found (404) at ' . $url . '. '
                      . 'This usually means the API Base URL is wrong or the route does not exist. '
-                     . 'Expected format: https://tenant.dataflair.ai/api/v1. '
-                     . 'Currently configured: ' . get_option('dataflair_api_base_url', '(not set)');
+                     . 'Expected format: https://tenant.dataflair.ai/api/v1 (or /api/v2 for brands, if V2 is selected).';
 
             case 419:
                 return 'CSRF token mismatch (419). The API returned a Laravel session error. '

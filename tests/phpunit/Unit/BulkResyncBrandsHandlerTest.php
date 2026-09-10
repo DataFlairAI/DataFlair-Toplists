@@ -2,8 +2,11 @@
 /**
  * Phase 9.6 (admin UX redesign) — pins BulkResyncBrandsHandler contract.
  *
- * Verifies: rejects missing token, rejects empty IDs, and returns
- * start_batch:true for a valid request.
+ * Verifies: rejects missing token, rejects an unconfigured API base URL
+ * (the fallback-host credential-leak gap found in the second max-review
+ * pass of v2.3.3 — a token was still sent to the hard-coded fallback host
+ * even when Settings claimed there was "nothing to call"), rejects empty
+ * IDs, and returns start_batch:true for a valid request.
  */
 
 declare(strict_types=1);
@@ -32,21 +35,36 @@ final class BulkResyncBrandsHandlerTest extends TestCase
         parent::tearDown();
     }
 
+    private function handler(bool $isConfigured = true): BulkResyncBrandsHandler
+    {
+        return new BulkResyncBrandsHandler(static fn (): bool => $isConfigured);
+    }
+
     public function test_rejects_missing_api_token(): void
     {
         Functions\when('get_option')->alias(static fn($key, $default = false) => '');
 
-        $result = (new BulkResyncBrandsHandler())->handle(['api_brand_ids' => [1, 2]]);
+        $result = $this->handler()->handle(['api_brand_ids' => [1, 2]]);
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('token', strtolower($result['data']['message']));
+    }
+
+    public function test_rejects_when_api_base_url_is_not_configured(): void
+    {
+        Functions\when('get_option')->alias(static fn($key, $default = false) => 'test-token');
+
+        $result = $this->handler(isConfigured: false)->handle(['api_brand_ids' => [1, 2]]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('API Base URL is not configured', $result['data']['message']);
     }
 
     public function test_rejects_empty_brand_ids(): void
     {
         Functions\when('get_option')->alias(static fn($key, $default = false) => 'test-token');
 
-        $result = (new BulkResyncBrandsHandler())->handle(['api_brand_ids' => []]);
+        $result = $this->handler()->handle(['api_brand_ids' => []]);
 
         $this->assertFalse($result['success']);
     }
@@ -55,7 +73,7 @@ final class BulkResyncBrandsHandlerTest extends TestCase
     {
         Functions\when('get_option')->alias(static fn($key, $default = false) => 'test-token');
 
-        $result = (new BulkResyncBrandsHandler())->handle(['api_brand_ids' => [1, 2, 3]]);
+        $result = $this->handler()->handle(['api_brand_ids' => [1, 2, 3]]);
 
         $this->assertTrue($result['success']);
         $this->assertTrue($result['data']['start_batch']);
@@ -65,7 +83,7 @@ final class BulkResyncBrandsHandlerTest extends TestCase
     {
         Functions\when('get_option')->alias(static fn($key, $default = false) => 'test-token');
 
-        $result = (new BulkResyncBrandsHandler())->handle(['api_brand_ids' => [10, 20]]);
+        $result = $this->handler()->handle(['api_brand_ids' => [10, 20]]);
 
         $this->assertStringContainsString('2', $result['data']['message']);
     }

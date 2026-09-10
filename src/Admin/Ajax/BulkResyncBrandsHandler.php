@@ -19,11 +19,19 @@ use DataFlair\Toplists\Admin\AjaxHandlerInterface;
 
 final class BulkResyncBrandsHandler implements AjaxHandlerInterface
 {
+    public function __construct(private \Closure $isApiConfigured)
+    {
+    }
+
     public function handle(array $request): array
     {
         $token = trim((string) get_option('dataflair_api_token'));
         if ($token === '') {
             return ['success' => false, 'data' => ['message' => 'API token not configured.']];
+        }
+
+        if (! ($this->isApiConfigured)()) {
+            return ['success' => false, 'data' => ['message' => 'API Base URL is not configured. Set it in Settings before syncing.']];
         }
 
         $raw_ids = isset($request['api_brand_ids']) ? (array) $request['api_brand_ids'] : [];

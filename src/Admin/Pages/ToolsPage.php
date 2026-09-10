@@ -228,8 +228,7 @@ final class ToolsPage implements PageInterface
 
     private function renderApiPreviewTab(): void
     {
-        $token    = trim(get_option('dataflair_api_token', ''));
-        $base_url = ($this->apiBaseUrlResolver)();
+        $token = trim(get_option('dataflair_api_token', ''));
         ?>
         <div class="tab-content" style="padding-top:16px;">
             <h2>API Response Preview</h2>

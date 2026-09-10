@@ -17,11 +17,17 @@ use Brain\Monkey;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
 use DataFlair\Toplists\Logging\LoggerFactory;
 use DataFlair\Toplists\Logging\NullLogger;
 use DataFlair\Toplists\Sync\ContractMismatch;
+use DataFlair\Toplists\Support\UrlTransformer;
+use DataFlair\Toplists\Support\UrlValidator;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlValidator.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/ApiBaseUrlDetector.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/NullLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/LoggerFactory.php';
@@ -35,6 +41,11 @@ final class TestsRunnerContractCheckTest extends TestCase
 {
     /** @var array<string, mixed> Options read via the GLOBAL namespace (TestsRunner, ApiClient, detector). */
     private array $options = [];
+
+    private function runner(): TestsRunner
+    {
+        return new TestsRunner(new ApiBaseUrlDetector(new UrlTransformer(new UrlValidator())));
+    }
 
     protected function setUp(): void
     {
@@ -90,7 +101,7 @@ final class TestsRunnerContractCheckTest extends TestCase
     {
         Functions\expect('wp_remote_get')->never();
 
-        $result = (new TestsRunner())->run('contract_check');
+        $result = ($this->runner())->run('contract_check');
 
         $this->assertSame('warn', $result['status']);
         $this->assertStringContainsString('skipped', $result['message']);
@@ -107,7 +118,7 @@ final class TestsRunnerContractCheckTest extends TestCase
             'response' => ['code' => 200],
         ]);
 
-        $result = (new TestsRunner())->run('contract_check');
+        $result = ($this->runner())->run('contract_check');
 
         $this->assertSame('warn', $result['status']);
         $this->assertStringContainsString('still paused', $result['message']);
@@ -126,7 +137,7 @@ final class TestsRunnerContractCheckTest extends TestCase
             'response' => ['code' => 409],
         ]);
 
-        $result = (new TestsRunner())->run('contract_check');
+        $result = ($this->runner())->run('contract_check');
 
         $this->assertSame('fail', $result['status']);
         $this->assertStringContainsString('rejected the contract', $result['message']);
@@ -140,7 +151,7 @@ final class TestsRunnerContractCheckTest extends TestCase
             'response' => ['code' => 200],
         ]);
 
-        $result = (new TestsRunner())->run('contract_check');
+        $result = ($this->runner())->run('contract_check');
 
         $this->assertSame('pass', $result['status']);
     }

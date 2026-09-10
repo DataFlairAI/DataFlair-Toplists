@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace DataFlair\Toplists\Http;
 
+use DataFlair\Toplists\Support\UrlTransformer;
+
 final class BrandsApiUrlBuilder
 {
     public function __construct(private ApiBaseUrlDetector $base)
@@ -19,13 +21,23 @@ final class BrandsApiUrlBuilder
 
     public function buildPageUrl(int $page, int $perPage = 25): string
     {
-        $version = get_option('dataflair_brands_api_version', 'v1');
-        $base    = $this->base->detect();
+        return $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;
+    }
 
-        if ($version === 'v2') {
-            $base = preg_replace('#/api/v\d+$#', '/api/v2', $base);
-        }
+    /**
+     * The base URL brand sync will hit after the `dataflair_brands_api_version`
+     * rewrite. The stored option can still read `/api/v1` while V2 is selected
+     * and in effect (or vice versa, after a manual URL edit), so Settings shows
+     * this instead of the raw option. The rewrite is symmetric — whichever
+     * version is selected is the one applied — so the radio is authoritative
+     * in both directions, not just v1-to-v2. Settings passes $persist = false
+     * so rendering never writes an option.
+     */
+    public function effectiveBase(bool $persist = true): string
+    {
+        $base    = $this->base->detect($persist);
+        $version = get_option('dataflair_brands_api_version', 'v1') === 'v2' ? 'v2' : 'v1';
 
-        return rtrim((string) $base, '/') . '/brands?per_page=' . $perPage . '&page=' . $page;
+        return UrlTransformer::withApiVersion($base, $version);
     }
 }

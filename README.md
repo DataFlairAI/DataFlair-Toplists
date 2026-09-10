@@ -429,6 +429,14 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.3.3
+- **Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.** The API Connection tab echoed the stored base URL verbatim as "Current", so it kept reading `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time. That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via `BrandsApiUrlBuilder::effectiveBase()`, which rewrites symmetrically in both directions so the radio is authoritative either way. Test Connection is labelled as hitting the toplists endpoint (always v1), and now actually enforces v1.
+- **Fixed: brand and toplist sync buttons refuse to run when the API Base URL isn't configured**, instead of silently falling through to a hard-coded fallback host with a real bearer token.
+- **Fixed: the admin API preview's forced-V2 rewrite works again for base URLs without a literal `/api/` segment**, via a new `UrlTransformer::forceApiVersion()` used only by that tool.
+- **Fixed:** the 404 error message no longer shows a stale URL alongside the real one that failed. The Dashboard health tile, Tools diagnostics, and Test Connection now all agree with Settings about whether the API is configured. The Tools → API Preview tab no longer writes an option on a plain page load.
+- **Changed:** the `/api/vN` rewrite has one owner, `UrlTransformer::withApiVersion()` (brand sync, conservative) plus `forceApiVersion()` (the preview tool, which must guarantee a version). `ApiBaseUrlDetector::detect()` accepts `$persist = false` so rendering Settings never writes the cache-back option. `isConfigured()` decides when nothing is configured, so the hard-coded fallback host is never shown as the site's own setting, and is now shared across Settings, the sync guards, the Dashboard tile, Tools, and Test Connection. `SettingsPage` takes a single closure; two it never called were removed.
+- **Tests:** `effectiveBase()` for both v1↔v2 directions (mutation-verified), `detect(false)` never calling `update_option` (mutation-verified), `isConfigured()`, `withApiVersion()` and `forceApiVersion()` cases (mutation-verified), and new guard tests for all four sync-trigger handlers.
+
 ### 2.3.2
 - **Fixed: block pros/cons no longer disappear after a toplist reorder.** Custom pros/cons are stored on the WordPress page (not in the DataFlair API). Older blocks keyed them as `casino-{position}-{slug}`; reordering keeps the same toplist id but changes ranks, so the frontend stopped matching those overrides until an editor clicked “+ Add Pro” (which migrated the key as a side effect). `ProsConsResolver` now finds legacy keys at any position for the brand, and the Gutenberg editor auto-migrates them to stable `casino-brand-{id}` / item / slug keys when casinos load.
 - **Tests:** `ProsConsResolverDriftTest` covers reorder survival, stable-key precedence, and sanitized-name slug matching.
@@ -816,4 +824,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.2 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.3.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9

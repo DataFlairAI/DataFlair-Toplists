@@ -15,6 +15,10 @@ use DataFlair\Toplists\Admin\AjaxHandlerInterface;
 
 final class FetchAllToplistsHandler implements AjaxHandlerInterface
 {
+    public function __construct(private \Closure $isApiConfigured)
+    {
+    }
+
     public function handle(array $request): array
     {
         $token = trim((string) get_option('dataflair_api_token'));
@@ -22,6 +26,13 @@ final class FetchAllToplistsHandler implements AjaxHandlerInterface
             return [
                 'success' => false,
                 'data'    => ['message' => 'API token not configured. Please set your API token first.'],
+            ];
+        }
+
+        if (! ($this->isApiConfigured)()) {
+            return [
+                'success' => false,
+                'data'    => ['message' => 'API Base URL is not configured. Set it in Settings before syncing.'],
             ];
         }
 

@@ -20,7 +20,8 @@ use DataFlair\Toplists\Sync\ToplistSyncServiceInterface;
 final class BulkResyncToplistsHandler implements AjaxHandlerInterface
 {
     public function __construct(
-        private readonly ToplistSyncServiceInterface $sync
+        private readonly ToplistSyncServiceInterface $sync,
+        private \Closure $isApiConfigured
     ) {}
 
     public function handle(array $request): array
@@ -28,6 +29,10 @@ final class BulkResyncToplistsHandler implements AjaxHandlerInterface
         $token = trim((string) get_option('dataflair_api_token', ''));
         if ($token === '') {
             return ['success' => false, 'data' => ['message' => 'API token is not configured. Add it in Settings → API Connection.']];
+        }
+
+        if (! ($this->isApiConfigured)()) {
+            return ['success' => false, 'data' => ['message' => 'API Base URL is not configured. Set it in Settings before syncing.']];
         }
 
         $ids = isset($request['api_toplist_ids']) && is_array($request['api_toplist_ids'])

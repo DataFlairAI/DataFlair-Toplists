@@ -14,14 +14,25 @@ use Brain\Monkey;
 use Brain\Monkey\Functions;
 use DataFlair\Toplists\Admin\Ajax\RunTestHandler;
 use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
+use DataFlair\Toplists\Support\UrlTransformer;
+use DataFlair\Toplists\Support\UrlValidator;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlValidator.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/ApiBaseUrlDetector.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/Tools/TestsRunner.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/RunTestHandler.php';
 
 final class RunTestHandlerTest extends TestCase
 {
+    private function runner(): TestsRunner
+    {
+        return new TestsRunner(new ApiBaseUrlDetector(new UrlTransformer(new UrlValidator())));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -37,7 +48,7 @@ final class RunTestHandlerTest extends TestCase
 
     public function test_rejects_empty_slug(): void
     {
-        $handler = new RunTestHandler(new TestsRunner());
+        $handler = new RunTestHandler($this->runner());
 
         $result = $handler->handle([]);
 
@@ -47,7 +58,7 @@ final class RunTestHandlerTest extends TestCase
 
     public function test_rejects_unknown_slug(): void
     {
-        $handler = new RunTestHandler(new TestsRunner());
+        $handler = new RunTestHandler($this->runner());
 
         $result = $handler->handle(['slug' => 'not_a_real_test']);
 
@@ -68,7 +79,7 @@ final class RunTestHandlerTest extends TestCase
             define('DATAFLAIR_DB_VERSION', '1.12');
         }
 
-        $handler = new RunTestHandler(new TestsRunner());
+        $handler = new RunTestHandler($this->runner());
         $result  = $handler->handle(['slug' => 'db_schema']);
 
         $this->assertTrue($result['success']);
@@ -98,7 +109,7 @@ final class RunTestHandlerTest extends TestCase
             define('DATAFLAIR_DB_VERSION', '1.12');
         }
 
-        (new RunTestHandler(new TestsRunner()))->handle(['slug' => 'db_schema']);
+        (new RunTestHandler($this->runner()))->handle(['slug' => 'db_schema']);
 
         $this->assertTrue($persisted, 'update_option should have been called to persist the result');
     }

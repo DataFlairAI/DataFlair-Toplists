@@ -92,10 +92,7 @@ final class MenuRegistrarTest extends TestCase
                 static fn(string $option) => 'never'
             ),
             new ToolsPage(static fn() => 'http://api.test'),
-            new SettingsPage(
-                static fn() => 'http://api.test',
-                static fn(string $option) => 'never'
-            )
+            new SettingsPage(static fn() => 'http://api.test/api/v1')
         );
     }
 }

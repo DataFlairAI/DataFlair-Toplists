@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.3.3] - 2026-09-10
+
+### Fixed
+- Settings › API Connection no longer implies brand sync uses v1 while V2 is selected. The tab echoed the stored base URL verbatim as "Current", so it read `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time (Sigma read this as a broken sync during their first integration pass). That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via `BrandsApiUrlBuilder::effectiveBase()`, which now rewrites symmetrically in both directions so the radio is authoritative even if the stored URL was set manually. Test Connection is labelled as hitting the toplists endpoint (always v1), and now actually enforces v1 instead of trusting the raw stored value.
+- **Brand and toplist sync buttons now refuse to run when the API Base URL isn't configured**, instead of falling through to `ApiBaseUrlDetector`'s hard-coded fallback host with a real bearer token. Found in a second max-review pass: the "nothing is configured" copy above was true for the label but not for the buttons underneath it.
+- The admin API preview's forced-V2 rewrite (`brands_v2`, `brands/custom`) is restored for base URLs without a literal `/api/` segment, via a new `UrlTransformer::forceApiVersion()` used only by that tool. It was lost when the rewrite was first consolidated onto the conservative `withApiVersion()` brand sync needs.
+- The 404 error message no longer shows a stale "Currently configured" URL alongside the real one that just failed. It only cites the URL that was actually called.
+- The Dashboard health tile, Tools diagnostics, and Test Connection now all agree with Settings about whether the API is configured (via `ApiBaseUrlDetector::isConfigured()`, which also checks the endpoints-cache tier), instead of each hand-rolling a check that only looked at the base-URL option.
+- `Admin\Pages\Tools\ToolsPage`'s API Preview tab no longer writes an option on a plain page load. It was the same "GET must not persist" bug this release fixed in Settings, left live on a sibling page via an unused variable.
+
+### Changed
+- The `/api/vN` rewrite has one owner, `UrlTransformer::withApiVersion()`, shared by brand sync and (via the new `forceApiVersion()`) the admin API preview. `withApiVersion()` rewrites the `/api/vN` form only, so brand-sync traffic is unchanged for URLs it doesn't recognise; `forceApiVersion()` additionally falls back to a bare `/vN` for the preview tool, whose job is guaranteeing a version.
+- `ApiBaseUrlDetector::detect()` accepts `$persist = false`; Settings uses it so a plain GET never writes the cache-back option. `ApiBaseUrlDetector::isConfigured()` decides when nothing is configured, checking both the base-URL option and the endpoints cache, and is now shared by Settings, the sync-trigger guards, the Dashboard tile, Tools diagnostics, and Test Connection.
+- `SettingsPage` takes a single closure; the two it never called were removed.
+
+### Tests
+- `BrandsApiUrlBuilderTest`: `effectiveBase()` for v2 with a stored v1 URL and the reverse downgrade, both mutation-verified. `ApiBaseUrlDetectorTest`: `detect(false)` never calls `update_option` (mutation-verified); four `isConfigured()` cases. `UrlTransformerTest`: four `withApiVersion()` cases plus three `forceApiVersion()` cases (mutation-verified). New `FetchAllBrandsHandlerTest`, `FetchAllToplistsHandlerTest`, `BulkResyncToplistsHandlerTest`; `BulkResyncBrandsHandlerTest` extended. Each pins the not-configured guard, mutation-verified on the brands handler and proven by a sync-service stub that throws if called, on the toplists handler.
+
 ## [2.3.2] - 2026-09-05
 
 ### Fixed

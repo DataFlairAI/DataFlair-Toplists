@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.3.2
+ * Version: 2.3.3
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.3.2');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.3.3');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
@@ -658,7 +658,9 @@ class DataFlair_Toplists {
             $this->api_client(),
             $this->toplist_sync_service(),
             $this->brand_sync_service(),
-            \Closure::fromCallable([$this, 'get_api_base_url'])
+            \Closure::fromCallable([$this, 'get_api_base_url']),
+            \Closure::fromCallable([$this->api_base_url_detector(), 'isConfigured']),
+            $this->api_base_url_detector()
         );
         return $this->admin_bootstrap;
     }
@@ -702,18 +704,21 @@ class DataFlair_Toplists {
     }
 
     /**
-     * Phase 9.6 — lazy SettingsPage getter. Closure injection keeps the
-     * extracted page from referencing the legacy class symbol while still
-     * letting it call `get_api_base_url()` and `format_last_sync_label()`,
-     * both of which are still private on this class.
+     * Phase 9.6 — lazy SettingsPage getter. The page takes one closure: the
+     * version-rewritten base URL brand sync uses (see
+     * BrandsApiUrlBuilder::effectiveBase()), or null when nothing is
+     * configured so the page never presents the detector's hard-coded
+     * fallback host as this tenant's setting. It resolves lazily and with
+     * $persist = false, so rendering Settings never writes an option.
      */
     private function settings_page_obj() {
         if ($this->settings_page_obj instanceof \DataFlair\Toplists\Admin\Pages\SettingsPage) {
             return $this->settings_page_obj;
         }
         $this->settings_page_obj = new \DataFlair\Toplists\Admin\Pages\SettingsPage(
-            \Closure::fromCallable([$this, 'get_api_base_url']),
-            \Closure::fromCallable([$this, 'format_last_sync_label'])
+            fn (): ?string => $this->api_base_url_detector()->isConfigured()
+                ? $this->brands_api_url_builder()->effectiveBase(false)
+                : null
         );
         return $this->settings_page_obj;
     }

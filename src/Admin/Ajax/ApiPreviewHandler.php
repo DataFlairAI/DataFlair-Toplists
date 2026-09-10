@@ -15,6 +15,7 @@ namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
 use DataFlair\Toplists\Http\HttpClientInterface;
+use DataFlair\Toplists\Support\UrlTransformer;
 
 final class ApiPreviewHandler implements AjaxHandlerInterface
 {
@@ -129,15 +130,14 @@ final class ApiPreviewHandler implements AjaxHandlerInterface
         return null;
     }
 
-    /** Rewrite any /api/vN segment to /api/v2 so single-resource endpoints resolve. */
+    /**
+     * Force /api/v2 (or a bare /v2 for a base URL without an /api/ segment)
+     * so single-resource endpoints resolve. This preview tool's whole job is
+     * guaranteeing V2, unlike brand sync, which must not guess-rewrite a URL
+     * shape it doesn't recognise — see UrlTransformer::forceApiVersion().
+     */
     private function toV2Base(string $base_url): string
     {
-        // Try regex first; fall back to plain str_replace for v1 → v2.
-        $replaced = preg_replace('#/api/v\d+$#', '/api/v2', $base_url);
-        if ($replaced !== null && $replaced !== $base_url) {
-            return rtrim($replaced, '/');
-        }
-        // Fallback: replace the last /v1, /v2 etc. occurrence directly.
-        return rtrim((string) preg_replace('#/v\d+$#', '/v2', $base_url), '/');
+        return UrlTransformer::forceApiVersion($base_url, 'v2');
     }
 }
