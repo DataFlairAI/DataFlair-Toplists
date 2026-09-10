@@ -9,6 +9,9 @@
  *   3. Hard-coded fallback to `https://sigma.dataflair.ai/api/v1`.
  *
  * Returns a URL with no trailing slash and no path beyond `/api/vN`.
+ *
+ * Tier 2 caches the extracted base back into option 1. Read-only callers (a
+ * Settings render) pass $persist = false so a GET never writes an option.
  */
 
 declare(strict_types=1);
@@ -25,7 +28,7 @@ final class ApiBaseUrlDetector
     {
     }
 
-    public function detect(): string
+    public function detect(bool $persist = true): string
     {
         $stored = get_option('dataflair_api_base_url');
         if (! empty($stored)) {
@@ -34,19 +37,40 @@ final class ApiBaseUrlDetector
             return rtrim((string) $stored, '/');
         }
 
-        $endpoints = get_option('dataflair_api_endpoints');
-        if (! empty($endpoints)) {
-            $list = array_filter(array_map('trim', explode("\n", (string) $endpoints)));
-            if (! empty($list)) {
-                $first = reset($list);
-                if (preg_match('#^(https?://[^/]+/api/v\d+)/#', $first, $matches)) {
-                    $base = $this->transformer->maybeForceHttps($matches[1]);
-                    update_option('dataflair_api_base_url', $base);
-                    return rtrim($base, '/');
-                }
+        $fromEndpoints = $this->baseFromEndpoints();
+        if ($fromEndpoints !== null) {
+            $base = $this->transformer->maybeForceHttps($fromEndpoints);
+            if ($persist) {
+                update_option('dataflair_api_base_url', $base);
             }
+            return rtrim($base, '/');
         }
 
         return self::FALLBACK;
+    }
+
+    /**
+     * True when tier 1 or tier 2 can resolve a base. False means detect()
+     * would return the hard-coded fallback, which Settings must not present
+     * as this tenant's own configuration.
+     */
+    public function isConfigured(): bool
+    {
+        return ! empty(get_option('dataflair_api_base_url')) || $this->baseFromEndpoints() !== null;
+    }
+
+    private function baseFromEndpoints(): ?string
+    {
+        $endpoints = get_option('dataflair_api_endpoints');
+        if (empty($endpoints)) {
+            return null;
+        }
+
+        $list = array_filter(array_map('trim', explode("\n", (string) $endpoints)));
+        if (empty($list)) {
+            return null;
+        }
+
+        return preg_match('#^(https?://[^/]+/api/v\d+)/#', (string) reset($list), $matches) ? $matches[1] : null;
     }
 }

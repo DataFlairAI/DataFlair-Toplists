@@ -22,8 +22,6 @@ namespace DataFlair\Toplists\Admin\Pages;
 final class SettingsPage implements PageInterface
 {
     public function __construct(
-        private \Closure $apiBaseUrlResolver,
-        private \Closure $lastSyncLabelFormatter,
         private \Closure $brandsEffectiveBaseResolver
     ) {}
 
@@ -97,12 +95,6 @@ final class SettingsPage implements PageInterface
                                     <p class="description">
                                         Your DataFlair API base URL (e.g., https://tenant.dataflair.ai/api/v1).
                                         Leave empty to auto-detect from token or stored endpoints.
-                                        <?php
-                                        $current_base = get_option('dataflair_api_base_url');
-                                        if (!empty($current_base)) {
-                                            echo '<br><strong>Current: ' . esc_html($current_base) . '</strong>';
-                                        }
-                                        ?>
                                     </p>
                                 </td>
                             </tr>
@@ -124,9 +116,14 @@ final class SettingsPage implements PageInterface
                                         V2 includes classificationTypes, 15 multi-vertical brand fields
                                         (sports, poker, sweeps-coins) and unified offer types.
                                         Requires DataFlair API &ge; v2.
-                                        <br><strong>Brands sync will actually call: <?php echo esc_html(($this->brandsEffectiveBaseResolver)() . '/brands'); ?></strong>
-                                        &mdash; this reflects the version selected above even when the API
+                                        <?php $effective_base = ($this->brandsEffectiveBaseResolver)(); ?>
+                                        <?php if ($effective_base === null): ?>
+                                        <br><strong>No API base URL is configured yet, so brand sync has nothing to call.</strong>
+                                        <?php else: ?>
+                                        <br><strong>With the saved settings, brand sync calls: <?php echo esc_html($effective_base . '/brands'); ?></strong>
+                                        <br>This follows the version selected above once saved, even when the API
                                         Base URL field itself still ends in <code>/v1</code>.
+                                        <?php endif; ?>
                                     </p>
                                 </td>
                             </tr>
@@ -138,6 +135,7 @@ final class SettingsPage implements PageInterface
                             <span id="df-test-connection-result" style="margin-left:10px;"></span>
                             <span id="dataflair-save-message" style="margin-left:10px;"></span>
                         </p>
+                        <p class="description">Test Connection checks the toplists endpoint, which always uses v1. It does not exercise the Brands API Version above.</p>
                     </div>
                     <script>
                     jQuery(document).ready(function ($) {

@@ -175,8 +175,9 @@ final class PluginInfoFilter
         return '
 <h4>2.3.3</h4>
 <ul>
-  <li><strong>Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.</strong> The API Connection tab echoed the stored base URL verbatim as &ldquo;Current&rdquo;, so it kept reading <code>/api/v1</code> even though <code>BrandsApiUrlBuilder</code> rewrites the version at sync time. The Brands API Version row now states the exact URL brand sync will call, via the new <code>BrandsApiUrlBuilder::effectiveBase()</code>.</li>
-  <li><strong>Tests:</strong> two new <code>BrandsApiUrlBuilderTest</code> cases pin <code>effectiveBase()</code> for v1 and for v2-with-a-stored-v1-URL; mutation-verified (removing the rewrite fails both).</li>
+  <li><strong>Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.</strong> The API Connection tab echoed the stored base URL verbatim as &ldquo;Current&rdquo;, so it kept reading <code>/api/v1</code> even though <code>BrandsApiUrlBuilder</code> rewrites the version at sync time. That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via <code>BrandsApiUrlBuilder::effectiveBase()</code>, or says so when no base URL is configured yet. Test Connection is labelled as hitting the toplists endpoint (always v1).</li>
+  <li><strong>Changed:</strong> the <code>/api/vN</code> rewrite has one owner, <code>UrlTransformer::withApiVersion()</code>, shared by brand sync and the admin API preview; it rewrites the <code>/api/vN</code> form only, so the preview&rsquo;s old bare <code>/vN</code> fallback is gone. <code>ApiBaseUrlDetector::detect()</code> accepts <code>$persist = false</code> so rendering Settings never writes the cache-back option, and <code>isConfigured()</code> decides when Settings says nothing is configured, so the hard-coded fallback host is never shown as the site&rsquo;s own setting. <code>SettingsPage</code> takes a single closure; two it never called were removed.</li>
+  <li><strong>Tests:</strong> <code>effectiveBase()</code> for v2 with a stored v1 URL (mutation-verified), <code>detect(false)</code> never calling <code>update_option</code> (mutation-verified), four <code>isConfigured()</code> cases and four <code>withApiVersion()</code> cases.</li>
 </ul>
 <h4>2.3.2</h4>
 <ul>

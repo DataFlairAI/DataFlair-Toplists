@@ -13,8 +13,9 @@
  * What this unit test pins is the contract that future refactors must keep:
  *   1. The class lives in the Admin\Pages namespace.
  *   2. It implements PageInterface.
- *   3. The constructor accepts exactly three `\Closure` parameters
- *      (apiBaseUrlResolver, lastSyncLabelFormatter, brandsEffectiveBaseResolver).
+ *   3. The constructor accepts exactly one `\Closure` parameter
+ *      (brandsEffectiveBaseResolver). Two earlier closures were removed in
+ *      2.3.3 because render() never called them.
  *   4. `render()` exists, returns void, and is callable.
  *
  * Anything that breaks one of these breaks the wiring inside
@@ -40,32 +41,23 @@ final class SettingsPageTest extends TestCase
 {
     public function test_implements_page_interface(): void
     {
-        $page = new SettingsPage(
-            static fn() => 'http://api.test',
-            static fn(string $option) => 'never',
-            static fn() => 'http://api.test/api/v1'
-        );
+        $page = new SettingsPage(static fn() => 'http://api.test/api/v1');
         $this->assertInstanceOf(PageInterface::class, $page);
     }
 
-    public function test_constructor_accepts_three_closure_parameters(): void
+    public function test_constructor_accepts_one_closure_parameter(): void
     {
         $reflection  = new ReflectionClass(SettingsPage::class);
         $constructor = $reflection->getConstructor();
         $this->assertNotNull($constructor, 'SettingsPage must declare a constructor');
 
         $params = $constructor->getParameters();
-        $this->assertCount(3, $params, 'constructor takes exactly 3 parameters');
+        $this->assertCount(1, $params, 'constructor takes exactly 1 parameter');
 
-        foreach ($params as $param) {
-            $type = $param->getType();
-            $this->assertInstanceOf(ReflectionNamedType::class, $type);
-            $this->assertSame(\Closure::class, $type->getName());
-        }
-
-        $this->assertSame('apiBaseUrlResolver', $params[0]->getName());
-        $this->assertSame('lastSyncLabelFormatter', $params[1]->getName());
-        $this->assertSame('brandsEffectiveBaseResolver', $params[2]->getName());
+        $type = $params[0]->getType();
+        $this->assertInstanceOf(ReflectionNamedType::class, $type);
+        $this->assertSame(\Closure::class, $type->getName());
+        $this->assertSame('brandsEffectiveBaseResolver', $params[0]->getName());
     }
 
     public function test_render_method_exists_and_is_void(): void

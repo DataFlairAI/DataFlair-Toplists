@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.3.3] - 2026-09-09
 
 ### Fixed
-- Settings › API Connection no longer implies brand sync uses v1 while V2 is selected. The tab echoed the stored base URL verbatim as "Current", so it read `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time (Sigma read this as a broken sync during their first integration pass). The Brands API Version row now states the exact URL brand sync will call, via `BrandsApiUrlBuilder::effectiveBase()`.
+- Settings › API Connection no longer implies brand sync uses v1 while V2 is selected. The tab echoed the stored base URL verbatim as "Current", so it read `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time (Sigma read this as a broken sync during their first integration pass). That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via `BrandsApiUrlBuilder::effectiveBase()`, or says so when no base URL is configured yet. Test Connection is labelled as hitting the toplists endpoint (always v1).
+
+### Changed
+- The `/api/vN` rewrite has one owner, `UrlTransformer::withApiVersion()`, shared by brand sync and the admin API preview (previously duplicated in `ApiPreviewHandler`). It rewrites the `/api/vN` form only; the preview's old bare `/vN` fallback is gone, so brand sync behaviour is unchanged.
+- `ApiBaseUrlDetector::detect()` accepts `$persist = false`; Settings uses it so a plain GET never writes the cache-back option. `ApiBaseUrlDetector::isConfigured()` decides when Settings says nothing is configured, so the hard-coded fallback host is never shown as the site's own setting.
+- `SettingsPage` takes a single closure; the two it never called were removed.
 
 ### Tests
-- `BrandsApiUrlBuilderTest`: `effectiveBase()` for v1 default and for v2 with a stored v1 URL; mutation-verified.
+- `BrandsApiUrlBuilderTest`: `effectiveBase()` for v2 with a stored v1 URL, mutation-verified. `ApiBaseUrlDetectorTest`: `detect(false)` never calls `update_option` (mutation-verified); four `isConfigured()` cases. `UrlTransformerTest`: four `withApiVersion()` cases.
 
 ## [2.3.2] - 2026-09-05
 

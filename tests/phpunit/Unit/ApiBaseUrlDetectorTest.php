@@ -96,6 +96,58 @@ final class ApiBaseUrlDetectorTest extends TestCase
         $this->assertSame('https://tenant.dataflair.ai/api/v1', $captured['dataflair_api_base_url']);
     }
 
+    /**
+     * Settings renders the effective base on a plain GET; it must be able
+     * to resolve tier 2 without persisting the cache-back.
+     */
+    public function test_does_not_cache_back_when_persist_is_false(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url') {
+                return false;
+            }
+            if ($key === 'dataflair_api_endpoints') {
+                return "http://tenant.dataflair.ai/api/v1/toplists/3";
+            }
+            return $default;
+        });
+        Functions\expect('update_option')->never();
+
+        $this->assertSame('https://tenant.dataflair.ai/api/v1', $this->detector()->detect(false));
+    }
+
+    /**
+     * Settings asks this before showing an effective URL: when it is false,
+     * detect() would only return the hard-coded fallback host.
+     */
+    public function test_is_configured_when_a_base_url_is_stored(): void
+    {
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_base_url' ? 'https://tenant.dataflair.ai/api/v1' : $default);
+
+        $this->assertTrue($this->detector()->isConfigured());
+    }
+
+    public function test_is_configured_when_endpoints_yield_a_base(): void
+    {
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_endpoints' ? "https://tenant.dataflair.ai/api/v1/toplists/3" : $default);
+
+        $this->assertTrue($this->detector()->isConfigured());
+    }
+
+    public function test_is_not_configured_when_endpoints_do_not_match(): void
+    {
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_endpoints' ? "not a url" : $default);
+
+        $this->assertFalse($this->detector()->isConfigured());
+    }
+
+    public function test_is_not_configured_when_nothing_is_stored(): void
+    {
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $default);
+
+        $this->assertFalse($this->detector()->isConfigured());
+    }
+
     public function test_falls_back_when_nothing_is_stored(): void
     {
         Functions\when('get_option')->alias(function ($key, $default = false) {

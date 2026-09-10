@@ -98,26 +98,12 @@ final class BrandsApiUrlBuilderTest extends TestCase
     }
 
     /**
-     * effectiveBase() is what Settings displays as "Current:" for brand
-     * sync. It must reflect the v2 rewrite even though the raw stored
-     * option still ends in /v1 — this is the exact mismatch Sigma read as
-     * a broken sync (they had V2 selected and working; the label just
-     * never said so).
+     * effectiveBase() is what Settings displays for brand sync. It must
+     * reflect the v2 rewrite even though the raw stored option still ends in
+     * /v1 — the exact mismatch Sigma read as a broken sync (V2 was selected
+     * and working; the label never said so). The v1 case is already pinned
+     * by test_v1_default_appends_page_param, since buildPageUrl delegates.
      */
-    public function test_effective_base_reflects_v1_default(): void
-    {
-        Functions\when('get_option')->alias(function ($key, $default = false) {
-            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
-            if ($key === 'dataflair_brands_api_version') return 'v1';
-            return $default;
-        });
-
-        $this->assertSame(
-            'https://tenant.dataflair.ai/api/v1',
-            $this->builder()->effectiveBase()
-        );
-    }
-
     public function test_effective_base_reflects_v2_rewrite_even_though_stored_option_says_v1(): void
     {
         Functions\when('get_option')->alias(function ($key, $default = false) {

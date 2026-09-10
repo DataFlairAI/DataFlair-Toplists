@@ -61,4 +61,41 @@ final class UrlTransformerTest extends TestCase
             $transformer->maybeForceHttps('HTTP://example.com/path')
         );
     }
+
+    public function test_with_api_version_rewrites_the_api_segment(): void
+    {
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v2',
+            UrlTransformer::withApiVersion('https://tenant.dataflair.ai/api/v1', 'v2')
+        );
+    }
+
+    /**
+     * Brand sync only ever rewrote the `/api/vN` form; a custom gateway path
+     * that merely ends in `/v1` must not be touched (that would change live
+     * sync traffic for a URL the plugin does not understand).
+     */
+    public function test_with_api_version_leaves_a_bare_version_segment_alone(): void
+    {
+        $this->assertSame(
+            'https://api.tenant.com/v1',
+            UrlTransformer::withApiVersion('https://api.tenant.com/v1', 'v2')
+        );
+    }
+
+    public function test_with_api_version_strips_a_trailing_slash(): void
+    {
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v2',
+            UrlTransformer::withApiVersion('https://tenant.dataflair.ai/api/v1/', 'v2')
+        );
+    }
+
+    public function test_with_api_version_leaves_an_unversioned_url_alone(): void
+    {
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api',
+            UrlTransformer::withApiVersion('https://tenant.dataflair.ai/api/', 'v2')
+        );
+    }
 }
