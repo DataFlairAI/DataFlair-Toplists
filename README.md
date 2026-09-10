@@ -430,6 +430,7 @@ Brands that already match a published review post will be linked. Brands without
 ## Changelog
 
 ### 2.3.3
+- **Fixed: fatal error on Tools › Tests & Diagnostics**, found by a live WordPress 7.1 smoke test after merge (`renderTestsTab()` built a `TestsRunner` missing a required argument). Verified across every admin page this release touches. `Tested up to` updated to 7.1.
 - **Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.** The API Connection tab echoed the stored base URL verbatim as "Current", so it kept reading `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time. That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via `BrandsApiUrlBuilder::effectiveBase()`, which rewrites symmetrically in both directions so the radio is authoritative either way. Test Connection is labelled as hitting the toplists endpoint (always v1), and now actually enforces v1.
 - **Fixed: brand and toplist sync buttons refuse to run when the API Base URL isn't configured**, instead of silently falling through to a hard-coded fallback host with a real bearer token.
 - **Fixed: the admin API preview's forced-V2 rewrite works again for base URLs without a literal `/api/` segment**, via a new `UrlTransformer::forceApiVersion()` used only by that tool.
@@ -824,4 +825,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 6.9
+**Version:** 2.3.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.1
