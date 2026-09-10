@@ -15,6 +15,9 @@ use DataFlair\Toplists\Admin\MenuRegistrar;
 use DataFlair\Toplists\Admin\Pages\BrandsPage;
 use DataFlair\Toplists\Admin\Pages\DashboardPage;
 use DataFlair\Toplists\Database\BrandsRepositoryInterface;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
+use DataFlair\Toplists\Support\UrlTransformer;
+use DataFlair\Toplists\Support\UrlValidator;
 use DataFlair\Toplists\Admin\Pages\SettingsPage;
 use DataFlair\Toplists\Admin\Pages\ToolsPage;
 use DataFlair\Toplists\Admin\Pages\ToplistsListPage;
@@ -30,6 +33,9 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/PageInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/DashboardPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/ToplistsListPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/BrandsPage.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlValidator.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/ApiBaseUrlDetector.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/ToolsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Pages/SettingsPage.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/MenuRegistrar.php';
@@ -91,7 +97,10 @@ final class MenuRegistrarTest extends TestCase
                 $this->createStub(BrandsRepositoryInterface::class),
                 static fn(string $option) => 'never'
             ),
-            new ToolsPage(static fn() => 'http://api.test'),
+            new ToolsPage(
+                static fn() => 'http://api.test',
+                new ApiBaseUrlDetector(new UrlTransformer(new UrlValidator()))
+            ),
             new SettingsPage(static fn() => 'http://api.test/api/v1')
         );
     }

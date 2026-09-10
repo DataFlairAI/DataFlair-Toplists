@@ -24,11 +24,13 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Pages;
 
 use DataFlair\Toplists\Admin\Pages\Tools\TestsRunner;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
 
 final class ToolsPage implements PageInterface
 {
     public function __construct(
-        private \Closure $apiBaseUrlResolver
+        private \Closure $apiBaseUrlResolver,
+        private ApiBaseUrlDetector $base
     ) {}
 
     public function render(): void
@@ -80,7 +82,7 @@ final class ToolsPage implements PageInterface
 
     private function renderTestsTab(): void
     {
-        $runner  = new TestsRunner();
+        $runner  = new TestsRunner($this->base);
         $results = $runner->loadAll();
         $registry = TestsRunner::registry();
 

@@ -76,7 +76,7 @@ final class PluginInfoFilter
         $res->author        = '<a href="https://dataflair.ai">DataFlair</a>';
         $res->homepage      = 'https://dataflair.ai';
         $res->requires      = '6.3';
-        $res->tested        = '6.9';
+        $res->tested        = '7.1';
         $res->requires_php  = '8.1';
 
         $res->sections = [
@@ -175,6 +175,7 @@ final class PluginInfoFilter
         return '
 <h4>2.3.3</h4>
 <ul>
+  <li><strong>Fixed: fatal error on Tools &rsaquo; Tests &amp; Diagnostics</strong>, found by a live WordPress 7.1 smoke test after merge (<code>renderTestsTab()</code> built a <code>TestsRunner</code> missing a required argument). Verified across every admin page this release touches. <code>Tested up to</code> updated to 7.1.</li>
   <li><strong>Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.</strong> The API Connection tab echoed the stored base URL verbatim as &ldquo;Current&rdquo;, so it kept reading <code>/api/v1</code> even though <code>BrandsApiUrlBuilder</code> rewrites the version at sync time. That line is gone (the field already shows the saved value); the Brands API Version row now states the exact URL brand sync calls with the saved settings, via <code>BrandsApiUrlBuilder::effectiveBase()</code>, which rewrites symmetrically in both directions so the radio is authoritative either way. Test Connection is labelled as hitting the toplists endpoint (always v1), and now actually enforces v1.</li>
   <li><strong>Fixed: brand and toplist sync buttons refuse to run when the API Base URL isn&rsquo;t configured</strong>, instead of silently falling through to a hard-coded fallback host with a real bearer token.</li>
   <li><strong>Fixed: the admin API preview&rsquo;s forced-V2 rewrite works again for base URLs without a literal <code>/api/</code> segment</strong>, via a new <code>UrlTransformer::forceApiVersion()</code> used only by that tool.</li>
