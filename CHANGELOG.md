@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.3.3] - 2026-09-09
+
+### Fixed
+- Settings › API Connection no longer implies brand sync uses v1 while V2 is selected. The tab echoed the stored base URL verbatim as "Current", so it read `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time (Sigma read this as a broken sync during their first integration pass). The Brands API Version row now states the exact URL brand sync will call, via `BrandsApiUrlBuilder::effectiveBase()`.
+
+### Tests
+- `BrandsApiUrlBuilderTest`: `effectiveBase()` for v1 default and for v2 with a stored v1 URL; mutation-verified.
+
 ## [2.3.2] - 2026-09-05
 
 ### Fixed

@@ -429,6 +429,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.3.3
+- **Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.** The API Connection tab echoed the stored base URL verbatim as "Current", so it kept reading `/api/v1` even though `BrandsApiUrlBuilder` rewrites the version at sync time. The Brands API Version row now states the exact URL brand sync will call, via the new `BrandsApiUrlBuilder::effectiveBase()`.
+- **Tests:** two new `BrandsApiUrlBuilderTest` cases pin `effectiveBase()` for v1 and for v2 with a stored v1 URL; mutation-verified.
+
 ### 2.3.2
 - **Fixed: block pros/cons no longer disappear after a toplist reorder.** Custom pros/cons are stored on the WordPress page (not in the DataFlair API). Older blocks keyed them as `casino-{position}-{slug}`; reordering keeps the same toplist id but changes ranks, so the frontend stopped matching those overrides until an editor clicked “+ Add Pro” (which migrated the key as a side effect). `ProsConsResolver` now finds legacy keys at any position for the brand, and the Gutenberg editor auto-migrates them to stable `casino-brand-{id}` / item / slug keys when casinos load.
 - **Tests:** `ProsConsResolverDriftTest` covers reorder survival, stable-key precedence, and sanitized-name slug matching.

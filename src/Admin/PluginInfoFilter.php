@@ -173,6 +173,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.3.3</h4>
+<ul>
+  <li><strong>Fixed: Settings no longer implies brand sync uses v1 while V2 is selected.</strong> The API Connection tab echoed the stored base URL verbatim as &ldquo;Current&rdquo;, so it kept reading <code>/api/v1</code> even though <code>BrandsApiUrlBuilder</code> rewrites the version at sync time. The Brands API Version row now states the exact URL brand sync will call, via the new <code>BrandsApiUrlBuilder::effectiveBase()</code>.</li>
+  <li><strong>Tests:</strong> two new <code>BrandsApiUrlBuilderTest</code> cases pin <code>effectiveBase()</code> for v1 and for v2-with-a-stored-v1-URL; mutation-verified (removing the rewrite fails both).</li>
+</ul>
 <h4>2.3.2</h4>
 <ul>
   <li><strong>Fixed: block pros/cons no longer disappear after a toplist reorder.</strong> Custom pros/cons live on the WordPress page, not in the DataFlair API. Older blocks keyed them as <code>casino-{position}-{slug}</code>; reordering keeps the same toplist id but changes ranks, so the frontend stopped matching until an editor clicked &ldquo;+ Add Pro&rdquo;. <code>ProsConsResolver</code> now finds legacy keys at any position for the brand, and the Gutenberg editor auto-migrates them to stable <code>casino-brand-{id}</code> / item / slug keys when casinos load.</li>
