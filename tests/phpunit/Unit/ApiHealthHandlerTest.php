@@ -10,14 +10,25 @@ namespace DataFlair\Toplists\Tests\Unit\Admin\Ajax;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
 use DataFlair\Toplists\Admin\Ajax\ApiHealthHandler;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
+use DataFlair\Toplists\Support\UrlTransformer;
+use DataFlair\Toplists\Support\UrlValidator;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlValidator.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/ApiBaseUrlDetector.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/ApiHealthHandler.php';
 require_once __DIR__ . '/ApiHealthHandlerTestStubs.php';
 
 final class ApiHealthHandlerTest extends TestCase
 {
+    private function handler(): ApiHealthHandler
+    {
+        return new ApiHealthHandler(new ApiBaseUrlDetector(new UrlTransformer(new UrlValidator())));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -32,7 +43,7 @@ final class ApiHealthHandlerTest extends TestCase
         $cached = ['status' => 'healthy', 'ping_ms' => 42, 'error' => ''];
         Functions\when('get_transient')->justReturn($cached);
 
-        $result = (new ApiHealthHandler())->handle([]);
+        $result = ($this->handler())->handle([]);
 
         $this->assertTrue($result['success']);
         $this->assertSame('healthy', $result['data']['status']);
@@ -45,7 +56,7 @@ final class ApiHealthHandlerTest extends TestCase
         Functions\when('get_option')->alias(static fn($k, $d = false) => '');
 
 
-        $result = (new ApiHealthHandler())->handle([]);
+        $result = ($this->handler())->handle([]);
 
         $this->assertTrue($result['success']);
         $this->assertSame('unconfigured', $result['data']['status']);
@@ -69,7 +80,7 @@ final class ApiHealthHandlerTest extends TestCase
         Functions\when('wp_remote_get')->justReturn($err);
         Functions\when('is_wp_error')->justReturn(true);
 
-        $result = (new ApiHealthHandler())->handle([]);
+        $result = ($this->handler())->handle([]);
 
         $this->assertTrue($result['success']);
         $this->assertSame('failing', $result['data']['status']);
@@ -91,7 +102,7 @@ final class ApiHealthHandlerTest extends TestCase
         Functions\when('is_wp_error')->justReturn(false);
         Functions\when('wp_remote_retrieve_response_code')->justReturn(200);
 
-        $result = (new ApiHealthHandler())->handle([]);
+        $result = ($this->handler())->handle([]);
 
         $this->assertTrue($result['success']);
         $this->assertSame('healthy', $result['data']['status']);

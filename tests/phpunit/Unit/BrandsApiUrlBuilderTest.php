@@ -117,4 +117,25 @@ final class BrandsApiUrlBuilderTest extends TestCase
             $this->builder()->effectiveBase()
         );
     }
+
+    /**
+     * The rewrite must be symmetric. Before this test, effectiveBase() only
+     * rewrote v1->v2 and returned a /api/v2 stored URL unchanged when V1 was
+     * selected — so switching the radio back to V1 silently kept calling v2,
+     * and the Settings copy ("follows the version selected above") was false
+     * for exactly this case.
+     */
+    public function test_effective_base_downgrades_to_v1_even_though_stored_option_says_v2(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v2';
+            if ($key === 'dataflair_brands_api_version') return 'v1';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v1',
+            $this->builder()->effectiveBase()
+        );
+    }
 }

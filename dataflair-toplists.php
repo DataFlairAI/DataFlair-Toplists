@@ -658,7 +658,9 @@ class DataFlair_Toplists {
             $this->api_client(),
             $this->toplist_sync_service(),
             $this->brand_sync_service(),
-            \Closure::fromCallable([$this, 'get_api_base_url'])
+            \Closure::fromCallable([$this, 'get_api_base_url']),
+            \Closure::fromCallable([$this->api_base_url_detector(), 'isConfigured']),
+            $this->api_base_url_detector()
         );
         return $this->admin_bootstrap;
     }

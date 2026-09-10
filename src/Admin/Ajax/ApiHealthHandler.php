@@ -17,12 +17,18 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
+use DataFlair\Toplists\Support\UrlTransformer;
 
 final class ApiHealthHandler implements AjaxHandlerInterface
 {
     private const TRANSIENT     = 'dataflair_api_health';
     private const LAST_OPTION   = 'dataflair_api_health_last';
     private const TTL           = 60;
+
+    public function __construct(private ApiBaseUrlDetector $base)
+    {
+    }
 
     public function handle(array $request): array
     {
@@ -34,10 +40,9 @@ final class ApiHealthHandler implements AjaxHandlerInterface
             }
         }
 
-        $token    = trim((string) get_option('dataflair_api_token', ''));
-        $base_url = trim((string) get_option('dataflair_api_base_url', ''));
+        $token = trim((string) get_option('dataflair_api_token', ''));
 
-        if ($token === '' || $base_url === '') {
+        if ($token === '' || ! $this->base->isConfigured()) {
             return $this->persist([
                 'status'  => 'unconfigured',
                 'ping_ms' => 0,
@@ -45,7 +50,9 @@ final class ApiHealthHandler implements AjaxHandlerInterface
             ]);
         }
 
-        $probe_url = rtrim($base_url, '/') . '/toplists?per_page=1';
+        // Toplists always use v1, regardless of the Brands API Version radio.
+        $base_url  = UrlTransformer::withApiVersion($this->base->detect(), 'v1');
+        $probe_url = $base_url . '/toplists?per_page=1';
         $start     = microtime(true);
         $resp      = wp_remote_get($probe_url, [
             'timeout'   => 5,

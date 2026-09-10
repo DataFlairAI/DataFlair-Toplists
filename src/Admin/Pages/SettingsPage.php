@@ -118,7 +118,7 @@ final class SettingsPage implements PageInterface
                                         Requires DataFlair API &ge; v2.
                                         <?php $effective_base = ($this->brandsEffectiveBaseResolver)(); ?>
                                         <?php if ($effective_base === null): ?>
-                                        <br><strong>No API base URL is configured yet, so brand sync has nothing to call.</strong>
+                                        <br><strong>No API base URL is configured yet. The sync buttons on the Brands and Toplists pages will refuse to run until one is set, rather than falling back to an unrelated host.</strong>
                                         <?php else: ?>
                                         <br><strong>With the saved settings, brand sync calls: <?php echo esc_html($effective_base . '/brands'); ?></strong>
                                         <br>This follows the version selected above once saved, even when the API

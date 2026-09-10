@@ -38,6 +38,7 @@ use DataFlair\Toplists\Admin\Ajax\SyncToplistsBatchHandler;
 use DataFlair\Toplists\Database\AlternativesRepositoryInterface;
 use DataFlair\Toplists\Database\BrandsRepositoryInterface;
 use DataFlair\Toplists\Database\ToplistsRepositoryInterface;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
 use DataFlair\Toplists\Http\HttpClientInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Sync\BrandSyncServiceInterface;
@@ -56,7 +57,9 @@ final class AdminBootstrap
         private HttpClientInterface $api_client,
         private ToplistSyncServiceInterface $toplist_sync,
         private BrandSyncServiceInterface $brand_sync,
-        private \Closure $apiBaseUrlResolver
+        private \Closure $apiBaseUrlResolver,
+        private \Closure $isApiConfiguredResolver,
+        private ApiBaseUrlDetector $api_base_url_detector
     ) {}
 
     /**
@@ -75,7 +78,7 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_fetch_all_toplists',
-            new FetchAllToplistsHandler(),
+            new FetchAllToplistsHandler($this->isApiConfiguredResolver),
             'dataflair_fetch_all_toplists'
         );
         $router->register(
@@ -85,7 +88,7 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_fetch_all_brands',
-            new FetchAllBrandsHandler(),
+            new FetchAllBrandsHandler($this->isApiConfiguredResolver),
             'dataflair_fetch_all_brands'
         );
         $router->register(
@@ -125,11 +128,11 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_bulk_resync_brands',
-            new BulkResyncBrandsHandler(),
+            new BulkResyncBrandsHandler($this->isApiConfiguredResolver),
             'dataflair_bulk_resync_brands'
         );
 
-        $runner = new TestsRunner();
+        $runner = new TestsRunner($this->api_base_url_detector);
         $router->register(
             'dataflair_run_test',
             new RunTestHandler($runner),
@@ -154,7 +157,7 @@ final class AdminBootstrap
         // Phase 4 handlers.
         $router->register(
             'dataflair_api_health',
-            new ApiHealthHandler(),
+            new ApiHealthHandler($this->api_base_url_detector),
             'dataflair_api_health'
         );
         $router->register(
@@ -164,12 +167,12 @@ final class AdminBootstrap
         );
         $router->register(
             'dataflair_test_api_connection',
-            new TestApiConnectionHandler(),
+            new TestApiConnectionHandler($this->api_base_url_detector),
             'dataflair_test_api_connection'
         );
         $router->register(
             'dataflair_bulk_resync_toplists',
-            new BulkResyncToplistsHandler($this->toplist_sync),
+            new BulkResyncToplistsHandler($this->toplist_sync, $this->isApiConfiguredResolver),
             'dataflair_bulk_resync_toplists'
         );
         $router->register(

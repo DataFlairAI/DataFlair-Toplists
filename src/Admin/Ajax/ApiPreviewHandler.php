@@ -130,9 +130,14 @@ final class ApiPreviewHandler implements AjaxHandlerInterface
         return null;
     }
 
-    /** Rewrite any /api/vN segment to /api/v2 so single-resource endpoints resolve. */
+    /**
+     * Force /api/v2 (or a bare /v2 for a base URL without an /api/ segment)
+     * so single-resource endpoints resolve. This preview tool's whole job is
+     * guaranteeing V2, unlike brand sync, which must not guess-rewrite a URL
+     * shape it doesn't recognise — see UrlTransformer::forceApiVersion().
+     */
     private function toV2Base(string $base_url): string
     {
-        return UrlTransformer::withApiVersion($base_url, 'v2');
+        return UrlTransformer::forceApiVersion($base_url, 'v2');
     }
 }

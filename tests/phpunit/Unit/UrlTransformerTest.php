@@ -98,4 +98,34 @@ final class UrlTransformerTest extends TestCase
             UrlTransformer::withApiVersion('https://tenant.dataflair.ai/api/', 'v2')
         );
     }
+
+    /**
+     * forceApiVersion() is for a caller whose whole job is guaranteeing a
+     * version (the admin API preview reaching a V2-only endpoint), unlike
+     * withApiVersion(), which brand sync uses and which must never guess-
+     * rewrite a URL shape it doesn't recognise.
+     */
+    public function test_force_api_version_rewrites_the_api_segment_like_with_api_version(): void
+    {
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v2',
+            UrlTransformer::forceApiVersion('https://tenant.dataflair.ai/api/v1', 'v2')
+        );
+    }
+
+    public function test_force_api_version_rewrites_a_bare_version_segment_that_with_api_version_leaves_alone(): void
+    {
+        $this->assertSame(
+            'https://api.tenant.com/v2',
+            UrlTransformer::forceApiVersion('https://api.tenant.com/v1', 'v2')
+        );
+    }
+
+    public function test_force_api_version_leaves_a_truly_unversioned_url_alone(): void
+    {
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api',
+            UrlTransformer::forceApiVersion('https://tenant.dataflair.ai/api/', 'v2')
+        );
+    }
 }

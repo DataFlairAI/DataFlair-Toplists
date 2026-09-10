@@ -39,4 +39,21 @@ final class UrlTransformer
     {
         return (string) preg_replace('#/api/v\d+$#', '/api/' . $version, rtrim($url, '/'));
     }
+
+    /**
+     * Like withApiVersion(), but also rewrites a bare trailing `/vN` (no
+     * `/api/` segment) — for a caller whose whole job is guaranteeing a
+     * version, such as the admin API preview forcing V2 to reach a
+     * V2-only endpoint. Brand sync deliberately does NOT use this: it
+     * must never guess-rewrite a URL shape it does not recognise.
+     */
+    public static function forceApiVersion(string $url, string $version): string
+    {
+        $rewritten = self::withApiVersion($url, $version);
+        if ($rewritten !== rtrim($url, '/')) {
+            return $rewritten;
+        }
+
+        return (string) preg_replace('#/v\d+$#', '/' . $version, rtrim($url, '/'));
+    }
 }

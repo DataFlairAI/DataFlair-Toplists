@@ -22,11 +22,17 @@ declare(strict_types=1);
 
 namespace DataFlair\Toplists\Admin\Pages\Tools;
 
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
 use DataFlair\Toplists\Logging\LoggerFactory;
+use DataFlair\Toplists\Support\UrlTransformer;
 
 final class TestsRunner
 {
     public const OPTION_KEY = 'dataflair_test_results';
+
+    public function __construct(private ApiBaseUrlDetector $base)
+    {
+    }
 
     /** @return array<string,array{label:string,description:string}> */
     public static function registry(): array
@@ -166,17 +172,18 @@ final class TestsRunner
     {
         return [
             'api_connection' => function (): array {
-                $token    = trim((string) get_option('dataflair_api_token', ''));
-                $base_url = trim((string) get_option('dataflair_api_base_url', ''));
+                $token = trim((string) get_option('dataflair_api_token', ''));
 
                 if ($token === '') {
                     return ['status' => 'fail', 'message' => 'API token is not configured.'];
                 }
-                if ($base_url === '') {
-                    return ['status' => 'warn', 'message' => 'API token is set but no base URL configured — auto-detection will be used.'];
+                if (! $this->base->isConfigured()) {
+                    return ['status' => 'fail', 'message' => 'API base URL is not configured.'];
                 }
 
-                $ping_url = rtrim($base_url, '/') . '/toplists';
+                // Toplists always use v1, regardless of the Brands API Version radio.
+                $base_url = UrlTransformer::withApiVersion($this->base->detect(), 'v1');
+                $ping_url = $base_url . '/toplists';
                 $resp = wp_remote_head($ping_url, [
                     'timeout' => 3,
                     'headers' => ['Authorization' => 'Bearer ' . $token],
@@ -237,11 +244,7 @@ final class TestsRunner
                 // contract work NOW?", so it must be able to observe recovery.
                 // Base URL goes through the same detector sync uses (option,
                 // cached endpoints, fallback) instead of the raw option.
-                $base = (new \DataFlair\Toplists\Http\ApiBaseUrlDetector(
-                    new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator())
-                ))->detect();
-
-                $url  = rtrim($base, '/') . '/toplists?per_page=1&page=1';
+                $url = $this->base->detect() . '/toplists?per_page=1&page=1';
                 $resp = (new \DataFlair\Toplists\Http\ApiClient())->get($url, $token, 5, 0);
                 if (is_wp_error($resp)) {
                     return ['status' => 'warn', 'message' => 'Could not reach API: ' . $resp->get_error_message()];

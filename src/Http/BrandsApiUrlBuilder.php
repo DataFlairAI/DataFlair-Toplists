@@ -27,17 +27,17 @@ final class BrandsApiUrlBuilder
     /**
      * The base URL brand sync will hit after the `dataflair_brands_api_version`
      * rewrite. The stored option can still read `/api/v1` while V2 is selected
-     * and in effect, so Settings shows this instead of the raw option.
-     * Settings passes $persist = false so rendering never writes an option.
+     * and in effect (or vice versa, after a manual URL edit), so Settings shows
+     * this instead of the raw option. The rewrite is symmetric — whichever
+     * version is selected is the one applied — so the radio is authoritative
+     * in both directions, not just v1-to-v2. Settings passes $persist = false
+     * so rendering never writes an option.
      */
     public function effectiveBase(bool $persist = true): string
     {
-        $base = $this->base->detect($persist);
+        $base    = $this->base->detect($persist);
+        $version = get_option('dataflair_brands_api_version', 'v1') === 'v2' ? 'v2' : 'v1';
 
-        if (get_option('dataflair_brands_api_version', 'v1') === 'v2') {
-            return UrlTransformer::withApiVersion($base, 'v2');
-        }
-
-        return rtrim($base, '/');
+        return UrlTransformer::withApiVersion($base, $version);
     }
 }
