@@ -131,6 +131,7 @@ return array(
     'DataFlair\\Toplists\\Admin\\Ajax\\SaveReviewUrlHandler' => $baseDir . '/src/Admin/Ajax/SaveReviewUrlHandler.php',
     'DataFlair\\Toplists\\Admin\\Ajax\\SaveSettingsHandler' => $baseDir . '/src/Admin/Ajax/SaveSettingsHandler.php',
     'DataFlair\\Toplists\\Admin\\Ajax\\SyncBrandsBatchHandler' => $baseDir . '/src/Admin/Ajax/SyncBrandsBatchHandler.php',
+    'DataFlair\\Toplists\\Admin\\Ajax\\SyncBrandsByIdsBatchHandler' => $baseDir . '/src/Admin/Ajax/SyncBrandsByIdsBatchHandler.php',
     'DataFlair\\Toplists\\Admin\\Ajax\\SyncToplistsBatchHandler' => $baseDir . '/src/Admin/Ajax/SyncToplistsBatchHandler.php',
     'DataFlair\\Toplists\\Admin\\Ajax\\TestApiConnectionHandler' => $baseDir . '/src/Admin/Ajax/TestApiConnectionHandler.php',
     'DataFlair\\Toplists\\Admin\\Ajax\\ToplistAccordionDetailsHandler' => $baseDir . '/src/Admin/Ajax/ToplistAccordionDetailsHandler.php',

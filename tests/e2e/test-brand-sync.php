@@ -226,6 +226,57 @@ e2e_assert(
     "Second sync changed row count significantly (first: {$count}, second: {$count2}, delta: {$delta})"
 );
 
+// ── Test 9: selected-ids sync only touches the requested brand ──────────────
+// Regression guard for a real bug caught by live E2E testing: the legacy
+// shim's $urlFn closure (brand_sync_service(), above) only forwarded (page,
+// perPage) to BrandsApiUrlBuilder::buildPageUrl() - so SyncRequest::ids
+// silently vanished before it ever reached the ids[] query param, and a
+// "re-sync selected" request quietly ran a full catalog sync instead. Unit
+// tests with a fake url-builder closure never exercised this real wiring
+// and missed it completely; only a live call through the actual production
+// closure caught it.
+
+echo "  Calling BrandSyncService::syncPage(SyncRequest::brandsByIds(...))…\n";
+
+$existing_api_id = (int) $wpdb->get_var( "SELECT api_brand_id FROM {$brands_table} LIMIT 1" );
+if ( $existing_api_id === 0 ) {
+    e2e_fail( 'No existing brand row to test the selected-ids path against' );
+} else {
+    try {
+        $ids_result = e2e_resolve_brand_sync_service()->syncPage(
+            SyncRequest::brandsByIds( [ $existing_api_id ], 1 )
+        );
+
+        e2e_assert(
+            $ids_result instanceof SyncResult && $ids_result->success === true,
+            'Selected-ids syncPage() returned success',
+            'Selected-ids syncPage() failed: ' . ( $ids_result instanceof SyncResult ? wp_json_encode( $ids_result->toArray() ) : 'no SyncResult' )
+        );
+
+        if ( $ids_result instanceof SyncResult && $ids_result->success ) {
+            $array = $ids_result->toArray();
+            // A single requested id must resolve to exactly one matched brand,
+            // not the whole catalog page — this is the assertion that catches
+            // the dropped-ids regression above.
+            e2e_assert(
+                ( $array['total_brands'] ?? null ) === 1,
+                "Selected-ids sync for api_brand_id={$existing_api_id} matched exactly 1 brand (total_brands=1)",
+                'Selected-ids sync did not filter — total_brands=' . ( $array['total_brands'] ?? 'null' )
+                    . ' (expected 1). The url-builder closure may be dropping the ids parameter again.'
+            );
+        }
+    } catch ( Throwable $e ) {
+        e2e_fail( 'Selected-ids syncPage() threw: ' . $e->getMessage() );
+    }
+}
+
+$count3 = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$brands_table}" );
+e2e_assert(
+    $count3 >= $count2,
+    "Selected-ids sync never wiped local rows ({$count2} -> {$count3})",
+    "Selected-ids sync appears to have wiped rows ({$count2} -> {$count3}) — it must never delete, only upsert"
+);
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 $p = $GLOBALS['e2e_pass'];

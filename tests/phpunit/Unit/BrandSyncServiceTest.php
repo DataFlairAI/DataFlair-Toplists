@@ -344,6 +344,78 @@ final class BrandSyncServiceTest extends TestCase
         $this->assertSame([42], $this->logoDownloader->downloadedBrandIds);
     }
 
+    // ── Selected-ids run ("re-sync selected") ─────────────────────────────
+
+    public function test_selected_ids_run_does_not_delete_even_on_page_one(): void
+    {
+        $this->http->response = $this->mockBrandsApiResponse([
+            $this->brandPayload(42, 'Betway', 'Active', ['US'], []),
+        ]);
+
+        $svc    = $this->makeService();
+        $result = $svc->syncPage(SyncRequest::brandsByIds([42, 99], 1));
+
+        $this->assertTrue($result->success);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
+        );
+        $this->assertEmpty($deletes, 'a selected-ids run must never wipe the local brands table, even on page 1');
+    }
+
+    public function test_selected_ids_are_forwarded_to_the_url_builder(): void
+    {
+        $captured = null;
+        $svc = new BrandSyncService(
+            $this->http,
+            $this->logoDownloader,
+            $this->brands,
+            new NullLogger(),
+            'test-token',
+            function (int $page, int $perPage = 25, ?array $ids = null) use (&$captured): string {
+                $captured = [$page, $perPage, $ids];
+                return 'https://api.example.com/brands';
+            }
+        );
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $svc->syncPage(SyncRequest::brandsByIds([7, 8, 9], 2, 10));
+
+        $this->assertSame([2, 10, [7, 8, 9]], $captured);
+    }
+
+    public function test_full_sync_url_builder_call_still_omits_ids(): void
+    {
+        $captured = 'not-called';
+        $svc = new BrandSyncService(
+            $this->http,
+            $this->logoDownloader,
+            $this->brands,
+            new NullLogger(),
+            'test-token',
+            function (int $page, int $perPage = 25, ?array $ids = null) use (&$captured): string {
+                $captured = $ids;
+                return 'https://api.example.com/brands';
+            }
+        );
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $svc->syncPage(SyncRequest::brands(1));
+
+        $this->assertNull($captured, 'a full sync must not accidentally pass an ids filter');
+    }
+
+    public function test_empty_result_for_selected_ids_does_not_trigger_safety_stop(): void
+    {
+        $GLOBALS['wpdb']->countReturn = 50; // site has brands locally
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $svc    = $this->makeService();
+        $result = $svc->syncPage(SyncRequest::brandsByIds([999], 1));
+
+        $this->assertTrue($result->success, 'an empty result for hand-picked ids is not a backend regression');
+    }
+
     private function makeService(): BrandSyncService
     {
         $errorBuilder = static function (int $status, string $body, $h, string $url): string {

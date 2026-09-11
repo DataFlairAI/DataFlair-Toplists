@@ -331,6 +331,51 @@
         }
     });
 
+    // Re-sync a specific set of brand ids (bulk "Re-sync selected"). Pages
+    // through dataflair_sync_brands_by_ids_batch the same way the full
+    // Sync Brands flow pages through dataflair_sync_brands_batch, except
+    // this never wipes local rows first — it only touches the selected ids.
+    function startBrandsResyncBatch(ids) {
+        var $btn       = $('#df-bulk-apply');
+        var page       = 1;
+        var syncedTotal = 0;
+
+        $btn.prop('disabled', true).text('Syncing…');
+
+        function nextPage() {
+            $.post(cfg.ajaxUrl, {
+                action:          'dataflair_sync_brands_by_ids_batch',
+                _ajax_nonce:     cfg.nonces.syncBrandsByIds,
+                api_brand_ids:   ids,
+                page:            page,
+            }, function (res) {
+                if (!res || !res.success) {
+                    var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Sync failed.';
+                    DFAdmin.toast('error', errMsg);
+                    $btn.prop('disabled', false).text('Apply');
+                    return;
+                }
+
+                var data = res.data || {};
+                syncedTotal += data.synced || 0;
+
+                if (!data.is_complete) {
+                    page = data.next_page || (page + 1);
+                    nextPage();
+                } else {
+                    DFAdmin.toast('success', syncedTotal + ' brand(s) re-synced.');
+                    $btn.prop('disabled', false).text('Apply');
+                    selectedIds = {};
+                    doQuery();
+                }
+            }).fail(function () {
+                DFAdmin.toast('error', 'Network error during sync.');
+                $btn.prop('disabled', false).text('Apply');
+            });
+        }
+        nextPage();
+    }
+
     // Apply bulk action
     $(document).on('click', '#df-bulk-apply', function () {
         var action = $('#df-bulk-action').val();
@@ -383,8 +428,7 @@
                 api_brand_ids:   ids,
             }, function (res) {
                 if (res.success && res.data.start_batch) {
-                    DFAdmin.toast('success', res.data.message || 'Sync started.');
-                    startBrandsBatchSync();
+                    startBrandsResyncBatch(ids);
                 } else if (!res.success) {
                     DFAdmin.toast('error', res.data.message || 'Failed.');
                 }

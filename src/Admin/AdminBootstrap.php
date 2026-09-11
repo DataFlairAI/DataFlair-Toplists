@@ -34,6 +34,7 @@ use DataFlair\Toplists\Admin\Ajax\FetchAllToplistsHandler;
 use DataFlair\Toplists\Admin\Ajax\SaveReviewUrlHandler;
 use DataFlair\Toplists\Admin\Ajax\SaveSettingsHandler;
 use DataFlair\Toplists\Admin\Ajax\SyncBrandsBatchHandler;
+use DataFlair\Toplists\Admin\Ajax\SyncBrandsByIdsBatchHandler;
 use DataFlair\Toplists\Admin\Ajax\SyncToplistsBatchHandler;
 use DataFlair\Toplists\Database\AlternativesRepositoryInterface;
 use DataFlair\Toplists\Database\BrandsRepositoryInterface;
@@ -95,6 +96,11 @@ final class AdminBootstrap
             'dataflair_sync_brands_batch',
             new SyncBrandsBatchHandler($this->brand_sync),
             'dataflair_sync_brands_batch'
+        );
+        $router->register(
+            'dataflair_sync_brands_by_ids_batch',
+            new SyncBrandsByIdsBatchHandler($this->brand_sync),
+            'dataflair_sync_brands_by_ids_batch'
         );
         $router->register(
             'dataflair_api_preview',

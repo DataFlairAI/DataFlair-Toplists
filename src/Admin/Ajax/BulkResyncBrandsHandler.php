@@ -1,14 +1,13 @@
 <?php
 /**
- * Phase 9.6 (admin UX redesign) — Trigger a full brands re-sync.
+ * Phase 9.6 (admin UX redesign) — Pre-flight check for "re-sync selected".
  *
  * Input: { api_brand_ids: int[] }
- * Phase 2 implementation kicks off a full brands sync (page 1 onwards) via
- * the existing batch-sync mechanism. Subset-only sync is deferred to Phase 4
- * when syncByApiBrandIds() is added to BrandSyncServiceInterface.
- *
- * Returns { start_batch: true } so brands.js delegates to the same sync
- * flow used by the "Sync Brands" button.
+ * Validates the token, API config, and that ids were actually provided,
+ * then returns { start_batch: true } so brands.js starts the real
+ * selected-ids batch loop against dataflair_sync_brands_by_ids_batch
+ * (SyncBrandsByIdsBatchHandler / SyncRequest::brandsByIds()), which only
+ * touches the selected brands - never a full-catalog resync.
  */
 
 declare(strict_types=1);

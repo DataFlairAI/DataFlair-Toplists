@@ -213,6 +213,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Admin\\Ajax\\SaveReviewUrlHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/SaveReviewUrlHandler.php',
         'DataFlair\\Toplists\\Admin\\Ajax\\SaveSettingsHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/SaveSettingsHandler.php',
         'DataFlair\\Toplists\\Admin\\Ajax\\SyncBrandsBatchHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/SyncBrandsBatchHandler.php',
+        'DataFlair\\Toplists\\Admin\\Ajax\\SyncBrandsByIdsBatchHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/SyncBrandsByIdsBatchHandler.php',
         'DataFlair\\Toplists\\Admin\\Ajax\\SyncToplistsBatchHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/SyncToplistsBatchHandler.php',
         'DataFlair\\Toplists\\Admin\\Ajax\\TestApiConnectionHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/TestApiConnectionHandler.php',
         'DataFlair\\Toplists\\Admin\\Ajax\\ToplistAccordionDetailsHandler' => __DIR__ . '/../..' . '/src/Admin/Ajax/ToplistAccordionDetailsHandler.php',

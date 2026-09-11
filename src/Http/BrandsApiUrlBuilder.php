@@ -19,9 +19,22 @@ final class BrandsApiUrlBuilder
     {
     }
 
-    public function buildPageUrl(int $page, int $perPage = 25): string
+    /**
+     * @param int[]|null $ids When given, restricts the page to just these
+     *                        api_brand_ids (still paginated) instead of the
+     *                        full catalog - used by "re-sync selected".
+     */
+    public function buildPageUrl(int $page, int $perPage = 25, ?array $ids = null): string
     {
-        return $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;
+        $url = $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;
+
+        if ($ids !== null) {
+            foreach ($ids as $id) {
+                $url .= '&ids[]=' . (int) $id;
+            }
+        }
+
+        return $url;
     }
 
     /**

@@ -489,6 +489,7 @@ final class BrandsPage implements PageInterface
                 'brandDetails'    => wp_create_nonce('dataflair_brand_details'),
                 'disableBrands'   => wp_create_nonce('dataflair_bulk_disable_brands'),
                 'resyncBrands'    => wp_create_nonce('dataflair_bulk_resync_brands'),
+                'syncBrandsByIds' => wp_create_nonce('dataflair_sync_brands_by_ids_batch'),
                 'applyPattern'    => wp_create_nonce('dataflair_bulk_apply_review_pattern'),
                 'saveReviewUrl'   => wp_create_nonce('dataflair_save_review_url'),
                 'fetchBrands'     => wp_create_nonce('dataflair_fetch_all_brands'),

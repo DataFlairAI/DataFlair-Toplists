@@ -548,8 +548,8 @@ class DataFlair_Toplists {
 
         $token   = trim((string) get_option('dataflair_api_token'));
         $logger  = \DataFlair\Toplists\Logging\LoggerFactory::get();
-        $urlFn   = function ($page, $perPage = 25) {
-            return $this->brands_api_url_builder()->buildPageUrl((int) $page, (int) $perPage);
+        $urlFn   = function ($page, $perPage = 25, $ids = null) {
+            return $this->brands_api_url_builder()->buildPageUrl((int) $page, (int) $perPage, $ids);
         };
         $default = new \DataFlair\Toplists\Sync\BrandSyncService(
             $this->api_client(),
