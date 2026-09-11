@@ -22,12 +22,12 @@ namespace DataFlair\Toplists\Frontend\Render {
     if (!function_exists(__NAMESPACE__ . '\\esc_html')) {
         function esc_html($value) { return (string) $value; }
     }
+
+    require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpSanitizeTitleFake.php';
+
     if (!function_exists(__NAMESPACE__ . '\\sanitize_title')) {
         function sanitize_title($value) {
-            $value = strtolower(trim((string) $value));
-            $value = str_replace('.', '-', $value);
-            $value = preg_replace('/[^a-z0-9\-]+/', '-', $value);
-            return trim((string) $value, '-');
+            return \WpSanitizeTitleFake::sanitize((string) $value);
         }
     }
 }
