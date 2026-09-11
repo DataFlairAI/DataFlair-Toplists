@@ -13,17 +13,12 @@ namespace DataFlair\Toplists\Http;
 
 use DataFlair\Toplists\Support\UrlTransformer;
 
-final class BrandsApiUrlBuilder
+final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
 {
     public function __construct(private ApiBaseUrlDetector $base)
     {
     }
 
-    /**
-     * @param int[]|null $ids When given, restricts the page to just these
-     *                        api_brand_ids (still paginated) instead of the
-     *                        full catalog - used by "re-sync selected".
-     */
     public function buildPageUrl(int $page, int $perPage = 25, ?array $ids = null): string
     {
         $url = $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;

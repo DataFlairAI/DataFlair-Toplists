@@ -286,6 +286,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\Http\\ApiClient' => __DIR__ . '/../..' . '/src/Http/ApiClient.php',
         'DataFlair\\Toplists\\Http\\ApiErrorFormatter' => __DIR__ . '/../..' . '/src/Http/ApiErrorFormatter.php',
         'DataFlair\\Toplists\\Http\\BrandsApiUrlBuilder' => __DIR__ . '/../..' . '/src/Http/BrandsApiUrlBuilder.php',
+        'DataFlair\\Toplists\\Http\\BrandsApiUrlBuilderInterface' => __DIR__ . '/../..' . '/src/Http/BrandsApiUrlBuilderInterface.php',
         'DataFlair\\Toplists\\Http\\CurlDriverInterface' => __DIR__ . '/../..' . '/src/Http/CurlDriverInterface.php',
         'DataFlair\\Toplists\\Http\\HttpClientInterface' => __DIR__ . '/../..' . '/src/Http/HttpClientInterface.php',
         'DataFlair\\Toplists\\Http\\LogoDownloader' => __DIR__ . '/../..' . '/src/Http/LogoDownloader.php',

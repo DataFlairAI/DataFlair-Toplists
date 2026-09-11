@@ -331,49 +331,22 @@
         }
     });
 
-    // Re-sync a specific set of brand ids (bulk "Re-sync selected"). Pages
-    // through dataflair_sync_brands_by_ids_batch the same way the full
-    // Sync Brands flow pages through dataflair_sync_brands_batch, except
-    // this never wipes local rows first — it only touches the selected ids.
+    // Re-sync a specific set of brand ids (bulk "Re-sync selected"). Drives
+    // the same shared DFSyncConsole widget the full "Sync Brands from API"
+    // button uses (progress bar, log, error/ETA display all come for free)
+    // via its extraData hook, pointed at the selected-ids batch action
+    // instead of the full-catalog one. Unlike a full sync, this one never
+    // wipes local rows first — it only touches the selected ids.
     function startBrandsResyncBatch(ids) {
-        var $btn       = $('#df-bulk-apply');
-        var page       = 1;
-        var syncedTotal = 0;
-
-        $btn.prop('disabled', true).text('Syncing…');
-
-        function nextPage() {
-            $.post(cfg.ajaxUrl, {
-                action:          'dataflair_sync_brands_by_ids_batch',
-                _ajax_nonce:     cfg.nonces.syncBrandsByIds,
-                api_brand_ids:   ids,
-                page:            page,
-            }, function (res) {
-                if (!res || !res.success) {
-                    var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Sync failed.';
-                    DFAdmin.toast('error', errMsg);
-                    $btn.prop('disabled', false).text('Apply');
-                    return;
-                }
-
-                var data = res.data || {};
-                syncedTotal += data.synced || 0;
-
-                if (!data.is_complete) {
-                    page = data.next_page || (page + 1);
-                    nextPage();
-                } else {
-                    DFAdmin.toast('success', syncedTotal + ' brand(s) re-synced.');
-                    $btn.prop('disabled', false).text('Apply');
-                    selectedIds = {};
-                    doQuery();
-                }
-            }).fail(function () {
-                DFAdmin.toast('error', 'Network error during sync.');
-                $btn.prop('disabled', false).text('Apply');
-            });
-        }
-        nextPage();
+        resyncSelectedConsole.start(function (success) {
+            if (success) {
+                DFAdmin.toast('success', 'Selected brand(s) re-synced.');
+                selectedIds = {};
+                doQuery();
+            } else {
+                DFAdmin.toast('error', 'Re-sync failed.');
+            }
+        }, { api_brand_ids: ids });
     }
 
     // Apply bulk action
@@ -422,17 +395,11 @@
             }).fail(function () { DFAdmin.toast('error', 'Network error.'); });
 
         } else if (action === 'resync') {
-            $.post(cfg.ajaxUrl, {
-                action:          'dataflair_bulk_resync_brands',
-                _ajax_nonce:     cfg.nonces.resyncBrands,
-                api_brand_ids:   ids,
-            }, function (res) {
-                if (res.success && res.data.start_batch) {
-                    startBrandsResyncBatch(ids);
-                } else if (!res.success) {
-                    DFAdmin.toast('error', res.data.message || 'Failed.');
-                }
-            }).fail(function () { DFAdmin.toast('error', 'Network error.'); });
+            // DFSyncConsole.start() runs dataflair_bulk_resync_brands itself
+            // as its pre-flight fetchAction (token/ids validation) before
+            // paging through dataflair_sync_brands_by_ids_batch - no need to
+            // duplicate that round trip here.
+            startBrandsResyncBatch(ids);
         }
     });
 
@@ -502,6 +469,22 @@
         batchAction: 'dataflair_sync_brands_batch',
         fetchNonce:  cfg.nonces.fetchBrands,
         batchNonce:  cfg.nonces.syncBrandsBatch,
+    });
+
+    // Same console panel, pointed at the selected-ids batch action instead
+    // of the full-catalog one. btnId is the bulk bar's Apply button, not the
+    // full-sync trigger — DFSyncConsole disables/relabels whichever button
+    // its own cfg names, so the two consoles never fight over button state.
+    var resyncSelectedConsole = new window.DFSyncConsole({
+        consoleId:   'df-brands-sync-console',
+        btnId:       'df-bulk-apply',
+        btnLabel:    'Apply',
+        titleLabel:  'Syncing selected brands…',
+        ajaxUrl:     cfg.ajaxUrl,
+        fetchAction: 'dataflair_bulk_resync_brands',
+        batchAction: 'dataflair_sync_brands_by_ids_batch',
+        fetchNonce:  cfg.nonces.resyncBrands,
+        batchNonce:  cfg.nonces.syncBrandsByIds,
     });
 
     $(document).on('click', '#dataflair-fetch-all-brands', function () {

@@ -204,6 +204,7 @@ return array(
     'DataFlair\\Toplists\\Http\\ApiClient' => $baseDir . '/src/Http/ApiClient.php',
     'DataFlair\\Toplists\\Http\\ApiErrorFormatter' => $baseDir . '/src/Http/ApiErrorFormatter.php',
     'DataFlair\\Toplists\\Http\\BrandsApiUrlBuilder' => $baseDir . '/src/Http/BrandsApiUrlBuilder.php',
+    'DataFlair\\Toplists\\Http\\BrandsApiUrlBuilderInterface' => $baseDir . '/src/Http/BrandsApiUrlBuilderInterface.php',
     'DataFlair\\Toplists\\Http\\CurlDriverInterface' => $baseDir . '/src/Http/CurlDriverInterface.php',
     'DataFlair\\Toplists\\Http\\HttpClientInterface' => $baseDir . '/src/Http/HttpClientInterface.php',
     'DataFlair\\Toplists\\Http\\LogoDownloader' => $baseDir . '/src/Http/LogoDownloader.php',

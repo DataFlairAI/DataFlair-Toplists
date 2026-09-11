@@ -17,6 +17,10 @@
  *   batchAction — AJAX action called once per page
  *   fetchNonce  — nonce value for fetchAction
  *   batchNonce  — nonce value for batchAction
+ *
+ * start(onDone, extraData) — extraData (plain object, optional) is merged
+ * into both the fetchAction and every batchAction POST, e.g. to scope a run
+ * to specific ids: start(null, { api_brand_ids: [12, 34] }).
  */
 (function ($) {
     'use strict';
@@ -58,7 +62,9 @@
             return '~' + Math.round(ms / 60000) + 'min remaining';
         }
 
-        this.start = function (onDone) {
+        this.start = function (onDone, extraData) {
+            extraData = extraData || {};
+
             $con.attr('data-active', '1');
             $log.empty();
             setProgress(0, false);
@@ -69,7 +75,7 @@
 
             log('Validating API token…', 'info');
 
-            $.post(url, { action: cfg.fetchAction, _ajax_nonce: cfg.fetchNonce }, function (res) {
+            $.post(url, $.extend({ action: cfg.fetchAction, _ajax_nonce: cfg.fetchNonce }, extraData), function (res) {
                 if (!res || !res.success) {
                     var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Token validation failed';
                     log('Error: ' + errMsg, 'error');
@@ -87,11 +93,11 @@
 
                 function nextPage() {
                     var tPage = Date.now();
-                    $.post(url, {
+                    $.post(url, $.extend({
                         action:      cfg.batchAction,
                         _ajax_nonce: cfg.batchNonce,
                         page:        page,
-                    }, function (r) {
+                    }, extraData), function (r) {
                         var pageMs = Date.now() - tPage;
                         var d      = (r && r.data) ? r.data : {};
 
