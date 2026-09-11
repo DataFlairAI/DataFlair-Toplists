@@ -355,6 +355,12 @@
         var ids    = Object.keys(selectedIds).map(Number);
         if (!action || ids.length === 0) { return; }
 
+        // Only the resync path (via DFSyncConsole) ever relabels this button
+        // to "Apply ✓" on success; the other three actions below never touch
+        // its text. Reset unconditionally so a checkmark left over from an
+        // earlier resync doesn't stick through an unrelated later action.
+        $(this).text('Apply');
+
         if (action === 'apply_pattern') {
             var pattern = $('#df-bulk-pattern').val().trim();
             if (!pattern) { DFAdmin.toast('error', 'Enter a URL pattern first.'); return; }
