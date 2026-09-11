@@ -13,15 +13,23 @@ namespace DataFlair\Toplists\Http;
 
 use DataFlair\Toplists\Support\UrlTransformer;
 
-final class BrandsApiUrlBuilder
+final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
 {
     public function __construct(private ApiBaseUrlDetector $base)
     {
     }
 
-    public function buildPageUrl(int $page, int $perPage = 25): string
+    public function buildPageUrl(int $page, int $perPage = 25, ?array $ids = null): string
     {
-        return $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;
+        $url = $this->effectiveBase() . '/brands?per_page=' . $perPage . '&page=' . $page;
+
+        if ($ids !== null) {
+            foreach ($ids as $id) {
+                $url .= '&ids[]=' . (int) $id;
+            }
+        }
+
+        return $url;
     }
 
     /**

@@ -85,6 +85,31 @@ final class BrandsApiUrlBuilderTest extends TestCase
         );
     }
 
+    public function test_ids_are_appended_as_repeated_query_params(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v1';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v1/brands?per_page=25&page=1&ids[]=5&ids[]=8',
+            $this->builder()->buildPageUrl(1, 25, [5, 8])
+        );
+    }
+
+    public function test_null_ids_omits_the_ids_query_params(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v1';
+            return $default;
+        });
+
+        $this->assertStringNotContainsString('ids', $this->builder()->buildPageUrl(1, 25, null));
+    }
+
     public function test_falls_back_to_default_base_when_nothing_stored(): void
     {
         Functions\when('get_option')->alias(function ($key, $default = false) {

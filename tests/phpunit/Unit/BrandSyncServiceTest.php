@@ -14,6 +14,7 @@ namespace DataFlair\Toplists\Tests\Unit\Sync;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
 use DataFlair\Toplists\Database\BrandsRepositoryInterface;
+use DataFlair\Toplists\Http\BrandsApiUrlBuilderInterface;
 use DataFlair\Toplists\Http\HttpClientInterface;
 use DataFlair\Toplists\Http\LogoDownloaderInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
@@ -31,6 +32,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'includes/Logging/NullLogger.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'includes/Support/WallClockBudget.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/HttpClientInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/LogoDownloaderInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/BrandsApiUrlBuilderInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
@@ -45,6 +47,7 @@ final class BrandSyncServiceTest extends TestCase
     private FakeBrandsRepo $brands;
     private FakeLogoDownloader $logoDownloader;
     private FakeHttpClient $http;
+    private FakeBrandsApiUrlBuilder $urlBuilder;
 
     protected function setUp(): void
     {
@@ -55,6 +58,7 @@ final class BrandSyncServiceTest extends TestCase
         $this->brands         = new FakeBrandsRepo();
         $this->logoDownloader = new FakeLogoDownloader();
         $this->http           = new FakeHttpClient();
+        $this->urlBuilder     = new FakeBrandsApiUrlBuilder();
 
         // Stub WP globals + functions the service touches.
         $wpdb         = new FakeWpdb();
@@ -344,6 +348,54 @@ final class BrandSyncServiceTest extends TestCase
         $this->assertSame([42], $this->logoDownloader->downloadedBrandIds);
     }
 
+    // ── Selected-ids run ("re-sync selected") ─────────────────────────────
+
+    public function test_selected_ids_run_does_not_delete_even_on_page_one(): void
+    {
+        $this->http->response = $this->mockBrandsApiResponse([
+            $this->brandPayload(42, 'Betway', 'Active', ['US'], []),
+        ]);
+
+        $svc    = $this->makeService();
+        $result = $svc->syncPage(SyncRequest::brandsByIds([42, 99], 1));
+
+        $this->assertTrue($result->success);
+        $deletes = array_filter(
+            $GLOBALS['wpdb']->deleteQueries,
+            static fn($q) => str_contains($q, 'DELETE FROM wp_dataflair_brands')
+        );
+        $this->assertEmpty($deletes, 'a selected-ids run must never wipe the local brands table, even on page 1');
+    }
+
+    public function test_selected_ids_are_forwarded_to_the_url_builder(): void
+    {
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $this->makeService()->syncPage(SyncRequest::brandsByIds([7, 8, 9], 2, 10));
+
+        $this->assertSame([2, 10, [7, 8, 9]], $this->urlBuilder->received);
+    }
+
+    public function test_full_sync_url_builder_call_still_omits_ids(): void
+    {
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $this->makeService()->syncPage(SyncRequest::brands(1));
+
+        $this->assertNull($this->urlBuilder->received[2], 'a full sync must not accidentally pass an ids filter');
+    }
+
+    public function test_empty_result_for_selected_ids_does_not_trigger_safety_stop(): void
+    {
+        $GLOBALS['wpdb']->countReturn = 50; // site has brands locally
+        $this->http->response = $this->mockBrandsApiResponse([]);
+
+        $svc    = $this->makeService();
+        $result = $svc->syncPage(SyncRequest::brandsByIds([999], 1));
+
+        $this->assertTrue($result->success, 'an empty result for hand-picked ids is not a backend regression');
+    }
+
     private function makeService(): BrandSyncService
     {
         $errorBuilder = static function (int $status, string $body, $h, string $url): string {
@@ -356,7 +408,7 @@ final class BrandSyncServiceTest extends TestCase
             $this->brands,
             new NullLogger(),
             'test-token',
-            static fn(int $page): string => 'https://api.example.com/brands?page=' . $page,
+            $this->urlBuilder,
             $errorBuilder
         );
     }
@@ -452,6 +504,19 @@ final class FakeHttpClient implements HttpClientInterface
     public function get(string $url, string $token, int $timeout = 12, int $max_retries = 2, ?WallClockBudget $budget = null)
     {
         return $this->response;
+    }
+}
+
+final class FakeBrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
+{
+    /** @var array{0:int,1:int,2:?array}|null */
+    public ?array $received = null;
+
+    public function buildPageUrl(int $page, int $perPage = 25, ?array $ids = null): string
+    {
+        $this->received = [$page, $perPage, $ids];
+
+        return 'https://api.example.com/brands?page=' . $page;
     }
 }
 

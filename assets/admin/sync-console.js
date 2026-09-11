@@ -17,6 +17,10 @@
  *   batchAction — AJAX action called once per page
  *   fetchNonce  — nonce value for fetchAction
  *   batchNonce  — nonce value for batchAction
+ *
+ * start(onDone, extraData) — extraData (plain object, optional) is merged
+ * into both the fetchAction and every batchAction POST, e.g. to scope a run
+ * to specific ids: start(null, { api_brand_ids: [12, 34] }).
  */
 (function ($) {
     'use strict';
@@ -58,8 +62,35 @@
             return '~' + Math.round(ms / 60000) + 'min remaining';
         }
 
-        this.start = function (onDone) {
-            $con.attr('data-active', '1');
+        // data-active is a display flag only (see admin-ui.css) and, once
+        // set, is never cleared — it just means "this panel has been shown
+        // at least once", not "a sync is running right now". data-running
+        // is the actual in-flight flag, set here and cleared by finish()
+        // at every exit point below.
+        function finish() {
+            $con.removeAttr('data-running');
+        }
+
+        this.start = function (onDone, extraData) {
+            extraData = extraData || {};
+
+            // Guards against two DFSyncConsole instances sharing one
+            // consoleId (e.g. a page's full-sync button and a "resync
+            // selected" button both driving the same panel) running at the
+            // same time - without this, both would write into the same
+            // $log/$title/$stats/$fill nodes and interleave into unreadable
+            // output. Each instance only disables its OWN trigger button,
+            // so this check is what actually stops a second, unrelated
+            // action from starting while the panel is busy.
+            if ($con.attr('data-running') === '1') {
+                if (window.DFAdmin && DFAdmin.toast) {
+                    DFAdmin.toast('error', 'A sync is already running — wait for it to finish first.');
+                }
+                if (onDone) { onDone(false); }
+                return;
+            }
+
+            $con.attr('data-active', '1').attr('data-running', '1');
             $log.empty();
             setProgress(0, false);
             $title.text(cfg.titleLabel || 'Syncing…');
@@ -69,12 +100,13 @@
 
             log('Validating API token…', 'info');
 
-            $.post(url, { action: cfg.fetchAction, _ajax_nonce: cfg.fetchNonce }, function (res) {
+            $.post(url, $.extend({ action: cfg.fetchAction, _ajax_nonce: cfg.fetchNonce }, extraData), function (res) {
                 if (!res || !res.success) {
                     var errMsg = (res && res.data && res.data.message) ? res.data.message : 'Token validation failed';
                     log('Error: ' + errMsg, 'error');
                     $stats.text('Failed — ' + errMsg);
                     $btn.prop('disabled', false).text(cfg.btnLabel);
+                    finish();
                     if (onDone) { onDone(false); }
                     return;
                 }
@@ -87,11 +119,11 @@
 
                 function nextPage() {
                     var tPage = Date.now();
-                    $.post(url, {
+                    $.post(url, $.extend({
                         action:      cfg.batchAction,
                         _ajax_nonce: cfg.batchNonce,
                         page:        page,
-                    }, function (r) {
+                    }, extraData), function (r) {
                         var pageMs = Date.now() - tPage;
                         var d      = (r && r.data) ? r.data : {};
 
@@ -100,6 +132,7 @@
                             log('Error on page ' + page + ': ' + eMsg, 'error');
                             $stats.text('Stopped — ' + eMsg);
                             $btn.prop('disabled', false).text(cfg.btnLabel);
+                            finish();
                             if (onDone) { onDone(false); }
                             return;
                         }
@@ -147,12 +180,14 @@
                             $eta.text('');
                             setProgress(100, true);
                             $btn.prop('disabled', false).text(cfg.btnLabel + ' ✓');
+                            finish();
                             if (onDone) { onDone(true); }
                         }
                     }).fail(function () {
                         log('Page ' + page + ' request failed (network error)', 'error');
                         $stats.text('Network error on page ' + page);
                         $btn.prop('disabled', false).text(cfg.btnLabel);
+                        finish();
                         if (onDone) { onDone(false); }
                     });
                 }
@@ -163,6 +198,7 @@
                 log('Network error during token validation', 'error');
                 $stats.text('Network error.');
                 $btn.prop('disabled', false).text(cfg.btnLabel);
+                finish();
                 if (onDone) { onDone(false); }
             });
         };

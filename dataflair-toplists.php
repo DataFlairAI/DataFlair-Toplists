@@ -548,16 +548,13 @@ class DataFlair_Toplists {
 
         $token   = trim((string) get_option('dataflair_api_token'));
         $logger  = \DataFlair\Toplists\Logging\LoggerFactory::get();
-        $urlFn   = function ($page, $perPage = 25) {
-            return $this->brands_api_url_builder()->buildPageUrl((int) $page, (int) $perPage);
-        };
         $default = new \DataFlair\Toplists\Sync\BrandSyncService(
             $this->api_client(),
             $this->logo_downloader(),
             $this->brands_repo(),
             $logger,
             $token,
-            $urlFn,
+            $this->brands_api_url_builder(),
             \Closure::fromCallable([$this, 'build_detailed_api_error'])
         );
         $maybe = function_exists('apply_filters')
@@ -1187,18 +1184,6 @@ class DataFlair_Toplists {
     private function maybe_force_https($url) {
         // Phase 9.11 — delegate to Support\UrlTransformer.
         return $this->url_transformer()->maybeForceHttps((string) $url);
-    }
-
-    /**
-     * Get the brands API URL for the given page, respecting the selected API version.
-     * Toplists always use v1 — only brands sync uses this helper.
-     *
-     * @param int $page Page number
-     * @return string Full brands URL with page parameter
-     */
-    private function get_brands_api_url($page) {
-        // Phase 9.11 — delegate to Http\BrandsApiUrlBuilder.
-        return $this->brands_api_url_builder()->buildPageUrl((int) $page);
     }
 
     /**

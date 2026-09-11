@@ -19,7 +19,9 @@ final class SyncRequest
         public readonly string $type,
         public readonly int $page,
         public readonly int $perPage,
-        public readonly float $budgetSeconds
+        public readonly float $budgetSeconds,
+        /** @var int[]|null When set, restricts a brands sync to just these api_brand_ids. */
+        public readonly ?array $ids = null
     ) {}
 
     public static function toplists(int $page, int $perPage = 5, float $budgetSeconds = 60.0): self
@@ -30,5 +32,16 @@ final class SyncRequest
     public static function brands(int $page, int $perPage = 25, float $budgetSeconds = 25.0): self
     {
         return new self(self::TYPE_BRANDS, $page, $perPage, $budgetSeconds);
+    }
+
+    /**
+     * "Re-sync selected" - never wipes local rows first (unlike a full sync's
+     * page-1 delete), it only fetches and upserts the given ids.
+     *
+     * @param int[] $ids
+     */
+    public static function brandsByIds(array $ids, int $page = 1, int $perPage = 25, float $budgetSeconds = 25.0): self
+    {
+        return new self(self::TYPE_BRANDS, $page, $perPage, $budgetSeconds, $ids);
     }
 }

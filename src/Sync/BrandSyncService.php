@@ -8,7 +8,9 @@
  *   - 25 s WallClockBudget with 3 s headroom between brands.
  *   - 3 MB / 8 s logo cap via LogoDownloaderInterface.
  *   - dataflair_brand_logo_stored hook fires (via LogoDownloader).
- *   - Paginated DELETE when page === 1, no TRUNCATE.
+ *   - Paginated DELETE when page === 1, no TRUNCATE - full syncs only; a
+ *     selected-ids run (SyncRequest::brandsByIds()) never wipes, since it's
+ *     fetching a subset on purpose, not replacing the whole catalog.
  *   - H4 memory cleanup via unset() + gc_collect_cycles().
  *   - Brand status != 'Active' skip rule.
  *   - Brand row shape identical to god-class upsert arguments.
@@ -22,6 +24,7 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Sync;
 
 use DataFlair\Toplists\Database\BrandsRepositoryInterface;
+use DataFlair\Toplists\Http\BrandsApiUrlBuilderInterface;
 use DataFlair\Toplists\Http\HttpClientInterface;
 use DataFlair\Toplists\Http\LogoDownloaderInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
@@ -29,15 +32,10 @@ use DataFlair\Toplists\Support\WallClockBudget;
 
 final class BrandSyncService implements BrandSyncServiceInterface
 {
-    /** @var callable */
-    private $brandsUrlBuilder;
-
     /** @var callable|null */
     private $errorBuilder;
 
     /**
-     * @param callable $brandsUrlBuilder fn(int $page): string — returns the
-     *                                   full brands-list URL for a given page.
      * @param callable|null $errorBuilder fn(int $status, string $body,
      *                                   mixed $headers, string $url): string
      *                                   — optional Phase 5 handoff.
@@ -48,11 +46,10 @@ final class BrandSyncService implements BrandSyncServiceInterface
         private readonly BrandsRepositoryInterface $brands,
         private readonly LoggerInterface $logger,
         private readonly string $token,
-        callable $brandsUrlBuilder,
+        private readonly BrandsApiUrlBuilderInterface $brandsUrlBuilder,
         ?callable $errorBuilder = null
     ) {
-        $this->brandsUrlBuilder = $brandsUrlBuilder;
-        $this->errorBuilder     = $errorBuilder;
+        $this->errorBuilder = $errorBuilder;
     }
 
     public function syncPage(SyncRequest $request): SyncResult
@@ -70,7 +67,7 @@ final class BrandSyncService implements BrandSyncServiceInterface
 
         $budget = new WallClockBudget($request->budgetSeconds);
 
-        $result = $this->syncBrandsPage($page, $budget, $request->perPage);
+        $result = $this->syncBrandsPage($page, $budget, $request->perPage, $request->ids);
 
         if (!$result['success']) {
             do_action('dataflair_sync_item_failed', [
@@ -117,9 +114,15 @@ final class BrandSyncService implements BrandSyncServiceInterface
         );
     }
 
-    private function syncBrandsPage(int $page, WallClockBudget $budget, int $perPage): array
+    /**
+     * @param int[]|null $ids When given, this is a "re-sync selected" run:
+     *                        fetch only these api_brand_ids and never wipe
+     *                        local rows first (a full sync's page-1 delete
+     *                        would otherwise erase every brand NOT selected).
+     */
+    private function syncBrandsPage(int $page, WallClockBudget $budget, int $perPage, ?array $ids = null): array
     {
-        $url = (string) call_user_func($this->brandsUrlBuilder, $page, $perPage);
+        $url = $this->brandsUrlBuilder->buildPageUrl($page, $perPage, $ids);
         $this->logger->debug('BrandSync.http_request url=' . $url);
 
         $httpT0   = microtime(true);
@@ -172,10 +175,20 @@ final class BrandSyncService implements BrandSyncServiceInterface
             return ['success' => false, 'message' => $msg];
         }
 
+        // A selected-ids run (SyncRequest::brandsByIds()) is fetching a
+        // subset on purpose, never a catalog-wide operation - both guards
+        // below (the empty-payload safety stop and the destructive wipe)
+        // exist only to protect a full sync's page-1 replace, so neither
+        // applies here.
+        $isFullSyncPageOne = $ids === null && $page === 1;
+
         // Safety stop: an empty page-1 payload against a populated brands
         // table is far more likely a backend regression than a deliberate
-        // delete-everything (same policy as ToplistSyncService).
-        if ($page === 1 && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
+        // delete-everything (same policy as ToplistSyncService). Doesn't
+        // apply to a selected-ids run - an empty result there just means
+        // those specific brands no longer match, not a backend outage, and
+        // a selected-ids run never wipes anything for this check to guard.
+        if ($isFullSyncPageOne && $data['data'] === [] && !(bool) apply_filters('dataflair_allow_empty_sync', false)) {
             global $wpdb;
             $existingRows = (int) $wpdb->get_var(
                 'SELECT COUNT(*) FROM ' . $wpdb->prefix . 'dataflair_brands'
@@ -203,7 +216,9 @@ final class BrandSyncService implements BrandSyncServiceInterface
         // in drivers with no partial cap, and the same slow fetch would trip
         // the guard deterministically on every retry. Stale upstream-deleted
         // rows simply persist until the next healthy run wipes them.
-        if ($page === 1) {
+        // Never wipes on a selected-ids run - that would delete every brand
+        // NOT in the selection instead of just refreshing the ones picked.
+        if ($isFullSyncPageOne) {
             if ($budget->exceeded(8.0)) {
                 $this->logger->warning('BrandSync: budget too low for the page-1 wipe — upserting without the stale-row wipe');
             } else {
@@ -337,7 +352,13 @@ final class BrandSyncService implements BrandSyncServiceInterface
 
         global $wpdb;
         $brandsTable  = $wpdb->prefix . 'dataflair_brands';
-        $totalSynced  = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$brandsTable} WHERE status = 'Active'");
+        // Full-catalog total, for the "N synced" running counter on the full
+        // sync's console. A selected-ids run's caller never reads this field
+        // (it already knows the count of ids it asked for), so skip the
+        // table-wide COUNT(*) that computing it would otherwise cost.
+        $totalSynced  = $ids === null
+            ? (int) $wpdb->get_var("SELECT COUNT(*) FROM {$brandsTable} WHERE status = 'Active'")
+            : 0;
 
         $partial = $budgetExhaustedOnItem !== null;
 
