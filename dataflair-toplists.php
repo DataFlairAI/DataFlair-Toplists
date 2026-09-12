@@ -109,6 +109,9 @@ class DataFlair_Toplists {
     /** @var \DataFlair\Toplists\Database\AlternativesRepositoryInterface|null */
     private $alternatives_repo = null;
 
+    /** @var \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface|null */
+    private $webhook_events_repo = null;
+
     /**
      * Phase 3 — sync services. Lazy-instantiated. See src/Sync/*.
      *
@@ -440,6 +443,24 @@ class DataFlair_Toplists {
     }
 
     /**
+     * Webhook sync slice — idempotency ledger repository.
+     * Filterable via `dataflair_webhook_events_repository`.
+     */
+    private function webhook_events_repo() {
+        if ($this->webhook_events_repo instanceof \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface) {
+            return $this->webhook_events_repo;
+        }
+        $default = new \DataFlair\Toplists\Webhooks\WebhookEventsRepository();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_webhook_events_repository', $default)
+            : $default;
+        $this->webhook_events_repo = ($maybe instanceof \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface)
+            ? $maybe
+            : $default;
+        return $this->webhook_events_repo;
+    }
+
+    /**
      * Lazy accessor for the visitor geo resolver.
      * Filterable via `dataflair_visitor_geo_resolver` — the seam a site
      * uses to plug in a GeoIP library the default header-based resolver
@@ -675,7 +696,12 @@ class DataFlair_Toplists {
             \DataFlair\Toplists\Logging\LoggerFactory::get(),
             $this->toplists_repo(),
             \Closure::fromCallable([$this, 'prefetch_brand_metas_for_items']),
-            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map'])
+            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map']),
+            $this->webhook_events_repo(),
+            $this->toplist_fetcher(),
+            $this->brand_sync_service(),
+            $this->api_base_url_detector(),
+            trim((string) get_option('dataflair_api_token'))
         );
         return $this->rest_bootstrap;
     }

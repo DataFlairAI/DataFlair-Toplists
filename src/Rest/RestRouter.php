@@ -17,6 +17,7 @@ namespace DataFlair\Toplists\Rest;
 use DataFlair\Toplists\Rest\Controllers\CasinosController;
 use DataFlair\Toplists\Rest\Controllers\HealthController;
 use DataFlair\Toplists\Rest\Controllers\ToplistsController;
+use DataFlair\Toplists\Rest\Controllers\WebhookController;
 
 final class RestRouter
 {
@@ -25,7 +26,8 @@ final class RestRouter
     public function __construct(
         private ToplistsController $toplists,
         private CasinosController $casinos,
-        private HealthController $health
+        private HealthController $health,
+        private WebhookController $webhook
     ) {}
 
     /**
@@ -74,6 +76,16 @@ final class RestRouter
             'methods'             => 'GET',
             'callback'            => [$this->health, 'status'],
             'permission_callback' => [$this, 'canManageOptions'],
+        ]);
+
+        // Webhook sync slice — the plugin's first unauthenticated-but-signed
+        // route. The caller is DataFlair's queue worker, not a logged-in WP
+        // user, so a capability check is the wrong gate here; WebhookController
+        // authenticates via HMAC signature verification instead.
+        register_rest_route(self::NAMESPACE, '/webhooks', [
+            'methods'             => 'POST',
+            'callback'            => [$this->webhook, 'receive'],
+            'permission_callback' => '__return_true',
         ]);
     }
 
