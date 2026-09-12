@@ -39,6 +39,11 @@ if (!defined('ARRAY_A'))  define('ARRAY_A',  'ARRAY_A');
 if (!defined('ARRAY_N'))  define('ARRAY_N',  'ARRAY_N');
 if (!defined('OBJECT'))   define('OBJECT',   'OBJECT');
 if (!defined('OBJECT_K')) define('OBJECT_K', 'OBJECT_K');
+// WordPress time constants (real values, not string sentinels — code under
+// test does real arithmetic against these, e.g. SettingsPage's webhook
+// staleness check).
+if (!defined('HOUR_IN_SECONDS')) define('HOUR_IN_SECONDS', 3600);
+if (!defined('DAY_IN_SECONDS'))  define('DAY_IN_SECONDS', 86400);
 if (!defined('DATAFLAIR_TABLE_NAME')) {
     define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 }

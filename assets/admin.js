@@ -21,9 +21,10 @@ jQuery(document).ready(function($) {
             dataflair_ribbon_text_color: $('#dataflair_ribbon_text_color').val() || '',
             dataflair_cta_bg_color: $('#dataflair_cta_bg_color').val() || '',
             dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || '',
-            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1'
+            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1',
+            dataflair_webhook_enabled: $('#dataflair_webhook_enabled').is(':checked') ? '1' : '0'
         };
-        
+
         // Send AJAX request
         $.ajax({
             url: dataflairAdmin.ajaxUrl,
@@ -32,9 +33,13 @@ jQuery(document).ready(function($) {
             timeout: 10000, // 10 second timeout
             success: function(response) {
                 if (response.success) {
-                    $message.html('<span style="color: #46b450;">✓ ' + response.data.message + '</span>');
+                    var successText = '✓ ' + response.data.message;
+                    if (response.data.webhook_registered === false) {
+                        successText += ' Webhook registration failed — check your API connection.';
+                    }
+                    $message.html('<span style="color: #46b450;">' + successText + '</span>');
                     $button.val(originalText).prop('disabled', false);
-                    
+
                     // Clear message after 3 seconds
                     setTimeout(function() {
                         $message.html('');
