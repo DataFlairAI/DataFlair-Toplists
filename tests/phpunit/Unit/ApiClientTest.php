@@ -223,4 +223,48 @@ final class ApiClientTest extends TestCase
         $this->assertArrayNotHasKey('X-DataFlair-Expected-Contract', $headers);
         $this->assertSame(DATAFLAIR_VERSION, $headers['X-DataFlair-Plugin-Version'] ?? null);
     }
+
+    // ── post() — webhook self-registration ──────────────────────────────
+
+    public function test_post_sends_json_body_with_auth_headers(): void
+    {
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $captured = null;
+        Functions\expect('wp_remote_post')->once()->andReturnUsing(function ($url, $args) use (&$captured) {
+            $captured = [$url, $args];
+            return ['body' => '{"status":"registered"}', 'response' => ['code' => 200]];
+        });
+
+        $result = (new ApiClient(new NullLogger()))->post(
+            'https://api.example.com/api/v1/webhooks/subscribe',
+            'tok',
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123']
+        );
+
+        $this->assertFalse($result instanceof \WP_Error);
+        [$url, $args] = $captured;
+        $this->assertSame('https://api.example.com/api/v1/webhooks/subscribe', $url);
+        $this->assertSame('Bearer tok', $args['headers']['Authorization']);
+        $this->assertSame('application/json', $args['headers']['Content-Type']);
+        $this->assertSame(
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123'],
+            json_decode($args['body'], true)
+        );
+    }
+
+    public function test_post_returns_wp_error_on_transport_failure(): void
+    {
+        Functions\when('wp_json_encode')->alias('json_encode');
+        Functions\expect('wp_remote_post')->once()->andReturn(
+            new \WP_Error('http_request_failed', 'timeout')
+        );
+
+        $result = (new ApiClient(new NullLogger()))->post(
+            'https://api.example.com/api/v1/webhooks/subscribe',
+            'tok',
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123']
+        );
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+    }
 }

@@ -44,6 +44,7 @@ use DataFlair\Toplists\Http\HttpClientInterface;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Sync\BrandSyncServiceInterface;
 use DataFlair\Toplists\Sync\ToplistSyncServiceInterface;
+use DataFlair\Toplists\Webhooks\WebhookSelfRegistrar;
 
 final class AdminBootstrap
 {
@@ -74,7 +75,11 @@ final class AdminBootstrap
 
         $router->register(
             'dataflair_save_settings',
-            new SaveSettingsHandler(),
+            new SaveSettingsHandler(new WebhookSelfRegistrar(
+                $this->api_client,
+                $this->api_base_url_detector,
+                trim((string) get_option('dataflair_api_token'))
+            )),
             'dataflair_save_settings'
         );
         $router->register(

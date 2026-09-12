@@ -39,6 +39,10 @@ final class ContractVersionTest extends TestCase
             {
                 return $this->response;
             }
+            public function post(string $url, string $token, array $body, int $timeout = 12)
+            {
+                return $this->response;
+            }
         };
     }
 

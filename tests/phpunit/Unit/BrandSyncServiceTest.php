@@ -598,6 +598,12 @@ final class FakeHttpClient implements HttpClientInterface
         $this->lastUrl = $url;
         return $this->response;
     }
+
+    public function post(string $url, string $token, array $body, int $timeout = 12)
+    {
+        $this->lastUrl = $url;
+        return $this->response;
+    }
 }
 
 final class FakeBrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
