@@ -36,6 +36,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/BrandsApiUrlBuilderInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Database/BrandsRepositoryInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncOutcome.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncServiceInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ContractMismatch.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncService.php';
@@ -396,6 +397,89 @@ final class BrandSyncServiceTest extends TestCase
         $this->assertTrue($result->success, 'an empty result for hand-picked ids is not a backend regression');
     }
 
+    // ── syncOne() — webhook sync slice's brand.status_changed/brand.updated handler ──
+    //
+    // Unlike syncPage()'s list endpoint (always active() scoped, so it can never
+    // report an inactive/gone brand - the whole reason this method exists), the
+    // single-brand endpoint reports current truth regardless of status. Always
+    // re-fetching rather than trusting a webhook payload's own "from"/"to" field
+    // is what makes a reordered or replayed delivery harmless.
+
+    public function test_sync_one_active_brand_upserts_and_clears_disabled_flag(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['data' => $this->brandPayload(42, 'Active Brand', 'Active', ['UK'], [])]),
+            'response' => ['code' => 200],
+        ];
+
+        $outcome = $this->makeService()->syncOne(42);
+
+        $this->assertSame('active', $outcome->status);
+        $this->assertCount(1, $this->brands->upserts);
+        $this->assertSame(42, $this->brands->upserts[0]['api_brand_id']);
+        $this->assertCount(1, $this->brands->disabledCalls);
+        $this->assertSame([42], $this->brands->disabledCalls[0]['ids']);
+        $this->assertFalse($this->brands->disabledCalls[0]['disabled']);
+    }
+
+    public function test_sync_one_inactive_brand_upserts_fresh_data_and_sets_disabled_flag(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['data' => $this->brandPayload(42, 'Now Inactive Brand', 'Inactive', [], [])]),
+            'response' => ['code' => 200],
+        ];
+
+        $outcome = $this->makeService()->syncOne(42);
+
+        $this->assertSame('inactive', $outcome->status);
+        // Still worth capturing current data even though it'll be hidden.
+        $this->assertCount(1, $this->brands->upserts);
+        $this->assertSame('Now Inactive Brand', $this->brands->upserts[0]['name']);
+        $this->assertCount(1, $this->brands->disabledCalls);
+        $this->assertSame([42], $this->brands->disabledCalls[0]['ids']);
+        $this->assertTrue($this->brands->disabledCalls[0]['disabled']);
+    }
+
+    public function test_sync_one_404_disables_without_upserting_or_crashing(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['message' => 'Not found']),
+            'response' => ['code' => 404],
+        ];
+
+        $outcome = $this->makeService()->syncOne(999);
+
+        $this->assertSame('gone', $outcome->status);
+        $this->assertCount(0, $this->brands->upserts, '404 has no brand data to upsert');
+        $this->assertCount(1, $this->brands->disabledCalls);
+        $this->assertSame([999], $this->brands->disabledCalls[0]['ids']);
+        $this->assertTrue($this->brands->disabledCalls[0]['disabled']);
+    }
+
+    public function test_sync_one_http_error_fails_without_touching_the_repository(): void
+    {
+        $this->http->response = new \WP_Error('http_request_failed', 'timeout');
+
+        $outcome = $this->makeService()->syncOne(42);
+
+        $this->assertSame('failed', $outcome->status);
+        $this->assertStringContainsString('timeout', $outcome->message);
+        $this->assertCount(0, $this->brands->upserts);
+        $this->assertCount(0, $this->brands->disabledCalls);
+    }
+
+    public function test_sync_one_uses_the_single_brand_url_not_the_list_url(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['data' => $this->brandPayload(42, 'Active Brand', 'Active', ['UK'], [])]),
+            'response' => ['code' => 200],
+        ];
+
+        $this->makeService()->syncOne(42);
+
+        $this->assertSame('https://api.example.com/brands/42', $this->http->lastUrl);
+    }
+
     private function makeService(): BrandSyncService
     {
         $errorBuilder = static function (int $status, string $body, $h, string $url): string {
@@ -474,7 +558,14 @@ final class FakeBrandsRepo implements BrandsRepositoryInterface
     public function updateLocalLogoUrl(int $id, string $u): bool { return true; }
     public function updateCachedReviewPostId(int $id, int $p): bool { return true; }
     public function updateReviewUrlOverrideByApiBrandId(int $api_brand_id, ?string $url): bool { return true; }
-    public function setDisabledByApiBrandIds(array $api_brand_ids, bool $disabled): int { return 0; }
+    /** @var array<int,array{ids:int[],disabled:bool}> */
+    public array $disabledCalls = [];
+
+    public function setDisabledByApiBrandIds(array $api_brand_ids, bool $disabled): int
+    {
+        $this->disabledCalls[] = ['ids' => $api_brand_ids, 'disabled' => $disabled];
+        return count($api_brand_ids);
+    }
     public function findPaginated(\DataFlair\Toplists\Database\BrandsQuery $query): \DataFlair\Toplists\Database\BrandsPage
     {
         return new \DataFlair\Toplists\Database\BrandsPage([], 0, 1, 25);
@@ -500,9 +591,11 @@ final class FakeLogoDownloader implements LogoDownloaderInterface
 final class FakeHttpClient implements HttpClientInterface
 {
     public mixed $response = null;
+    public ?string $lastUrl = null;
 
     public function get(string $url, string $token, int $timeout = 12, int $max_retries = 2, ?WallClockBudget $budget = null)
     {
+        $this->lastUrl = $url;
         return $this->response;
     }
 }
@@ -517,6 +610,11 @@ final class FakeBrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
         $this->received = [$page, $perPage, $ids];
 
         return 'https://api.example.com/brands?page=' . $page;
+    }
+
+    public function buildSingleUrl(int $apiBrandId): string
+    {
+        return 'https://api.example.com/brands/' . $apiBrandId;
     }
 }
 

@@ -163,4 +163,37 @@ final class BrandsApiUrlBuilderTest extends TestCase
             $this->builder()->effectiveBase()
         );
     }
+
+    /**
+     * Webhook sync slice — BrandSyncService::syncOne() targets the single-
+     * brand endpoint (bypasses the API's active() scope, unlike buildPageUrl's
+     * list endpoint), so it needs its own URL, not a page of one.
+     */
+    public function test_builds_single_brand_url(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v1';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v1/brands/42',
+            $this->builder()->buildSingleUrl(42)
+        );
+    }
+
+    public function test_single_brand_url_respects_v2_opt_in(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v2';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v2/brands/42',
+            $this->builder()->buildSingleUrl(42)
+        );
+    }
 }

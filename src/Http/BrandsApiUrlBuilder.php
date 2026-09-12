@@ -32,6 +32,11 @@ final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
         return $url;
     }
 
+    public function buildSingleUrl(int $apiBrandId): string
+    {
+        return $this->effectiveBase() . '/brands/' . $apiBrandId;
+    }
+
     /**
      * The base URL brand sync will hit after the `dataflair_brands_api_version`
      * rewrite. The stored option can still read `/api/v1` while V2 is selected
