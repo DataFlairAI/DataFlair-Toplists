@@ -57,6 +57,11 @@ final class DatabaseSchemaContractTest extends TestCase
             'alter'     => [],
             'generated' => [],
         ],
+        'webhook_events' => [
+            'sql'       => ['webhook_events_sql'],
+            'alter'     => [],
+            'generated' => [],
+        ],
     ];
 
     private function source(): string
@@ -189,6 +194,19 @@ final class DatabaseSchemaContractTest extends TestCase
             'created_at',
             'updated_at',
         ], $this->liveColumns('alts'), 'wp_dataflair_alternative_toplists' . self::HINT);
+    }
+
+    public function test_webhook_events_table_columns_match_the_locked_contract(): void
+    {
+        // Internal idempotency ledger, not part of the tenant-facing render
+        // contract the other tables above are - no external code reads this
+        // table directly - but still pinned so a column rename here doesn't
+        // silently break WebhookEventsRepository / the receiver's dedup check.
+        $this->assertEqualsCanonicalizing([
+            'delivery_id',
+            'event_type',
+            'processed_at',
+        ], $this->liveColumns('webhook_events'), 'wp_dataflair_webhook_events' . self::HINT);
     }
 
     public function test_every_create_block_for_a_table_declares_the_same_columns(): void

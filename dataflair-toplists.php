@@ -25,6 +25,7 @@ if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PL
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 if (!defined('DATAFLAIR_BRANDS_TABLE_NAME'))                define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
 if (!defined('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME'))  define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
+if (!defined('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME'))        define('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME', 'dataflair_webhook_events');
 
 // Load Composer autoloader
 if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {

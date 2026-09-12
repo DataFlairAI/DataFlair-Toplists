@@ -48,6 +48,9 @@ if (!defined('DATAFLAIR_BRANDS_TABLE_NAME')) {
 if (!defined('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME')) {
     define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
 }
+if (!defined('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME')) {
+    define('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME', 'dataflair_webhook_events');
+}
 if (!defined('DATAFLAIR_VERSION')) {
     define('DATAFLAIR_VERSION', '1.5.0');
 }
