@@ -29,10 +29,12 @@ namespace {
             public $data;
             /** @var array<string,string> */
             public array $headers = [];
+            private int $status = 200;
 
-            public function __construct($data = null)
+            public function __construct($data = null, int $status = 200)
             {
-                $this->data = $data;
+                $this->data   = $data;
+                $this->status = $status;
             }
 
             public function header(string $key, string $value): void
@@ -43,6 +45,16 @@ namespace {
             public function get_data()
             {
                 return $this->data;
+            }
+
+            public function set_status(int $status): void
+            {
+                $this->status = $status;
+            }
+
+            public function get_status(): int
+            {
+                return $this->status;
             }
         }
     }
@@ -79,6 +91,11 @@ namespace {
             /** @var array<string,mixed> */
             private array $params;
 
+            /** @var array<string,string> */
+            private array $headers = [];
+
+            private string $body = '';
+
             public function __construct(array $params = [])
             {
                 $this->params = $params;
@@ -87,6 +104,31 @@ namespace {
             public function get_param(string $name)
             {
                 return $this->params[$name] ?? null;
+            }
+
+            /**
+             * Real WP_REST_Request normalizes header names (case/dash-insensitive)
+             * and returns null when absent - matched here for WebhookController's
+             * X-DataFlair-* header reads.
+             */
+            public function get_header(string $name): ?string
+            {
+                return $this->headers[strtolower($name)] ?? null;
+            }
+
+            public function set_header(string $name, string $value): void
+            {
+                $this->headers[strtolower($name)] = $value;
+            }
+
+            public function get_body(): string
+            {
+                return $this->body;
+            }
+
+            public function set_body(string $body): void
+            {
+                $this->body = $body;
             }
 
             public function offsetExists($offset): bool { return isset($this->params[$offset]); }
@@ -174,6 +216,21 @@ namespace DataFlair\Toplists\Rest\Controllers {
         function get_option($key, $default = false)
         {
             return \SyncFunctionStubsStore::$options[$key] ?? $default;
+        }
+    }
+    // WebhookController records last-processed/last-rejected state for the
+    // Settings page's fallback warning (same shared store as get_option above).
+    if (!function_exists(__NAMESPACE__ . '\\update_option')) {
+        function update_option($key, $value, $autoload = null)
+        {
+            \SyncFunctionStubsStore::$options[$key] = $value;
+            return true;
+        }
+    }
+    if (!function_exists(__NAMESPACE__ . '\\current_time')) {
+        function current_time($type)
+        {
+            return $type === 'mysql' ? '2026-01-01 00:00:00' : time();
         }
     }
 }

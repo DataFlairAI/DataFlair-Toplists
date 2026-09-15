@@ -23,7 +23,15 @@ jQuery(document).ready(function($) {
             dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || '',
             dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1'
         };
-        
+
+        // The webhook checkbox only exists on the API Connection tab - only
+        // include the key when it's actually present, so saving from any
+        // other tab (a different button, same handler) can't silently send
+        // '0' and flip webhook sync off for a setting the user never touched.
+        if ($('#dataflair_webhook_enabled').length) {
+            formData.dataflair_webhook_enabled = $('#dataflair_webhook_enabled').is(':checked') ? '1' : '0';
+        }
+
         // Send AJAX request
         $.ajax({
             url: dataflairAdmin.ajaxUrl,
@@ -32,13 +40,25 @@ jQuery(document).ready(function($) {
             timeout: 10000, // 10 second timeout
             success: function(response) {
                 if (response.success) {
-                    $message.html('<span style="color: #46b450;">✓ ' + response.data.message + '</span>');
+                    var html = '<span style="color: #46b450;">✓ ' + response.data.message + '</span>';
+                    var webhookFailed = response.data.webhook_registered === false;
+                    if (webhookFailed) {
+                        // Own line, warning colour, not swept into the green
+                        // success text - this is the only surface anywhere
+                        // in the UI that a failed subscribe call happened,
+                        // so it must not read as part of a clean save.
+                        html += '<br><span style="color: #dc3232;">⚠ Webhook registration failed — check your API connection and base URL, then save again.</span>';
+                    }
+                    $message.html(html);
                     $button.val(originalText).prop('disabled', false);
-                    
-                    // Clear message after 3 seconds
-                    setTimeout(function() {
-                        $message.html('');
-                    }, 3000);
+
+                    // Only auto-clear a clean save. A failed registration is
+                    // actionable and stays until the next save attempt.
+                    if (!webhookFailed) {
+                        setTimeout(function() {
+                            $message.html('');
+                        }, 3000);
+                    }
                 } else {
                     $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error saving settings') + '</span>');
                     $button.val(originalText).prop('disabled', false);

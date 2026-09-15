@@ -67,44 +67,15 @@ final class ApiClient implements HttpClientInterface
             $timeout = (int) max(1, min($timeout, (int) floor($budget->remaining())));
         }
 
-        $url = $this->maybeForceHttps($url);
-
-        $headers = [
-            'Accept'        => 'application/json',
-            'Authorization' => 'Bearer ' . trim($token),
-            // Contract handshake: lets the backend reject a plugin/API version
-            // mismatch loudly (HTTP 409) instead of serving a shape this plugin
-            // cannot render. Backends without the handshake ignore both headers.
-            'X-DataFlair-Plugin-Version' => defined('DATAFLAIR_VERSION') ? DATAFLAIR_VERSION : 'unknown',
-        ];
-
-        $expectedContract = $this->expectedContract($url);
-        if ($expectedContract !== null) {
-            $headers['X-DataFlair-Expected-Contract'] = $expectedContract;
-        }
-
-        $parsed = parse_url($url);
-        $host   = is_array($parsed) && isset($parsed['host']) ? (string) $parsed['host'] : '';
-
-        if ($this->isLocalUrl($url) && $this->isRunningInDocker()) {
-            $original_host     = $host;
-            $url               = str_replace($original_host, 'host.docker.internal', $url);
-            $headers['Host']   = $original_host;
-            $this->logger->debug('api_get.docker_rewrite', [
-                'from' => $original_host,
-                'to'   => 'host.docker.internal',
-            ]);
-        }
-
-        $http_user = trim((string) get_option('dataflair_http_auth_user', ''));
-        $http_pass = trim((string) get_option('dataflair_http_auth_pass', ''));
-        if ($http_user !== '' && $http_pass !== '') {
-            $url = preg_replace(
-                '#^(https?://)#i',
-                '$1' . urlencode($http_user) . ':' . urlencode($http_pass) . '@',
-                $url
-            );
-        }
+        $url     = $this->maybeForceHttps($url);
+        $headers = $this->buildAuthHeaders($token, $url);
+        $url     = $this->rewriteForLocalDocker($url, $headers);
+        // requestUrl carries embedded Basic Auth credentials and is used
+        // ONLY for the actual outbound call below - $url stays credential-
+        // free because it's also what every emitHttpCall() telemetry
+        // payload and WP_Error below carries, and that's forwarded to the
+        // dataflair_http_call action any hooked logger/debug plugin can see.
+        $requestUrl = $this->applyHttpBasicAuth($url);
 
         $args = [
             'timeout'             => $timeout,
@@ -121,8 +92,8 @@ final class ApiClient implements HttpClientInterface
 
         while (true) {
             $response = $use_persistent
-                ? $this->dispatchPersistent($url, $headers, $timeout)
-                : wp_remote_get($url, $args);
+                ? $this->dispatchPersistent($requestUrl, $headers, $timeout)
+                : wp_remote_get($requestUrl, $args);
 
             if (!is_wp_error($response)) {
                 $body = wp_remote_retrieve_body($response);
@@ -209,6 +180,108 @@ final class ApiClient implements HttpClientInterface
             sleep($delay);
             $attempt++;
         }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function post(string $url, string $token, array $body, int $timeout = 12)
+    {
+        $http_t0 = microtime(true);
+
+        $url     = $this->maybeForceHttps($url);
+        $headers = $this->buildAuthHeaders($token, $url);
+        $headers['Content-Type'] = 'application/json';
+        $url     = $this->rewriteForLocalDocker($url, $headers);
+        // See get(): requestUrl carries Basic Auth credentials for the
+        // actual call only; $url (used below in emitHttpCall()) stays
+        // credential-free.
+        $requestUrl = $this->applyHttpBasicAuth($url);
+
+        $response = wp_remote_post($requestUrl, [
+            'timeout' => $timeout,
+            'headers' => $headers,
+            'body'    => wp_json_encode($body),
+        ]);
+
+        if (is_wp_error($response)) {
+            $this->emitHttpCall([
+                'url'        => $url,
+                'status'     => 0,
+                'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+                'bytes'      => 0,
+                'error'      => $response->get_error_code(),
+            ]);
+            return $response;
+        }
+
+        $response_body = wp_remote_retrieve_body($response);
+        $this->emitHttpCall([
+            'url'        => $url,
+            'status'     => (int) wp_remote_retrieve_response_code($response),
+            'elapsed_ms' => (int) round((microtime(true) - $http_t0) * 1000),
+            'bytes'      => is_string($response_body) ? strlen($response_body) : 0,
+        ]);
+
+        return $response;
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function buildAuthHeaders(string $token, string $url): array
+    {
+        $headers = [
+            'Accept'        => 'application/json',
+            'Authorization' => 'Bearer ' . trim($token),
+            // Contract handshake: lets the backend reject a plugin/API version
+            // mismatch loudly (HTTP 409) instead of serving a shape this plugin
+            // cannot render. Backends without the handshake ignore both headers.
+            'X-DataFlair-Plugin-Version' => defined('DATAFLAIR_VERSION') ? DATAFLAIR_VERSION : 'unknown',
+        ];
+
+        $expectedContract = $this->expectedContract($url);
+        if ($expectedContract !== null) {
+            $headers['X-DataFlair-Expected-Contract'] = $expectedContract;
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @param array<string,string> $headers
+     */
+    private function rewriteForLocalDocker(string $url, array &$headers): string
+    {
+        $parsed = parse_url($url);
+        $host   = is_array($parsed) && isset($parsed['host']) ? (string) $parsed['host'] : '';
+
+        if ($this->isLocalUrl($url) && $this->isRunningInDocker()) {
+            $original_host   = $host;
+            $url             = str_replace($original_host, 'host.docker.internal', $url);
+            $headers['Host'] = $original_host;
+            $this->logger->debug('api_http.docker_rewrite', [
+                'from' => $original_host,
+                'to'   => 'host.docker.internal',
+            ]);
+        }
+
+        return $url;
+    }
+
+    private function applyHttpBasicAuth(string $url): string
+    {
+        $http_user = trim((string) get_option('dataflair_http_auth_user', ''));
+        $http_pass = trim((string) get_option('dataflair_http_auth_pass', ''));
+        if ($http_user !== '' && $http_pass !== '') {
+            $url = preg_replace(
+                '#^(https?://)#i',
+                '$1' . urlencode($http_user) . ':' . urlencode($http_pass) . '@',
+                $url
+            ) ?? $url;
+        }
+
+        return $url;
     }
 
     /**

@@ -576,6 +576,12 @@ final class ToplistFakeHttp implements HttpClientInterface
         $this->calls[] = $url;
         return array_shift($this->responses) ?? new \WP_Error('no_response', 'test ran out of responses');
     }
+
+    public function post(string $url, string $token, array $body, int $timeout = 12)
+    {
+        $this->calls[] = $url;
+        return array_shift($this->responses) ?? new \WP_Error('no_response', 'test ran out of responses');
+    }
 }
 
 final class ToplistFakePersister implements ToplistPersisterInterface

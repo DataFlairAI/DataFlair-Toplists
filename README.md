@@ -30,6 +30,14 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - Stores complete offer, tracker, and geo data as JSON for flexible querying
 - Paginated API fetch handles large brand catalogues automatically
 
+### Webhook Sync
+- DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync
+- A single "Enable webhook sync" checkbox on **DataFlair → Settings → API Connection** self-registers the site with DataFlair automatically, reusing the existing API token, no separate credential to manage
+- Live status shown underneath the checkbox: receiving, no activity yet, or a rejected-delivery reason
+- Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable, and verified before anything else runs
+- The receiver is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant)
+- `toplist.published` re-fetches just that toplist; `brand.status_changed`/`brand.updated` re-fetches just that brand, rather than re-syncing the full catalogue
+
 ### Brand Management
 - Syncs your full brand catalogue into a local database table
 - Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries
@@ -428,6 +436,12 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.4.0
+- **Added: webhook sync.** DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync. A new "Enable webhook sync" checkbox on Settings › API Connection self-registers the site automatically (reusing the existing API token, no separate credential to manage) and shows live status underneath: receiving, no activity yet, or a rejected-delivery reason. Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable. New route `POST /wp-json/dataflair/v1/webhooks` is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant). `toplist.published` re-fetches just that toplist; `brand.status_changed`/`brand.updated` re-fetches just that brand.
+- **Fixed (found during pre-release review, before reaching any site):** saving Settings from any tab other than API Connection no longer silently disables webhook sync. The webhook receiver's replay-freshness check now validates the signed payload's own timestamp instead of an unsigned header. The tenant-isolation check now fails closed instead of silently skipping when the site's API base URL can't be resolved. A failed idempotency-ledger write is now logged instead of swallowed. Local/Docker debug logging no longer mislabels a webhook registration call as a plain API fetch.
+- **Fixed (found only by a live delivery against a real WordPress install, not the mocked test suite):** the entire REST API was fatally erroring on every request — `rest_bootstrap()` wired the webhook receiver's toplist-persistence dependency to the wrong class. Same root cause as the 2.3.3 `TestsRunner` incident below: this god-class wiring is deliberately outside PHPUnit's reach.
+- **Tests:** new coverage for the webhook receiver (signature verification, idempotency, tenant guard, event routing, replay rejection), the self-registration flow, and the settings save-isolation fix. Full suite: 936 tests green.
 
 ### 2.3.3
 - **Fixed: fatal error on Tools › Tests & Diagnostics**, found by a live WordPress 7.1 smoke test after merge (`renderTestsTab()` built a `TestsRunner` missing a required argument). Verified across every admin page this release touches. `Tested up to` updated to 7.1.

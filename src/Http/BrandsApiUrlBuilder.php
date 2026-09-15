@@ -32,6 +32,14 @@ final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
         return $url;
     }
 
+    public function buildSingleUrl(int $apiBrandId): string
+    {
+        // persist: false - this path is reached from the webhook receiver
+        // (an inbound request), which must not have the side effect of
+        // writing dataflair_api_base_url just to build a fetch URL.
+        return $this->effectiveBase(false) . '/brands/' . $apiBrandId;
+    }
+
     /**
      * The base URL brand sync will hit after the `dataflair_brands_api_version`
      * rewrite. The stored option can still read `/api/v1` while V2 is selected

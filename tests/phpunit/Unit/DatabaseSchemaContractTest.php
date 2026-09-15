@@ -57,6 +57,11 @@ final class DatabaseSchemaContractTest extends TestCase
             'alter'     => [],
             'generated' => [],
         ],
+        'webhook_events' => [
+            'sql'       => ['webhook_events_sql'],
+            'alter'     => [],
+            'generated' => [],
+        ],
     ];
 
     private function source(): string
@@ -189,6 +194,40 @@ final class DatabaseSchemaContractTest extends TestCase
             'created_at',
             'updated_at',
         ], $this->liveColumns('alts'), 'wp_dataflair_alternative_toplists' . self::HINT);
+    }
+
+    public function test_webhook_events_table_columns_match_the_locked_contract(): void
+    {
+        // Internal idempotency ledger, not part of the tenant-facing render
+        // contract the other tables above are - no external code reads this
+        // table directly - but still pinned so a column rename here doesn't
+        // silently break WebhookEventsRepository / the receiver's dedup check.
+        $this->assertEqualsCanonicalizing([
+            'delivery_id',
+            'event_type',
+            'processed_at',
+        ], $this->liveColumns('webhook_events'), 'wp_dataflair_webhook_events' . self::HINT);
+    }
+
+    public function test_ensure_tables_exist_self_heals_the_webhook_events_table_too(): void
+    {
+        // ensureTablesExist() is the per-request self-heal path (invoked by
+        // checkDatabaseUpgrade() on every request) that recreates the
+        // toplists/brands tables if activation never fired. Before this
+        // test, it never checked the webhook_events table - so if the
+        // one-time upgradeDatabase() call that actually creates it silently
+        // failed (transient DB error, restricted CREATE privilege) while
+        // dataflair_db_version still got stamped current, the webhook
+        // receiver was permanently broken with no self-heal on any later
+        // request. Both branches of ensureTablesExist() (nothing missing;
+        // recreate) must call the same idempotent ensureWebhookEventsTable()
+        // the other generated-column self-heals already use.
+        $body = $this->methodBody($this->source(), 'ensureTablesExist');
+        $this->assertSame(
+            2,
+            substr_count($body, 'ensureWebhookEventsTable()'),
+            'ensureTablesExist() must call ensureWebhookEventsTable() in both its branches' . self::HINT
+        );
     }
 
     public function test_every_create_block_for_a_table_declares_the_same_columns(): void

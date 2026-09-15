@@ -18,23 +18,33 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Tests\Unit\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\Ajax\SaveSettingsHandler;
+use DataFlair\Toplists\Webhooks\WebhookSelfRegistrarInterface;
 use PHPUnit\Framework\TestCase;
 
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once __DIR__ . '/SaveSettingsHandlerTestStubs.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSelfRegistrarInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/SaveSettingsHandler.php';
 
 final class SaveSettingsHandlerTest extends TestCase
 {
+    private FakeWebhookSelfRegistrarForSettings $webhookRegistrar;
+
     protected function setUp(): void
     {
         parent::setUp();
         \SaveSettingsHandlerTestStubs::reset();
+        $this->webhookRegistrar = new FakeWebhookSelfRegistrarForSettings();
+    }
+
+    private function handler(): SaveSettingsHandler
+    {
+        return new SaveSettingsHandler($this->webhookRegistrar);
     }
 
     public function test_returns_success_envelope(): void
     {
-        $result = (new SaveSettingsHandler())->handle([]);
+        $result = ($this->handler())->handle([]);
 
         $this->assertTrue($result['success']);
         $this->assertSame('Settings saved successfully.', $result['data']['message']);
@@ -42,7 +52,7 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_api_token_is_trimmed_only_not_sanitized(): void
     {
-        (new SaveSettingsHandler())->handle([
+        ($this->handler())->handle([
             'dataflair_api_token' => "   token-with-brackets-[abc]   ",
         ]);
 
@@ -54,7 +64,7 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_http_basic_auth_password_is_trimmed_only(): void
     {
-        (new SaveSettingsHandler())->handle([
+        ($this->handler())->handle([
             'dataflair_http_auth_pass' => "  p4ss%word  ",
         ]);
 
@@ -66,24 +76,24 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_brands_api_version_whitelisted_to_v1_or_v2(): void
     {
-        (new SaveSettingsHandler())->handle(['dataflair_brands_api_version' => 'v2']);
+        ($this->handler())->handle(['dataflair_brands_api_version' => 'v2']);
         $this->assertSame('v2', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
 
-        (new SaveSettingsHandler())->handle(['dataflair_brands_api_version' => 'v99']);
+        ($this->handler())->handle(['dataflair_brands_api_version' => 'v99']);
         $this->assertSame('v1', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
     }
 
     public function test_empty_base_url_deletes_the_option(): void
     {
         \SaveSettingsHandlerTestStubs::$options['dataflair_api_base_url'] = 'https://old.example/api/v1';
-        (new SaveSettingsHandler())->handle(['dataflair_api_base_url' => '']);
+        ($this->handler())->handle(['dataflair_api_base_url' => '']);
 
         $this->assertArrayNotHasKey('dataflair_api_base_url', \SaveSettingsHandlerTestStubs::$options);
     }
 
     public function test_non_empty_base_url_is_trimmed_and_pinned_to_api_v_n(): void
     {
-        (new SaveSettingsHandler())->handle([
+        ($this->handler())->handle([
             'dataflair_api_base_url' => 'https://api.dataflair.ai/api/v2/toplists/extra/',
         ]);
 
@@ -95,7 +105,7 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_colour_fields_are_sanitize_text_fielded(): void
     {
-        (new SaveSettingsHandler())->handle([
+        ($this->handler())->handle([
             'dataflair_ribbon_bg_color'   => '#ffcc00',
             'dataflair_ribbon_text_color' => '#222222',
             'dataflair_cta_bg_color'      => '#00aaff',
@@ -110,17 +120,68 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_fields_absent_from_request_are_not_written(): void
     {
-        (new SaveSettingsHandler())->handle([]);
+        ($this->handler())->handle([]);
 
-        // Only the whitelisted brands_api_version always writes (defaults v1).
-        $this->assertSame(['dataflair_brands_api_version' => 'v1'], \SaveSettingsHandlerTestStubs::$options);
+        // brands_api_version always writes with a default (matches the
+        // radio-button pair, one of which is always checked on the tab that
+        // owns it). webhook_enabled is isset()-guarded like every other
+        // field: its checkbox lives only on the API Connection tab's DOM, so
+        // a save from a different tab must leave it untouched rather than
+        // reading "absent" as "off" — see
+        // test_webhook_setting_is_untouched_when_key_is_absent_from_request.
+        $this->assertSame(
+            ['dataflair_brands_api_version' => 'v1'],
+            \SaveSettingsHandlerTestStubs::$options
+        );
+    }
+
+    public function test_webhook_setting_is_untouched_when_key_is_absent_from_request(): void
+    {
+        // Simulates a save from a tab other than API Connection (e.g.
+        // Customizations' #dataflair-save-settings-custom button): the
+        // shared AJAX handler now omits the key entirely when the checkbox
+        // isn't in that tab's DOM, instead of forcing it to '0'.
+        \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled'] = '1';
+
+        $result = ($this->handler())->handle(['dataflair_ribbon_bg_color' => '#ffcc00']);
+
+        $this->assertSame('1', \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled'], 'a save from another tab must not silently disable webhook sync');
+        $this->assertNull($this->webhookRegistrar->calledWith);
+        $this->assertNull($result['data']['webhook_registered']);
+    }
+
+    public function test_webhook_checkbox_off_does_not_call_the_registrar(): void
+    {
+        ($this->handler())->handle(['dataflair_webhook_enabled' => '0']);
+
+        $this->assertSame('0', \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled']);
+        $this->assertNull($this->webhookRegistrar->calledWith);
+    }
+
+    public function test_webhook_checkbox_on_calls_the_registrar_with_the_receiver_url(): void
+    {
+        $result = ($this->handler())->handle(['dataflair_webhook_enabled' => '1']);
+
+        $this->assertSame('1', \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled']);
+        $this->assertSame('https://mysite.example/wp-json/dataflair/v1/webhooks', $this->webhookRegistrar->calledWith);
+        $this->assertTrue($result['data']['webhook_registered']);
+    }
+
+    public function test_webhook_registration_failure_is_reported_but_settings_still_save(): void
+    {
+        $this->webhookRegistrar->result = false;
+
+        $result = ($this->handler())->handle(['dataflair_webhook_enabled' => '1']);
+
+        $this->assertTrue($result['success'], 'a failed registration must not fail the whole save');
+        $this->assertFalse($result['data']['webhook_registered']);
     }
 
     public function test_delete_transient_does_not_touch_the_options_store(): void
     {
         \SaveSettingsHandlerTestStubs::$options['dataflair_api_health'] = 'unrelated-option-value';
 
-        (new SaveSettingsHandler())->handle([]);
+        ($this->handler())->handle([]);
 
         // The unconditional delete_transient('dataflair_api_health') call at
         // the end of handle() must clear the transients store, not options —
@@ -128,5 +189,18 @@ final class SaveSettingsHandlerTest extends TestCase
         $this->assertArrayHasKey('dataflair_api_health', \SaveSettingsHandlerTestStubs::$options);
         $this->assertSame('unrelated-option-value', \SaveSettingsHandlerTestStubs::$options['dataflair_api_health']);
         $this->assertArrayNotHasKey('dataflair_api_health', \SaveSettingsHandlerTestStubs::$transients);
+    }
+}
+
+final class FakeWebhookSelfRegistrarForSettings implements WebhookSelfRegistrarInterface
+{
+    public ?string $calledWith = null;
+    public bool $result = true;
+
+    public function register(string $receiverUrl): bool
+    {
+        $this->calledWith = $receiverUrl;
+
+        return $this->result;
     }
 }

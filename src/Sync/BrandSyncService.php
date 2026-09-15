@@ -255,94 +255,25 @@ final class BrandSyncService implements BrandSyncServiceInterface
                 continue;
             }
 
-            $apiBrandId = (int) $brandData['id'];
-            $brandName  = $brandData['name'] ?? 'Unnamed Brand';
-            $brandSlug  = $brandData['slug'] ?? sanitize_title($brandName);
-
-            $localLogoPath = $this->logoDownloader->download($brandData, (string) $brandSlug);
-            if ($localLogoPath) {
-                $brandData['local_logo'] = $localLogoPath;
-            }
-
-            $productTypes = isset($brandData['productTypes']) && is_array($brandData['productTypes'])
-                ? implode(', ', $brandData['productTypes']) : '';
-
-            $licenses = isset($brandData['licenses']) && is_array($brandData['licenses'])
-                ? implode(', ', $brandData['licenses']) : '';
-
-            $classificationTypes = isset($brandData['classificationTypes'])
-                && is_array($brandData['classificationTypes'])
-                ? implode(', ', $brandData['classificationTypes']) : '';
-
-            $topGeosArr = [];
-            if (isset($brandData['topGeos']['countries']) && is_array($brandData['topGeos']['countries'])) {
-                $topGeosArr = array_merge($topGeosArr, $brandData['topGeos']['countries']);
-            }
-            if (isset($brandData['topGeos']['markets']) && is_array($brandData['topGeos']['markets'])) {
-                $topGeosArr = array_merge($topGeosArr, $brandData['topGeos']['markets']);
-            }
-            $topGeos = implode(', ', $topGeosArr);
-
-            $brandOffersCount = isset($brandData['offersCount'])
-                ? (int) $brandData['offersCount']
-                : (isset($brandData['offers']) && is_array($brandData['offers']) ? count($brandData['offers']) : 0);
-            if (empty($topGeosArr) && $brandOffersCount > 0) {
-                $this->logger->warning(sprintf(
-                    'BrandSync: Brand #%d (%s): has %d offer(s) but no topGeos — check DataFlair admin',
-                    $apiBrandId,
-                    $brandName,
-                    $brandOffersCount
-                ));
-            }
-
-            $offersCount = isset($brandData['offers']) && is_array($brandData['offers'])
-                ? count($brandData['offers']) : 0;
-
-            $trackersCount = 0;
-            if (isset($brandData['offers']) && is_array($brandData['offers'])) {
-                foreach ($brandData['offers'] as $offer) {
-                    if (isset($offer['trackers']) && is_array($offer['trackers'])) {
-                        $trackersCount += count($offer['trackers']);
-                    }
-                }
-            }
-
-            $localLogoUrlColumn = !empty($localLogoPath) ? $localLogoPath : null;
-
-            $row = [
-                'api_brand_id'         => $apiBrandId,
-                'name'                 => $brandName,
-                'slug'                 => $brandSlug,
-                'status'               => $brandStatus,
-                'product_types'        => $productTypes,
-                'licenses'             => $licenses,
-                'classification_types' => $classificationTypes,
-                'top_geos'             => $topGeos,
-                'offers_count'         => $offersCount,
-                'trackers_count'       => $trackersCount,
-                'local_logo_url'       => $localLogoUrlColumn,
-                'data'                 => json_encode($brandData),
-                'last_synced'          => current_time('mysql'),
-            ];
+            $row = $this->buildBrandRow($brandData);
+            $apiBrandId = $row['api_brand_id'];
 
             $persisted = $this->brands->upsert($row);
             if ($persisted !== false) {
                 $synced++;
                 $this->logger->debug(
                     'BrandSync.upsert id=' . $apiBrandId
-                    . ' name="' . $brandName . '"'
-                    . ' offers=' . $offersCount
-                    . ' trackers=' . $trackersCount
-                    . ' logo=' . ($localLogoUrlColumn ? 'cached' : 'remote')
+                    . ' name="' . $row['name'] . '"'
+                    . ' offers=' . $row['offers_count']
+                    . ' trackers=' . $row['trackers_count']
+                    . ' logo=' . ($row['local_logo_url'] ? 'cached' : 'remote')
                 );
             } else {
                 $errors++;
                 $this->logger->error('BrandSync: upsert failed for brand ID ' . $apiBrandId);
             }
 
-            unset($brandData, $productTypes, $licenses, $classificationTypes,
-                  $topGeos, $topGeosArr, $offersCount, $trackersCount,
-                  $localLogoPath, $localLogoUrlColumn, $row, $persisted);
+            unset($brandData, $row, $persisted);
         }
 
         unset($data, $body);
@@ -397,5 +328,152 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $snippet = is_string($body) ? substr($body, 0, 400) : '';
         return 'API error (' . (int) $statusCode . ') for ' . $url
             . (empty($snippet) ? '' : ': ' . $snippet);
+    }
+
+    /**
+     * Webhook sync slice — brand.status_changed / brand.updated handler.
+     * Always re-fetches current truth via the single-brand endpoint rather
+     * than trusting the webhook payload's own from/to field: that's what
+     * makes a reordered or replayed delivery harmless, since each delivery
+     * lands on whatever the brand's state actually is at fetch time.
+     *
+     * Three outcomes, no new delete path — "gone" reuses the same
+     * setDisabledByApiBrandIds() bulk-hide convention as "inactive":
+     *   200 + active   -> upsert, clear the local is_disabled flag
+     *   200 + inactive -> upsert (still worth capturing current data), then disable
+     *   404            -> disable only, nothing to upsert
+     */
+    public function syncOne(int $apiBrandId): BrandSyncOutcome
+    {
+        $url = $this->brandsUrlBuilder->buildSingleUrl($apiBrandId);
+        $this->logger->debug('BrandSync.syncOne url=' . $url);
+
+        $response = $this->http->get($url, $this->token, 12, 2, null);
+
+        if (is_wp_error($response)) {
+            $msg = 'Failed to fetch brand ' . $apiBrandId . ': ' . $response->get_error_message();
+            $this->logger->error('BrandSync: ' . $msg);
+            return BrandSyncOutcome::failed($apiBrandId, $msg);
+        }
+
+        $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $body       = wp_remote_retrieve_body($response);
+
+        if ($statusCode === 404) {
+            $this->logger->info('BrandSync.syncOne id=' . $apiBrandId . ' gone (404) — disabling locally');
+            $this->brands->setDisabledByApiBrandIds([$apiBrandId], true);
+            return BrandSyncOutcome::gone($apiBrandId);
+        }
+
+        if ($statusCode !== 200) {
+            $msg = $this->buildDetailedApiError($statusCode, $body, wp_remote_retrieve_headers($response), $url);
+            $this->logger->error('BrandSync: ' . $msg);
+            return BrandSyncOutcome::failed($apiBrandId, $msg);
+        }
+
+        $data = json_decode($body, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !isset($data['data']) || !is_array($data['data'])) {
+            $msg = 'Invalid response format for brand ' . $apiBrandId;
+            $this->logger->error('BrandSync: ' . $msg);
+            return BrandSyncOutcome::failed($apiBrandId, $msg);
+        }
+
+        $brandData = $data['data'];
+        $row       = $this->buildBrandRow($brandData);
+        $this->brands->upsert($row);
+
+        // Lets a site-installed listener (e.g. a theme's review CPT) react to
+        // this brand's local cache having just been refreshed - kept generic
+        // (id + the same row buildBrandRow() already produces) so this
+        // plugin never needs to know what "reviews" are.
+        do_action('dataflair_brand_synced', $apiBrandId, $row);
+
+        $isActive = ($brandData['brandStatus'] ?? '') === 'Active';
+        $this->brands->setDisabledByApiBrandIds([$apiBrandId], !$isActive);
+
+        $this->logger->info('BrandSync.syncOne id=' . $apiBrandId . ' status=' . ($isActive ? 'active' : 'inactive'));
+
+        return $isActive ? BrandSyncOutcome::active($apiBrandId) : BrandSyncOutcome::inactive($apiBrandId);
+    }
+
+    /**
+     * Shared row-building for both the paginated list sync and syncOne():
+     * logo download, derived summary fields (product types/licenses/geos as
+     * CSV, offer + tracker counts), and the full raw payload cached in `data`.
+     *
+     * @param array<string,mixed> $brandData
+     * @return array<string,mixed>
+     */
+    private function buildBrandRow(array $brandData): array
+    {
+        $apiBrandId = (int) $brandData['id'];
+        $brandName  = $brandData['name'] ?? 'Unnamed Brand';
+        $brandSlug  = $brandData['slug'] ?? sanitize_title($brandName);
+
+        $localLogoPath = $this->logoDownloader->download($brandData, (string) $brandSlug);
+        if ($localLogoPath) {
+            $brandData['local_logo'] = $localLogoPath;
+        }
+
+        $productTypes = isset($brandData['productTypes']) && is_array($brandData['productTypes'])
+            ? implode(', ', $brandData['productTypes']) : '';
+
+        $licenses = isset($brandData['licenses']) && is_array($brandData['licenses'])
+            ? implode(', ', $brandData['licenses']) : '';
+
+        $classificationTypes = isset($brandData['classificationTypes'])
+            && is_array($brandData['classificationTypes'])
+            ? implode(', ', $brandData['classificationTypes']) : '';
+
+        $topGeosArr = [];
+        if (isset($brandData['topGeos']['countries']) && is_array($brandData['topGeos']['countries'])) {
+            $topGeosArr = array_merge($topGeosArr, $brandData['topGeos']['countries']);
+        }
+        if (isset($brandData['topGeos']['markets']) && is_array($brandData['topGeos']['markets'])) {
+            $topGeosArr = array_merge($topGeosArr, $brandData['topGeos']['markets']);
+        }
+        $topGeos = implode(', ', $topGeosArr);
+
+        $brandOffersCount = isset($brandData['offersCount'])
+            ? (int) $brandData['offersCount']
+            : (isset($brandData['offers']) && is_array($brandData['offers']) ? count($brandData['offers']) : 0);
+        if (empty($topGeosArr) && $brandOffersCount > 0) {
+            $this->logger->warning(sprintf(
+                'BrandSync: Brand #%d (%s): has %d offer(s) but no topGeos — check DataFlair admin',
+                $apiBrandId,
+                $brandName,
+                $brandOffersCount
+            ));
+        }
+
+        $offersCount = isset($brandData['offers']) && is_array($brandData['offers'])
+            ? count($brandData['offers']) : 0;
+
+        $trackersCount = 0;
+        if (isset($brandData['offers']) && is_array($brandData['offers'])) {
+            foreach ($brandData['offers'] as $offer) {
+                if (isset($offer['trackers']) && is_array($offer['trackers'])) {
+                    $trackersCount += count($offer['trackers']);
+                }
+            }
+        }
+
+        $localLogoUrlColumn = !empty($localLogoPath) ? $localLogoPath : null;
+
+        return [
+            'api_brand_id'         => $apiBrandId,
+            'name'                 => $brandName,
+            'slug'                 => $brandSlug,
+            'status'               => $brandData['brandStatus'] ?? '',
+            'product_types'        => $productTypes,
+            'licenses'             => $licenses,
+            'classification_types' => $classificationTypes,
+            'top_geos'             => $topGeos,
+            'offers_count'         => $offersCount,
+            'trackers_count'       => $trackersCount,
+            'local_logo_url'       => $localLogoUrlColumn,
+            'data'                 => json_encode($brandData),
+            'last_synced'          => current_time('mysql'),
+        ];
     }
 }

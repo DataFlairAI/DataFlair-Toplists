@@ -6,6 +6,10 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'PhpParser\\' => array($vendorDir . '/nikic/php-parser/lib/PhpParser'),
+    'Mockery\\' => array($vendorDir . '/mockery/mockery/library/Mockery'),
+    'Doctrine\\Instantiator\\' => array($vendorDir . '/doctrine/instantiator/src/Doctrine/Instantiator'),
+    'DeepCopy\\' => array($vendorDir . '/myclabs/deep-copy/src/DeepCopy'),
     'DataFlair\\Toplists\\Sync\\' => array($baseDir . '/src/Sync'),
     'DataFlair\\Toplists\\Support\\' => array($baseDir . '/includes/Support'),
     'DataFlair\\Toplists\\Rest\\' => array($baseDir . '/src/Rest'),
@@ -19,4 +23,5 @@ return array(
     'DataFlair\\Toplists\\Admin\\' => array($baseDir . '/src/Admin'),
     'DataFlair\\Toplists\\' => array($baseDir . '/src'),
     'Composer\\Installers\\' => array($vendorDir . '/composer/installers/src/Composer/Installers'),
+    'Brain\\Monkey\\' => array($vendorDir . '/brain/monkey/src'),
 );

@@ -21,4 +21,12 @@ interface BrandsApiUrlBuilderInterface
      *                        full catalog - used by "re-sync selected".
      */
     public function buildPageUrl(int $page, int $perPage = 25, ?array $ids = null): string;
+
+    /**
+     * URL for the single-brand endpoint (GET /brands/{id}), which bypasses
+     * the list endpoint's active() scope so it can report inactive/gone
+     * brands too - used by BrandSyncService::syncOne(), the webhook sync
+     * slice's brand.status_changed/brand.updated handler.
+     */
+    public function buildSingleUrl(int $apiBrandId): string;
 }

@@ -163,4 +163,62 @@ final class BrandsApiUrlBuilderTest extends TestCase
             $this->builder()->effectiveBase()
         );
     }
+
+    /**
+     * Webhook sync slice — BrandSyncService::syncOne() targets the single-
+     * brand endpoint (bypasses the API's active() scope, unlike buildPageUrl's
+     * list endpoint), so it needs its own URL, not a page of one.
+     */
+    public function test_builds_single_brand_url(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v1';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v1/brands/42',
+            $this->builder()->buildSingleUrl(42)
+        );
+    }
+
+    public function test_single_brand_url_respects_v2_opt_in(): void
+    {
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
+            if ($key === 'dataflair_brands_api_version') return 'v2';
+            return $default;
+        });
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v2/brands/42',
+            $this->builder()->buildSingleUrl(42)
+        );
+    }
+
+    public function test_build_single_url_never_persists_a_resolved_endpoint(): void
+    {
+        // buildSingleUrl() is reached from the webhook receiver (an inbound
+        // request handling brand.status_changed/brand.updated) - it must
+        // not have the side effect of writing dataflair_api_base_url just
+        // to build a fetch URL, the same way Settings' read-only render
+        // already avoids it (see ApiBaseUrlDetectorTest::
+        // test_does_not_cache_back_when_persist_is_false). Only tier 2
+        // (dataflair_api_endpoints) is configured here so detect()'s
+        // persist branch would actually run if buildSingleUrl() ever
+        // defaulted back to persist=true.
+        Functions\when('get_option')->alias(function ($key, $default = false) {
+            if ($key === 'dataflair_api_endpoints') {
+                return "https://tenant.dataflair.ai/api/v1/\n";
+            }
+            return $default;
+        });
+        Functions\expect('update_option')->never();
+
+        $this->assertSame(
+            'https://tenant.dataflair.ai/api/v1/brands/42',
+            $this->builder()->buildSingleUrl(42)
+        );
+    }
 }

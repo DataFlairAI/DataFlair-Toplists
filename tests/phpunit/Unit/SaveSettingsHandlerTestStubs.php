@@ -64,4 +64,12 @@ namespace DataFlair\Toplists\Admin\Ajax {
             return true;
         }
     }
+    // Webhook sync slice: SaveSettingsHandler builds the receiver URL from
+    // this when the checkbox is enabled.
+    if (!function_exists(__NAMESPACE__ . '\\rest_url')) {
+        function rest_url($path = '')
+        {
+            return 'https://mysite.example/wp-json/' . ltrim((string) $path, '/');
+        }
+    }
 }

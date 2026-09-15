@@ -21,4 +21,12 @@ interface BrandSyncServiceInterface
      * BrandsRepositoryInterface.
      */
     public function syncPage(SyncRequest $request): SyncResult;
+
+    /**
+     * Fetch and upsert one brand via the single-brand endpoint (bypasses the
+     * list endpoint's active() scope), then set its local is_disabled flag
+     * to match — active clears it, inactive or gone (404) sets it. Webhook
+     * sync slice's brand.status_changed/brand.updated handler.
+     */
+    public function syncOne(int $apiBrandId): BrandSyncOutcome;
 }
