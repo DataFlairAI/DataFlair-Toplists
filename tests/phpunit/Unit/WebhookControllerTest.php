@@ -339,6 +339,81 @@ final class WebhookControllerTest extends TestCase
         $this->assertSame('tenant_mismatch', $response->get_data()['error']);
         $this->assertNull($toplistPersister->calledWith);
     }
+
+    public function test_rejects_and_does_no_work_when_both_expected_and_actual_host_are_unresolvable(): void
+    {
+        // Regression test for a real bypass found in review: a malformed
+        // (non-empty, so isConfigured()===true) base URL makes the expected
+        // host resolve to null; if the payload also omits tenant_host, the
+        // actual host is null too. The mismatch check is a `!==` comparison,
+        // and null !== null is false - so without an explicit null guard on
+        // each side, this exact combination passed the tenant guard and
+        // reached the handler. Confirmed exploitable before the fix (200
+        // "processed", toplistPersister called) via a temporary probe.
+        \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = 'not-a-url';
+        [$controller, $toplistPersister] = $this->controller();
+        $payload = $this->toplistPublishedPayload();
+        unset($payload['tenant_host']);
+
+        $response = $controller->receive($this->signedRequest($payload));
+
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame('tenant_mismatch', $response->get_data()['error']);
+        $this->assertNull($toplistPersister->calledWith);
+    }
+
+    public function test_a_failed_toplist_fetch_is_not_recorded_as_processed(): void
+    {
+        // Regression test: routeEvent() used to discard fetchAndStore()'s
+        // return value entirely, so a failed fetch was still marked
+        // "processed" - the sender never retried, and a legitimate retry of
+        // the same delivery_id was permanently blocked by the idempotency
+        // ledger too.
+        $events = new FakeWebhookEventsRepo();
+        $toplistPersister = new FakeToplistPersister();
+        $toplistPersister->result = false;
+        [$controller] = $this->controller($toplistPersister, null, $events);
+
+        $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload(['delivery_id' => 'delivery-fail-1'])));
+
+        $this->assertSame(502, $response->get_status());
+        $this->assertSame('processing_failed', $response->get_data()['status']);
+        $this->assertArrayNotHasKey('delivery-fail-1', $events->processed);
+    }
+
+    public function test_a_failed_brand_sync_is_not_recorded_as_processed(): void
+    {
+        $events = new FakeWebhookEventsRepo();
+        $brandSync = new SpyBrandSyncService();
+        $brandSync->outcome = \DataFlair\Toplists\Sync\BrandSyncOutcome::failed(7, 'upstream 500');
+        [$controller] = $this->controller(null, $brandSync, $events);
+        $payload = [
+            'event' => 'brand.updated',
+            'delivery_id' => 'delivery-fail-2',
+            'occurred_at' => gmdate('c'),
+            'tenant_host' => 'tenant.dataflair.ai',
+            'data' => ['brand_id' => 7],
+        ];
+
+        $response = $controller->receive($this->signedRequest($payload));
+
+        $this->assertSame(502, $response->get_status());
+        $this->assertArrayNotHasKey('delivery-fail-2', $events->processed);
+    }
+
+    public function test_toplist_published_with_a_missing_toplist_id_is_not_recorded_as_processed(): void
+    {
+        $events = new FakeWebhookEventsRepo();
+        $toplistPersister = new FakeToplistPersister();
+        [$controller] = $this->controller($toplistPersister, null, $events);
+        $payload = $this->toplistPublishedPayload(['delivery_id' => 'delivery-fail-3', 'data' => ['toplist_id' => 0]]);
+
+        $response = $controller->receive($this->signedRequest($payload));
+
+        $this->assertSame(502, $response->get_status());
+        $this->assertArrayNotHasKey('delivery-fail-3', $events->processed);
+        $this->assertNull($toplistPersister->calledWith, 'must not call the persister with an invalid id');
+    }
 }
 
 final class FakeToplistPersister implements ToplistPersisterInterface
@@ -363,6 +438,7 @@ final class FakeToplistPersister implements ToplistPersisterInterface
 final class SpyBrandSyncService implements BrandSyncServiceInterface
 {
     public ?int $calledWith = null;
+    public ?BrandSyncOutcome $outcome = null;
 
     public function syncPage(SyncRequest $request): SyncResult
     {
@@ -373,7 +449,7 @@ final class SpyBrandSyncService implements BrandSyncServiceInterface
     {
         $this->calledWith = $apiBrandId;
 
-        return BrandSyncOutcome::active($apiBrandId);
+        return $this->outcome ?? BrandSyncOutcome::active($apiBrandId);
     }
 }
 

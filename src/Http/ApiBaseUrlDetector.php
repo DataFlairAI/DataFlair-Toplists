@@ -59,6 +59,27 @@ final class ApiBaseUrlDetector
         return ! empty(get_option('dataflair_api_base_url')) || $this->baseFromEndpoints() !== null;
     }
 
+    /**
+     * The host of this tenant's own configured base URL, or null - never
+     * self::FALLBACK's host. detect() itself can't signal "unconfigured":
+     * an empty/unparseable setting still makes it return a real, parseable
+     * DataFlair host, so composing isConfigured() + detect() ad-hoc at each
+     * call site has repeatedly been gotten wrong (fixed three times in the
+     * same webhook receiver alone - see WebhookController's git history).
+     * Every caller that needs certainty a host belongs to THIS tenant,
+     * rather than a best-effort display value, should call this instead.
+     */
+    public function detectConfiguredHost(bool $persist = true): ?string
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        $host = parse_url($this->detect($persist), PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : null;
+    }
+
     private function baseFromEndpoints(): ?string
     {
         $endpoints = get_option('dataflair_api_endpoints');

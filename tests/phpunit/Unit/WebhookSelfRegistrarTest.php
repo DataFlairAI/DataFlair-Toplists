@@ -120,6 +120,20 @@ final class WebhookSelfRegistrarTest extends TestCase
 
         $this->assertFalse($result);
     }
+
+    public function test_refuses_to_register_when_no_api_base_url_is_configured(): void
+    {
+        // Regression test: register() used to call detect(false) directly
+        // with no configured-check, so an unconfigured site would silently
+        // subscribe against the hard-coded fallback host (a real DataFlair
+        // production host) instead of refusing outright.
+        $http = new FakeHttpClientForRegistrar(['body' => '{"status":"registered"}', 'response' => ['code' => 200]]);
+
+        $result = $this->registrar($http)->register('https://mysite.example/wp-json/dataflair/v1/webhooks');
+
+        $this->assertFalse($result);
+        $this->assertNull($http->lastUrl, 'must not call out to any host, fallback included, when unconfigured');
+    }
 }
 
 final class FakeHttpClientForRegistrar implements HttpClientInterface

@@ -97,25 +97,40 @@ final class WebhookController
 
         // Fails closed: a request must give the plugin certainty that it's
         // scoped to this exact tenant, so an unconfigured site rejects too,
-        // rather than skipping the check like an implicit pass. Checked via
-        // isConfigured() explicitly - detect() itself never returns empty,
-        // it falls back to a hard-coded DataFlair host (self::FALLBACK) when
-        // unconfigured, so parse_url(detect(...)) always yields SOME host
-        // and would never trip an === null check here.
-        if (! $this->baseUrlDetector->isConfigured()) {
-            $reason = 'tenant host cannot be verified: no API base URL configured';
-            return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
-        }
-
-        $expectedHost = parse_url($this->baseUrlDetector->detect(false), PHP_URL_HOST);
+        // rather than skipping the check like an implicit pass.
+        //
+        // SECURITY: detectConfiguredHost() (not detect()) is required here.
+        // detect() never returns empty - it falls back to a hard-coded
+        // DataFlair host when unconfigured - so parse_url(detect(...))
+        // always yields SOME host. Composing isConfigured() + detect()
+        // ad-hoc here previously left a real bypass: when the configured
+        // base URL was non-empty but unparseable (e.g. missing a scheme),
+        // $expectedHost resolved to null; if the payload also omitted
+        // tenant_host, $actualHost was also null, and `null !== null` is
+        // false, so the mismatch check silently passed. Verified this was
+        // exploitable before the fix (malformed local config + a payload
+        // with no tenant_host reached routeEvent() with a 200 response).
+        $expectedHost = $this->baseUrlDetector->detectConfiguredHost(false);
         $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
-        if ($actualHost !== $expectedHost) {
-            $reason = 'tenant host mismatch: expected ' . ($expectedHost ?? 'none') . ', got ' . ($actualHost ?? 'none');
+        if ($expectedHost === null || $actualHost === null || $actualHost !== $expectedHost) {
+            $reason = $expectedHost === null
+                ? 'tenant host cannot be verified: no valid API base URL configured'
+                : 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
             return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
         }
 
         $payload = is_array($data['data'] ?? null) ? $data['data'] : [];
-        $this->routeEvent($eventType, $payload);
+        if (! $this->routeEvent($eventType, $payload)) {
+            // Do NOT record this delivery_id as processed: the whole point
+            // of a non-2xx here is to make the sender's own retry policy
+            // (DeliverWebhookJob: 4 attempts, 30s/5min/30min backoff) kick
+            // in. Marking it processed on a failed sync would both hide the
+            // failure from the sender (it sees "done", never retries) and
+            // permanently block a legitimate retry of this same delivery_id
+            // via the idempotency ledger.
+            $this->logger->error('Webhook: handler failed for delivery ' . $deliveryId . ' (' . $eventType . '), not recording as processed so a retry can succeed');
+            return new \WP_REST_Response(['status' => 'processing_failed'], 502);
+        }
 
         if (!$this->events->recordProcessed($deliveryId, $eventType)) {
             $this->logger->error('Webhook: failed to record delivery ' . $deliveryId . ' in the idempotency ledger — a retry will be processed again');
@@ -127,27 +142,34 @@ final class WebhookController
 
     /**
      * @param array<string,mixed> $payload
+     * @return bool False means the sender should retry: either the payload
+     *     was missing the id this event type needs, or the downstream fetch/
+     *     sync itself failed. An unhandled event type is NOT a failure -
+     *     retrying would never add a handler, so it returns true (processed).
      */
-    private function routeEvent(string $eventType, array $payload): void
+    private function routeEvent(string $eventType, array $payload): bool
     {
         if ($eventType === 'toplist.published') {
             $toplistId = (int) ($payload['toplist_id'] ?? 0);
-            if ($toplistId > 0) {
-                $endpoint = rtrim($this->baseUrlDetector->detect(false), '/') . '/toplists/' . $toplistId;
-                $this->toplistPersister->fetchAndStore($endpoint, $this->token);
+            if ($toplistId <= 0) {
+                $this->logger->warning('Webhook: toplist.published payload missing a valid toplist_id, cannot sync');
+                return false;
             }
-            return;
+            $endpoint = rtrim($this->baseUrlDetector->detect(false), '/') . '/toplists/' . $toplistId;
+            return $this->toplistPersister->fetchAndStore($endpoint, $this->token);
         }
 
         if ($eventType === 'brand.status_changed' || $eventType === 'brand.updated') {
             $brandId = (int) ($payload['brand_id'] ?? 0);
-            if ($brandId > 0) {
-                $this->brandSync->syncOne($brandId);
+            if ($brandId <= 0) {
+                $this->logger->warning('Webhook: ' . $eventType . ' payload missing a valid brand_id, cannot sync');
+                return false;
             }
-            return;
+            return $this->brandSync->syncOne($brandId)->status !== 'failed';
         }
 
         $this->logger->info('Webhook: no handler for event type ' . $eventType . ', ignoring');
+        return true;
     }
 
     private function isFreshTimestamp(?string $timestamp): bool

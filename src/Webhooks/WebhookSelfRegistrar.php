@@ -27,6 +27,16 @@ final class WebhookSelfRegistrar implements WebhookSelfRegistrarInterface
 
     public function register(string $receiverUrl): bool
     {
+        // SECURITY: detectConfiguredHost() (not detect()), matching
+        // WebhookController's receiver-side guard - detect() never returns
+        // empty, it falls back to a hard-coded DataFlair host when
+        // unconfigured, so an unguarded call here would silently subscribe
+        // this site's receiver URL and freshly generated secret to that
+        // fallback host instead of refusing outright.
+        if ($this->baseUrlDetector->detectConfiguredHost(false) === null) {
+            return false;
+        }
+
         $secret = $this->secret();
         $subscribeUrl = rtrim($this->baseUrlDetector->detect(false), '/') . '/webhooks/subscribe';
 
