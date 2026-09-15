@@ -252,7 +252,7 @@ final class ApiClient implements HttpClientInterface
             $original_host   = $host;
             $url             = str_replace($original_host, 'host.docker.internal', $url);
             $headers['Host'] = $original_host;
-            $this->logger->debug('api_get.docker_rewrite', [
+            $this->logger->debug('api_http.docker_rewrite', [
                 'from' => $original_host,
                 'to'   => 'host.docker.internal',
             ]);
