@@ -176,6 +176,17 @@ final class ApiBaseUrlDetectorTest extends TestCase
         $this->assertSame('tenant.dataflair.ai', $this->detector()->detectConfiguredHost());
     }
 
+    public function test_detect_configured_host_lowercases_the_host(): void
+    {
+        // Hostnames are case-insensitive by spec. WebhookController compares
+        // this value against a webhook payload's tenant_host with a strict
+        // !==, so a purely cosmetic case difference must not make the
+        // comparison fail.
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_base_url' ? 'https://Tenant.DataFlair.ai/api/v1' : $default);
+
+        $this->assertSame('tenant.dataflair.ai', $this->detector()->detectConfiguredHost());
+    }
+
     public function test_detect_configured_host_is_null_when_nothing_is_stored(): void
     {
         // The exact case detect() itself can't signal: nothing configured,

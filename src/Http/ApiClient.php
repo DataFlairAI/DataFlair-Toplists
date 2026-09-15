@@ -70,7 +70,12 @@ final class ApiClient implements HttpClientInterface
         $url     = $this->maybeForceHttps($url);
         $headers = $this->buildAuthHeaders($token, $url);
         $url     = $this->rewriteForLocalDocker($url, $headers);
-        $url     = $this->applyHttpBasicAuth($url);
+        // requestUrl carries embedded Basic Auth credentials and is used
+        // ONLY for the actual outbound call below - $url stays credential-
+        // free because it's also what every emitHttpCall() telemetry
+        // payload and WP_Error below carries, and that's forwarded to the
+        // dataflair_http_call action any hooked logger/debug plugin can see.
+        $requestUrl = $this->applyHttpBasicAuth($url);
 
         $args = [
             'timeout'             => $timeout,
@@ -87,8 +92,8 @@ final class ApiClient implements HttpClientInterface
 
         while (true) {
             $response = $use_persistent
-                ? $this->dispatchPersistent($url, $headers, $timeout)
-                : wp_remote_get($url, $args);
+                ? $this->dispatchPersistent($requestUrl, $headers, $timeout)
+                : wp_remote_get($requestUrl, $args);
 
             if (!is_wp_error($response)) {
                 $body = wp_remote_retrieve_body($response);
@@ -188,9 +193,12 @@ final class ApiClient implements HttpClientInterface
         $headers = $this->buildAuthHeaders($token, $url);
         $headers['Content-Type'] = 'application/json';
         $url     = $this->rewriteForLocalDocker($url, $headers);
-        $url     = $this->applyHttpBasicAuth($url);
+        // See get(): requestUrl carries Basic Auth credentials for the
+        // actual call only; $url (used below in emitHttpCall()) stays
+        // credential-free.
+        $requestUrl = $this->applyHttpBasicAuth($url);
 
-        $response = wp_remote_post($url, [
+        $response = wp_remote_post($requestUrl, [
             'timeout' => $timeout,
             'headers' => $headers,
             'body'    => wp_json_encode($body),

@@ -69,7 +69,14 @@ final class WebhookController
         $secret = trim((string) get_option('dataflair_webhook_secret', ''));
 
         if (!$this->verifier->verify($rawBody, $signature, $secret)) {
-            return $this->reject('invalid signature', 'Webhook: rejected, invalid signature', 'invalid_signature', 401);
+            // recordStatus: false - this is the one rejection reachable by
+            // anyone on the internet with zero knowledge of the shared
+            // secret (every other rejection below requires a valid
+            // signature to even be reached). Letting it write to the
+            // admin-facing "last rejected" status would let scanner/bot
+            // noise permanently show the webhook as failing even while
+            // real signed deliveries succeed.
+            return $this->reject('invalid signature', 'Webhook: rejected, invalid signature', 'invalid_signature', 401, 'warning', false);
         }
 
         $data = json_decode($rawBody, true);
@@ -127,7 +134,10 @@ final class WebhookController
             // (malformed local config + a payload with no tenant_host
             // reached routeEvent() with a 200 response).
             $expectedHost = $this->baseUrlDetector->detectConfiguredHost(false);
-            $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
+            // Hostnames are case-insensitive; detectConfiguredHost() already
+            // lowercases its side, so the payload's value is normalized the
+            // same way rather than doing a case-sensitive strict compare.
+            $actualHost = is_string($data['tenant_host'] ?? null) ? strtolower($data['tenant_host']) : null;
             if ($expectedHost === null || $actualHost === null || $actualHost !== $expectedHost) {
                 $reason = $expectedHost === null
                     ? 'tenant host cannot be verified: no valid API base URL configured'
@@ -217,9 +227,11 @@ final class WebhookController
      * taken explicitly rather than derived from $reason because the two
      * diverge per call site (extra context appended, differing prefixes).
      */
-    private function reject(string $reason, string $logMessage, string $errorCode, int $status, string $level = 'warning'): \WP_REST_Response
+    private function reject(string $reason, string $logMessage, string $errorCode, int $status, string $level = 'warning', bool $recordStatus = true): \WP_REST_Response
     {
-        $this->recordRejected($reason);
+        if ($recordStatus) {
+            $this->recordRejected($reason);
+        }
         $this->logger->{$level}($logMessage);
 
         return new \WP_REST_Response(['error' => $errorCode], $status);

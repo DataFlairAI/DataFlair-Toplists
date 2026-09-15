@@ -209,6 +209,27 @@ final class DatabaseSchemaContractTest extends TestCase
         ], $this->liveColumns('webhook_events'), 'wp_dataflair_webhook_events' . self::HINT);
     }
 
+    public function test_ensure_tables_exist_self_heals_the_webhook_events_table_too(): void
+    {
+        // ensureTablesExist() is the per-request self-heal path (invoked by
+        // checkDatabaseUpgrade() on every request) that recreates the
+        // toplists/brands tables if activation never fired. Before this
+        // test, it never checked the webhook_events table - so if the
+        // one-time upgradeDatabase() call that actually creates it silently
+        // failed (transient DB error, restricted CREATE privilege) while
+        // dataflair_db_version still got stamped current, the webhook
+        // receiver was permanently broken with no self-heal on any later
+        // request. Both branches of ensureTablesExist() (nothing missing;
+        // recreate) must call the same idempotent ensureWebhookEventsTable()
+        // the other generated-column self-heals already use.
+        $body = $this->methodBody($this->source(), 'ensureTablesExist');
+        $this->assertSame(
+            2,
+            substr_count($body, 'ensureWebhookEventsTable()'),
+            'ensureTablesExist() must call ensureWebhookEventsTable() in both its branches' . self::HINT
+        );
+    }
+
     public function test_every_create_block_for_a_table_declares_the_same_columns(): void
     {
         // Three install paths build the brands table. If they drift, sites

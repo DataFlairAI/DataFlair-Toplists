@@ -213,6 +213,7 @@ final class SchemaMigrator
         if (!$missing) {
             $this->ensureBrandsExternalIdIndex();
             $this->ensureToplistsGeoVirtualColumns();
+            $this->ensureWebhookEventsTable();
             return;
         }
 
@@ -262,6 +263,7 @@ final class SchemaMigrator
         dbDelta($brands_sql);
         $this->ensureBrandsExternalIdIndex();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureWebhookEventsTable();
 
         error_log('DataFlair: ensureTablesExist() ran dbDelta — tables were missing.');
     }

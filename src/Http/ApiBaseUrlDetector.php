@@ -77,7 +77,7 @@ final class ApiBaseUrlDetector
 
         $host = parse_url($this->detect($persist), PHP_URL_HOST);
 
-        return is_string($host) && $host !== '' ? $host : null;
+        return is_string($host) && $host !== '' ? strtolower($host) : null;
     }
 
     private function baseFromEndpoints(): ?string

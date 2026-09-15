@@ -34,7 +34,10 @@ final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
 
     public function buildSingleUrl(int $apiBrandId): string
     {
-        return $this->effectiveBase() . '/brands/' . $apiBrandId;
+        // persist: false - this path is reached from the webhook receiver
+        // (an inbound request), which must not have the side effect of
+        // writing dataflair_api_base_url just to build a fetch URL.
+        return $this->effectiveBase(false) . '/brands/' . $apiBrandId;
     }
 
     /**

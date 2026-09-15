@@ -130,6 +130,41 @@ final class WebhookControllerTest extends TestCase
         $this->assertSame('invalid_signature', $response->get_data()['error']);
     }
 
+    public function test_invalid_signature_does_not_write_the_admin_facing_rejected_status(): void
+    {
+        // Anyone on the internet can send a garbage signature with zero
+        // knowledge of the shared secret - unlike every other rejection
+        // reason below, which can only be reached by someone who already
+        // has it. If this wrote dataflair_webhook_last_rejected_at, bot/
+        // scanner noise could permanently pin the Settings page's webhook
+        // status to "rejected" even while real signed deliveries keep
+        // succeeding.
+        [$controller] = $this->controller();
+        $request = $this->signedRequest($this->toplistPublishedPayload(), 'wrong-secret');
+
+        $response = $controller->receive($request);
+
+        $this->assertSame(401, $response->get_status());
+        $this->assertArrayNotHasKey('dataflair_webhook_last_rejected_at', \SyncFunctionStubsStore::$options);
+        $this->assertArrayNotHasKey('dataflair_webhook_last_rejected_reason', \SyncFunctionStubsStore::$options);
+    }
+
+    public function test_a_signed_but_stale_delivery_still_writes_the_rejected_status(): void
+    {
+        // Contrast with the invalid-signature test above: this rejection
+        // can only be reached by someone who already knows the shared
+        // secret, so - unlike a bare signature failure - it's a meaningful
+        // signal worth surfacing on the Settings page, and must still be
+        // recorded.
+        [$controller] = $this->controller();
+        $stale = gmdate('c', time() - 600);
+        $payload = $this->toplistPublishedPayload(['occurred_at' => $stale]);
+
+        $controller->receive($this->signedRequest($payload));
+
+        $this->assertArrayHasKey('dataflair_webhook_last_rejected_at', \SyncFunctionStubsStore::$options);
+    }
+
     public function test_rejects_when_no_secret_is_configured(): void
     {
         \SyncFunctionStubsStore::$options['dataflair_webhook_secret'] = '';
@@ -209,6 +244,22 @@ final class WebhookControllerTest extends TestCase
         $this->assertSame(409, $response->get_status());
         $this->assertSame('tenant_mismatch', $response->get_data()['error']);
         $this->assertNull($toplistPersister->calledWith);
+    }
+
+    public function test_tenant_host_match_is_case_insensitive(): void
+    {
+        // Hostnames are case-insensitive by spec. A purely cosmetic case
+        // difference between the admin-entered base URL and the backend's
+        // tenant_host value must not permanently reject every real signed
+        // delivery.
+        \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = 'https://Tenant.DataFlair.ai/api/v1';
+        [$controller, $toplistPersister] = $this->controller();
+        $payload = $this->toplistPublishedPayload(['tenant_host' => 'tenant.dataflair.ai']);
+
+        $response = $controller->receive($this->signedRequest($payload));
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertNotNull($toplistPersister->calledWith);
     }
 
     public function test_rejects_and_does_no_work_when_the_expected_host_cannot_be_determined(): void
