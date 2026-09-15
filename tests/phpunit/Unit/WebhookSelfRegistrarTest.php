@@ -22,6 +22,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/HttpClientInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Http/ApiBaseUrlDetector.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSelfRegistrar.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpErrorStub.php';
 require_once __DIR__ . '/SyncFunctionStubs.php';
 
 final class WebhookSelfRegistrarTest extends TestCase
