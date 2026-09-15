@@ -74,13 +74,20 @@ final class SaveSettingsHandler implements AjaxHandlerInterface
         // transition - the subscribe endpoint upserts by site, so a repeat
         // call just reconfirms the same URL/secret rather than duplicating
         // anything, and it also re-heals if the receiver URL ever changes.
-        $webhook_enabled = isset($request['dataflair_webhook_enabled']) && $request['dataflair_webhook_enabled'] === '1';
-        update_option('dataflair_webhook_enabled', $webhook_enabled ? '1' : '0');
+        //
+        // isset()-guarded like every other field above: the checkbox only
+        // exists in the DOM on the API Connection tab, so a save from any
+        // other tab (Customizations, Sync, Geo-Targeting) must leave this
+        // option untouched rather than reading the field's absence as "off".
         $webhook_registered = null;
-        if ($webhook_enabled) {
-            $webhook_registered = $this->webhook_registrar->register(
-                rest_url(\DataFlair\Toplists\Rest\RestRouter::NAMESPACE . '/webhooks')
-            );
+        if (isset($request['dataflair_webhook_enabled'])) {
+            $webhook_enabled = $request['dataflair_webhook_enabled'] === '1';
+            update_option('dataflair_webhook_enabled', $webhook_enabled ? '1' : '0');
+            if ($webhook_enabled) {
+                $webhook_registered = $this->webhook_registrar->register(
+                    rest_url(\DataFlair\Toplists\Rest\RestRouter::NAMESPACE . '/webhooks')
+                );
+            }
         }
 
         delete_transient('dataflair_api_health');

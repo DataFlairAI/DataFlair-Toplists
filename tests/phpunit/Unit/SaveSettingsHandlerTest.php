@@ -122,14 +122,32 @@ final class SaveSettingsHandlerTest extends TestCase
     {
         ($this->handler())->handle([]);
 
-        // brands_api_version and webhook_enabled are the two fields that
-        // always write with a default, matching the hidden-field checkbox
-        // pattern: a real form submission always sends webhook_enabled
-        // ('0' or '1'), it's never simply absent.
+        // brands_api_version always writes with a default (matches the
+        // radio-button pair, one of which is always checked on the tab that
+        // owns it). webhook_enabled is isset()-guarded like every other
+        // field: its checkbox lives only on the API Connection tab's DOM, so
+        // a save from a different tab must leave it untouched rather than
+        // reading "absent" as "off" — see
+        // test_webhook_setting_is_untouched_when_key_is_absent_from_request.
         $this->assertSame(
-            ['dataflair_brands_api_version' => 'v1', 'dataflair_webhook_enabled' => '0'],
+            ['dataflair_brands_api_version' => 'v1'],
             \SaveSettingsHandlerTestStubs::$options
         );
+    }
+
+    public function test_webhook_setting_is_untouched_when_key_is_absent_from_request(): void
+    {
+        // Simulates a save from a tab other than API Connection (e.g.
+        // Customizations' #dataflair-save-settings-custom button): the
+        // shared AJAX handler now omits the key entirely when the checkbox
+        // isn't in that tab's DOM, instead of forcing it to '0'.
+        \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled'] = '1';
+
+        $result = ($this->handler())->handle(['dataflair_ribbon_bg_color' => '#ffcc00']);
+
+        $this->assertSame('1', \SaveSettingsHandlerTestStubs::$options['dataflair_webhook_enabled'], 'a save from another tab must not silently disable webhook sync');
+        $this->assertNull($this->webhookRegistrar->calledWith);
+        $this->assertNull($result['data']['webhook_registered']);
     }
 
     public function test_webhook_checkbox_off_does_not_call_the_registrar(): void

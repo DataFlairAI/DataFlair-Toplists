@@ -21,9 +21,16 @@ jQuery(document).ready(function($) {
             dataflair_ribbon_text_color: $('#dataflair_ribbon_text_color').val() || '',
             dataflair_cta_bg_color: $('#dataflair_cta_bg_color').val() || '',
             dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || '',
-            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1',
-            dataflair_webhook_enabled: $('#dataflair_webhook_enabled').is(':checked') ? '1' : '0'
+            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1'
         };
+
+        // The webhook checkbox only exists on the API Connection tab - only
+        // include the key when it's actually present, so saving from any
+        // other tab (a different button, same handler) can't silently send
+        // '0' and flip webhook sync off for a setting the user never touched.
+        if ($('#dataflair_webhook_enabled').length) {
+            formData.dataflair_webhook_enabled = $('#dataflair_webhook_enabled').is(':checked') ? '1' : '0';
+        }
 
         // Send AJAX request
         $.ajax({
