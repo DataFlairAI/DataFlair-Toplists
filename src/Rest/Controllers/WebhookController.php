@@ -7,9 +7,15 @@
  * HMAC signature verification instead of a WP capability check (the caller
  * is DataFlair's queue worker, not a logged-in WP user).
  *
- * Order: signature -> timestamp -> idempotency -> tenant guard -> route to
- * handler. Thin webhook, fat fetch: the payload carries ids only, handlers
- * re-fetch through the plugin's normal sync services.
+ * Order: signature -> payload parse -> timestamp -> idempotency -> tenant
+ * guard -> route to handler. Thin webhook, fat fetch: the payload carries
+ * ids only, handlers re-fetch through the plugin's normal sync services.
+ *
+ * Freshness is checked against the payload's own `occurred_at` field, not
+ * an X-DataFlair-Timestamp header - a header is never part of what the
+ * signature hashes (verify() only covers the raw body), so checking it
+ * would let a captured (body, signature) pair be replayed indefinitely by
+ * just forging a new header value.
  */
 
 declare(strict_types=1);
@@ -53,18 +59,18 @@ final class WebhookController
             return new \WP_REST_Response(['error' => 'invalid_signature'], 401);
         }
 
-        $timestampHeader = $request->get_header('X-DataFlair-Timestamp');
-        if (!$this->isFreshTimestamp($timestampHeader)) {
-            $this->recordRejected('stale or missing timestamp');
-            $this->logger->warning('Webhook: rejected, stale timestamp: ' . (string) $timestampHeader);
-            return new \WP_REST_Response(['error' => 'stale_timestamp'], 401);
-        }
-
         $data = json_decode($rawBody, true);
         if (!is_array($data) || !isset($data['delivery_id'], $data['event']) || !is_string($data['delivery_id']) || !is_string($data['event'])) {
             $this->recordRejected('malformed payload');
             $this->logger->warning('Webhook: rejected, malformed payload');
             return new \WP_REST_Response(['error' => 'malformed_payload'], 400);
+        }
+
+        $occurredAt = is_string($data['occurred_at'] ?? null) ? $data['occurred_at'] : null;
+        if (!$this->isFreshTimestamp($occurredAt)) {
+            $this->recordRejected('stale or missing timestamp');
+            $this->logger->warning('Webhook: rejected, stale timestamp: ' . (string) $occurredAt);
+            return new \WP_REST_Response(['error' => 'stale_timestamp'], 401);
         }
 
         $deliveryId = $data['delivery_id'];
@@ -75,10 +81,16 @@ final class WebhookController
             return new \WP_REST_Response(['status' => 'already_processed'], 200);
         }
 
+        // Fails closed: a request must give the plugin certainty that it's
+        // scoped to this exact tenant, so an unresolvable expected host (no
+        // API base URL configured) rejects too, rather than skipping the
+        // check like an implicit pass.
         $expectedHost = parse_url($this->baseUrlDetector->detect(false), PHP_URL_HOST);
         $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
-        if ($expectedHost !== null && $actualHost !== $expectedHost) {
-            $reason = 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
+        if ($expectedHost === null || $actualHost !== $expectedHost) {
+            $reason = $expectedHost === null
+                ? 'tenant host cannot be verified: no API base URL configured'
+                : 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
             $this->recordRejected($reason);
             $this->logger->error('Webhook: ' . $reason);
             return new \WP_REST_Response(['error' => 'tenant_mismatch'], 409);
@@ -87,7 +99,9 @@ final class WebhookController
         $payload = is_array($data['data'] ?? null) ? $data['data'] : [];
         $this->routeEvent($eventType, $payload);
 
-        $this->events->recordProcessed($deliveryId, $eventType);
+        if (!$this->events->recordProcessed($deliveryId, $eventType)) {
+            $this->logger->error('Webhook: failed to record delivery ' . $deliveryId . ' in the idempotency ledger — a retry will be processed again');
+        }
         update_option('dataflair_webhook_last_processed_at', current_time('mysql'));
 
         return new \WP_REST_Response(['status' => 'processed'], 200);
