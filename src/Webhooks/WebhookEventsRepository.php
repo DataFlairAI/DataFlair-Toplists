@@ -53,4 +53,31 @@ final class WebhookEventsRepository implements WebhookEventsRepositoryInterface
 
         return $result !== false;
     }
+
+    public function acquireLock(string $deliveryId): bool
+    {
+        // 1-second wait: a genuine concurrent duplicate should fail fast
+        // into the "already being handled" response, not queue up behind
+        // whatever the in-flight request's own outbound HTTP calls take.
+        $result = $this->wpdb->get_var(
+            $this->wpdb->prepare('SELECT GET_LOCK(%s, 1)', $this->lockName($deliveryId))
+        );
+
+        return (string) $result === '1';
+    }
+
+    public function releaseLock(string $deliveryId): void
+    {
+        $this->wpdb->query(
+            $this->wpdb->prepare('SELECT RELEASE_LOCK(%s)', $this->lockName($deliveryId))
+        );
+    }
+
+    // MySQL named locks cap at 64 characters. delivery_id is varchar(36)
+    // (a UUID today) and would fit as-is, but hashing keeps this correct
+    // regardless of what the sender ever puts in that field.
+    private function lockName(string $deliveryId): string
+    {
+        return 'dataflair_webhook_' . sha1($deliveryId);
+    }
 }

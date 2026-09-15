@@ -90,54 +90,73 @@ final class WebhookController
         $deliveryId = $data['delivery_id'];
         $eventType  = $data['event'];
 
-        if ($this->events->hasProcessed($deliveryId)) {
-            $this->logger->info('Webhook: delivery ' . $deliveryId . ' already processed, no-op');
-            return new \WP_REST_Response(['status' => 'already_processed'], 200);
+        // Closes the TOCTOU window between hasProcessed() and
+        // recordProcessed() below: without this, two requests carrying the
+        // same delivery_id (a genuine duplicate delivery, or the sender's
+        // own retry racing a still-in-flight first attempt) could both read
+        // "not yet processed" and both run the handler. Not waiting on a
+        // contended lock is deliberate - a concurrent request should fail
+        // fast into "already being handled", not queue up behind whatever
+        // the in-flight request's own outbound HTTP calls take.
+        if (!$this->events->acquireLock($deliveryId)) {
+            $this->logger->info('Webhook: delivery ' . $deliveryId . ' is already being processed by a concurrent request, no-op');
+            return new \WP_REST_Response(['status' => 'already_processing'], 200);
         }
 
-        // Fails closed: a request must give the plugin certainty that it's
-        // scoped to this exact tenant, so an unconfigured site rejects too,
-        // rather than skipping the check like an implicit pass.
-        //
-        // SECURITY: detectConfiguredHost() (not detect()) is required here.
-        // detect() never returns empty - it falls back to a hard-coded
-        // DataFlair host when unconfigured - so parse_url(detect(...))
-        // always yields SOME host. Composing isConfigured() + detect()
-        // ad-hoc here previously left a real bypass: when the configured
-        // base URL was non-empty but unparseable (e.g. missing a scheme),
-        // $expectedHost resolved to null; if the payload also omitted
-        // tenant_host, $actualHost was also null, and `null !== null` is
-        // false, so the mismatch check silently passed. Verified this was
-        // exploitable before the fix (malformed local config + a payload
-        // with no tenant_host reached routeEvent() with a 200 response).
-        $expectedHost = $this->baseUrlDetector->detectConfiguredHost(false);
-        $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
-        if ($expectedHost === null || $actualHost === null || $actualHost !== $expectedHost) {
-            $reason = $expectedHost === null
-                ? 'tenant host cannot be verified: no valid API base URL configured'
-                : 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
-            return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
-        }
+        try {
+            if ($this->events->hasProcessed($deliveryId)) {
+                $this->logger->info('Webhook: delivery ' . $deliveryId . ' already processed, no-op');
+                return new \WP_REST_Response(['status' => 'already_processed'], 200);
+            }
 
-        $payload = is_array($data['data'] ?? null) ? $data['data'] : [];
-        if (! $this->routeEvent($eventType, $payload)) {
-            // Do NOT record this delivery_id as processed: the whole point
-            // of a non-2xx here is to make the sender's own retry policy
-            // (DeliverWebhookJob: 4 attempts, 30s/5min/30min backoff) kick
-            // in. Marking it processed on a failed sync would both hide the
-            // failure from the sender (it sees "done", never retries) and
-            // permanently block a legitimate retry of this same delivery_id
-            // via the idempotency ledger.
-            $this->logger->error('Webhook: handler failed for delivery ' . $deliveryId . ' (' . $eventType . '), not recording as processed so a retry can succeed');
-            return new \WP_REST_Response(['status' => 'processing_failed'], 502);
-        }
+            // Fails closed: a request must give the plugin certainty that
+            // it's scoped to this exact tenant, so an unconfigured site
+            // rejects too, rather than skipping the check like an implicit
+            // pass.
+            //
+            // SECURITY: detectConfiguredHost() (not detect()) is required
+            // here. detect() never returns empty - it falls back to a
+            // hard-coded DataFlair host when unconfigured - so
+            // parse_url(detect(...)) always yields SOME host. Composing
+            // isConfigured() + detect() ad-hoc here previously left a real
+            // bypass: when the configured base URL was non-empty but
+            // unparseable (e.g. missing a scheme), $expectedHost resolved to
+            // null; if the payload also omitted tenant_host, $actualHost was
+            // also null, and `null !== null` is false, so the mismatch check
+            // silently passed. Verified this was exploitable before the fix
+            // (malformed local config + a payload with no tenant_host
+            // reached routeEvent() with a 200 response).
+            $expectedHost = $this->baseUrlDetector->detectConfiguredHost(false);
+            $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
+            if ($expectedHost === null || $actualHost === null || $actualHost !== $expectedHost) {
+                $reason = $expectedHost === null
+                    ? 'tenant host cannot be verified: no valid API base URL configured'
+                    : 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
+                return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
+            }
 
-        if (!$this->events->recordProcessed($deliveryId, $eventType)) {
-            $this->logger->error('Webhook: failed to record delivery ' . $deliveryId . ' in the idempotency ledger — a retry will be processed again');
-        }
-        update_option('dataflair_webhook_last_processed_at', current_time('mysql'));
+            $payload = is_array($data['data'] ?? null) ? $data['data'] : [];
+            if (! $this->routeEvent($eventType, $payload)) {
+                // Do NOT record this delivery_id as processed: the whole
+                // point of a non-2xx here is to make the sender's own retry
+                // policy (DeliverWebhookJob: 4 attempts, 30s/5min/30min
+                // backoff) kick in. Marking it processed on a failed sync
+                // would both hide the failure from the sender (it sees
+                // "done", never retries) and permanently block a legitimate
+                // retry of this same delivery_id via the idempotency ledger.
+                $this->logger->error('Webhook: handler failed for delivery ' . $deliveryId . ' (' . $eventType . '), not recording as processed so a retry can succeed');
+                return new \WP_REST_Response(['status' => 'processing_failed'], 502);
+            }
 
-        return new \WP_REST_Response(['status' => 'processed'], 200);
+            if (!$this->events->recordProcessed($deliveryId, $eventType)) {
+                $this->logger->error('Webhook: failed to record delivery ' . $deliveryId . ' in the idempotency ledger — a retry will be processed again');
+            }
+            update_option('dataflair_webhook_last_processed_at', current_time('mysql'));
+
+            return new \WP_REST_Response(['status' => 'processed'], 200);
+        } finally {
+            $this->events->releaseLock($deliveryId);
+        }
     }
 
     /**

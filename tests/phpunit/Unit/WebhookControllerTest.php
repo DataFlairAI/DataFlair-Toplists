@@ -414,6 +414,53 @@ final class WebhookControllerTest extends TestCase
         $this->assertArrayNotHasKey('delivery-fail-3', $events->processed);
         $this->assertNull($toplistPersister->calledWith, 'must not call the persister with an invalid id');
     }
+
+    public function test_a_delivery_locked_by_a_concurrent_request_returns_200_and_does_no_work(): void
+    {
+        // Regression test for the TOCTOU race between hasProcessed() and
+        // recordProcessed(): two requests carrying the same delivery_id (a
+        // genuine duplicate delivery, or the sender's own retry racing a
+        // still-in-flight first attempt) could both read "not yet
+        // processed" and both run the handler. Simulates the lock already
+        // being held by that other, still-in-flight request.
+        $events = new FakeWebhookEventsRepo();
+        $events->lockAvailable = false;
+        [$controller, $toplistPersister, $brandSync] = $this->controller(null, null, $events);
+
+        $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload(['delivery_id' => 'delivery-racing'])));
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame('already_processing', $response->get_data()['status']);
+        $this->assertNull($toplistPersister->calledWith, 'must not run the handler while another request holds the lock');
+        $this->assertArrayNotHasKey('delivery-racing', $events->processed, 'must not touch the ledger while another request holds the lock');
+    }
+
+    public function test_releases_the_lock_after_a_successful_handle(): void
+    {
+        $events = new FakeWebhookEventsRepo();
+        [$controller] = $this->controller(null, null, $events);
+
+        $controller->receive($this->signedRequest($this->toplistPublishedPayload(['delivery_id' => 'delivery-11'])));
+
+        $this->assertArrayNotHasKey('delivery-11', $events->locked, 'lock must be released once the request completes');
+    }
+
+    public function test_releases_the_lock_even_when_the_handler_fails(): void
+    {
+        // Proves the release happens in a finally, not just on the happy
+        // path - otherwise a failed handler would leave every future retry
+        // of this exact delivery_id permanently stuck behind a lock nothing
+        // ever frees.
+        $events = new FakeWebhookEventsRepo();
+        $toplistPersister = new FakeToplistPersister();
+        $toplistPersister->result = false;
+        [$controller] = $this->controller($toplistPersister, null, $events);
+
+        $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload(['delivery_id' => 'delivery-fail-lock'])));
+
+        $this->assertSame(502, $response->get_status());
+        $this->assertArrayNotHasKey('delivery-fail-lock', $events->locked, 'lock must be released even when the handler fails');
+    }
 }
 
 final class FakeToplistPersister implements ToplistPersisterInterface
@@ -461,6 +508,12 @@ final class FakeWebhookEventsRepo implements WebhookEventsRepositoryInterface
     /** Simulates a ledger write failure (e.g. a $wpdb->insert() error). */
     public bool $recordResult = true;
 
+    /** Simulates another request already holding the lock for a delivery_id. */
+    public bool $lockAvailable = true;
+
+    /** @var array<string,bool> delivery_ids currently locked, per acquireLock()/releaseLock(). */
+    public array $locked = [];
+
     public function hasProcessed(string $deliveryId): bool
     {
         return $this->processed[$deliveryId] ?? false;
@@ -475,6 +528,22 @@ final class FakeWebhookEventsRepo implements WebhookEventsRepositoryInterface
         $this->processed[$deliveryId] = true;
 
         return true;
+    }
+
+    public function acquireLock(string $deliveryId): bool
+    {
+        if (!$this->lockAvailable) {
+            return false;
+        }
+
+        $this->locked[$deliveryId] = true;
+
+        return true;
+    }
+
+    public function releaseLock(string $deliveryId): void
+    {
+        unset($this->locked[$deliveryId]);
     }
 }
 

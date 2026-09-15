@@ -92,4 +92,83 @@ final class WebhookEventsRepositoryTest extends TestCase
         $repo = new WebhookEventsRepository($wpdb);
         $this->assertFalse($repo->recordProcessed('abc-123', 'toplist.published'));
     }
+
+    public function test_acquire_lock_returns_true_when_get_lock_succeeds(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')
+            ->once()
+            ->with(M::on(fn ($sql) => str_contains($sql, 'GET_LOCK') && str_contains($sql, 'dataflair_webhook_')))
+            ->andReturn('1');
+
+        $repo = new WebhookEventsRepository($wpdb);
+        $this->assertTrue($repo->acquireLock('abc-123'));
+    }
+
+    public function test_acquire_lock_returns_false_when_another_connection_holds_it(): void
+    {
+        // GET_LOCK() returns 0 (not acquired within the timeout) rather than
+        // an error - a real caller holds it, i.e. a genuine concurrent
+        // duplicate delivery is being processed right now.
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn('0');
+
+        $repo = new WebhookEventsRepository($wpdb);
+        $this->assertFalse($repo->acquireLock('abc-123'));
+    }
+
+    public function test_acquire_lock_returns_false_on_a_null_result(): void
+    {
+        // GET_LOCK() returns NULL on error (e.g. out of memory for the lock
+        // table) - fail closed, same as a contended lock, rather than treat
+        // an error as "acquired".
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('get_var')->once()->andReturn(null);
+
+        $repo = new WebhookEventsRepository($wpdb);
+        $this->assertFalse($repo->acquireLock('abc-123'));
+    }
+
+    public function test_release_lock_calls_release_lock_for_the_same_delivery_id(): void
+    {
+        $wpdb = $this->makeWpdb();
+        $wpdb->shouldReceive('query')
+            ->once()
+            ->with(M::on(fn ($sql) => str_contains($sql, 'RELEASE_LOCK') && str_contains($sql, 'dataflair_webhook_')));
+
+        $repo = new WebhookEventsRepository($wpdb);
+        $repo->releaseLock('abc-123');
+
+        $this->addToAssertionCount(1); // Mockery expectation verified on tearDown
+    }
+
+    public function test_lock_name_is_stable_for_the_same_delivery_id(): void
+    {
+        // acquireLock() and releaseLock() must hash the same delivery_id to
+        // the same lock name, or a release would never free the lock its
+        // own acquire took. makeWpdb()'s prepare() stub is a plain
+        // vsprintf() (no SQL quoting), so the substituted lock name appears
+        // unquoted between the function's opening paren and the next comma
+        // (GET_LOCK) or closing paren (RELEASE_LOCK).
+        $wpdb = $this->makeWpdb();
+        $seenNames = [];
+        $wpdb->shouldReceive('get_var')->once()->andReturnUsing(function ($sql) use (&$seenNames) {
+            preg_match('/GET_LOCK\(([^,]+),/', $sql, $m);
+            $seenNames[] = $m[1] ?? null;
+            return '1';
+        });
+        $wpdb->shouldReceive('query')->once()->andReturnUsing(function ($sql) use (&$seenNames) {
+            preg_match('/RELEASE_LOCK\(([^)]+)\)/', $sql, $m);
+            $seenNames[] = $m[1] ?? null;
+            return true;
+        });
+
+        $repo = new WebhookEventsRepository($wpdb);
+        $repo->acquireLock('abc-123');
+        $repo->releaseLock('abc-123');
+
+        $this->assertCount(2, $seenNames);
+        $this->assertNotNull($seenNames[0]);
+        $this->assertSame($seenNames[0], $seenNames[1]);
+    }
 }

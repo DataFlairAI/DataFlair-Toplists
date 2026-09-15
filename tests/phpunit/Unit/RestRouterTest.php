@@ -171,6 +171,8 @@ final class RestRouterTest extends TestCase
         return new class implements WebhookEventsRepositoryInterface {
             public function hasProcessed(string $deliveryId): bool { return false; }
             public function recordProcessed(string $deliveryId, string $eventType): bool { return true; }
+            public function acquireLock(string $deliveryId): bool { return true; }
+            public function releaseLock(string $deliveryId): void {}
         };
     }
 
