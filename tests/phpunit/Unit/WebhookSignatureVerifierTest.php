@@ -3,8 +3,6 @@
  * WebhookSignatureVerifierTest — mirrors DeliverWebhookJob's outbound
  * signing on the dataflair.ai-v2 side exactly: hash_hmac('sha256', $body,
  * $secret), hash_equals() comparison, fails closed when unconfigured.
- * Direct counterpart of PloiWebhookController::signatureIsValid() on the
- * Laravel side (also HMAC-SHA256 + hash_equals), just the receiving end.
  */
 
 declare(strict_types=1);
@@ -14,6 +12,7 @@ namespace DataFlair\Toplists\Tests\Unit\Webhooks;
 use DataFlair\Toplists\Webhooks\WebhookSignatureVerifier;
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSignatureVerifierInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSignatureVerifier.php';
 
 final class WebhookSignatureVerifierTest extends TestCase

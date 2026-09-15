@@ -27,14 +27,14 @@ use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Sync\BrandSyncServiceInterface;
 use DataFlair\Toplists\Sync\ToplistPersisterInterface;
 use DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface;
-use DataFlair\Toplists\Webhooks\WebhookSignatureVerifier;
+use DataFlair\Toplists\Webhooks\WebhookSignatureVerifierInterface;
 
 final class WebhookController
 {
     private const TIMESTAMP_TOLERANCE_SECONDS = 300;
 
     public function __construct(
-        private WebhookSignatureVerifier $verifier,
+        private WebhookSignatureVerifierInterface $verifier,
         private WebhookEventsRepositoryInterface $events,
         private ToplistPersisterInterface $toplistPersister,
         private BrandSyncServiceInterface $brandSync,

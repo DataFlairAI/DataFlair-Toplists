@@ -35,6 +35,7 @@ require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncOutcome.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncServiceInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/ToplistPersisterInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookEventsRepositoryInterface.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSignatureVerifierInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Webhooks/WebhookSignatureVerifier.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlValidator.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Support/UrlTransformer.php';
