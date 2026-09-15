@@ -36,7 +36,7 @@ final class WebhookController
     public function __construct(
         private WebhookSignatureVerifier $verifier,
         private WebhookEventsRepositoryInterface $events,
-        private ToplistPersisterInterface $toplistFetcher,
+        private ToplistPersisterInterface $toplistPersister,
         private BrandSyncServiceInterface $brandSync,
         private ApiBaseUrlDetector $baseUrlDetector,
         private string $token,
@@ -49,6 +49,17 @@ final class WebhookController
      */
     public function receive(\WP_REST_Request $request)
     {
+        if (get_option('dataflair_webhook_enabled', '0') !== '1') {
+            // The admin turned "Enable webhook sync" off - possibly after
+            // this route was already subscribed on the sender side, so a
+            // delivery can still arrive here. Reject before doing any
+            // signature-verification work rather than silently continuing
+            // to act on a feature the admin explicitly disabled.
+            $this->recordRejected('webhook sync is disabled in settings');
+            $this->logger->info('Webhook: rejected, webhook sync is disabled');
+            return new \WP_REST_Response(['error' => 'webhook_disabled'], 403);
+        }
+
         $rawBody = $request->get_body();
         $signature = (string) ($request->get_header('X-DataFlair-Signature') ?? '');
         $secret = trim((string) get_option('dataflair_webhook_secret', ''));
@@ -82,15 +93,23 @@ final class WebhookController
         }
 
         // Fails closed: a request must give the plugin certainty that it's
-        // scoped to this exact tenant, so an unresolvable expected host (no
-        // API base URL configured) rejects too, rather than skipping the
-        // check like an implicit pass.
+        // scoped to this exact tenant, so an unconfigured site rejects too,
+        // rather than skipping the check like an implicit pass. Checked via
+        // isConfigured() explicitly - detect() itself never returns empty,
+        // it falls back to a hard-coded DataFlair host (self::FALLBACK) when
+        // unconfigured, so parse_url(detect(...)) always yields SOME host
+        // and would never trip an === null check here.
+        if (! $this->baseUrlDetector->isConfigured()) {
+            $reason = 'tenant host cannot be verified: no API base URL configured';
+            $this->recordRejected($reason);
+            $this->logger->error('Webhook: ' . $reason);
+            return new \WP_REST_Response(['error' => 'tenant_mismatch'], 409);
+        }
+
         $expectedHost = parse_url($this->baseUrlDetector->detect(false), PHP_URL_HOST);
         $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
-        if ($expectedHost === null || $actualHost !== $expectedHost) {
-            $reason = $expectedHost === null
-                ? 'tenant host cannot be verified: no API base URL configured'
-                : 'tenant host mismatch: expected ' . $expectedHost . ', got ' . ($actualHost ?? 'none');
+        if ($actualHost !== $expectedHost) {
+            $reason = 'tenant host mismatch: expected ' . ($expectedHost ?? 'none') . ', got ' . ($actualHost ?? 'none');
             $this->recordRejected($reason);
             $this->logger->error('Webhook: ' . $reason);
             return new \WP_REST_Response(['error' => 'tenant_mismatch'], 409);
@@ -116,7 +135,7 @@ final class WebhookController
             $toplistId = (int) ($payload['toplist_id'] ?? 0);
             if ($toplistId > 0) {
                 $endpoint = rtrim($this->baseUrlDetector->detect(false), '/') . '/toplists/' . $toplistId;
-                $this->toplistFetcher->fetchAndStore($endpoint, $this->token);
+                $this->toplistPersister->fetchAndStore($endpoint, $this->token);
             }
             return;
         }

@@ -35,7 +35,7 @@ final class RestBootstrap
         private \Closure $prefetchBrandMetas,
         private \Closure $lookupBrandMeta,
         private WebhookEventsRepositoryInterface $webhook_events_repo,
-        private ToplistPersisterInterface $toplist_fetcher,
+        private ToplistPersisterInterface $toplist_persister,
         private BrandSyncServiceInterface $brand_sync_service,
         private ApiBaseUrlDetector $base_url_detector,
         private string $api_token
@@ -54,7 +54,7 @@ final class RestBootstrap
         $webhook = new WebhookController(
             new WebhookSignatureVerifier(),
             $this->webhook_events_repo,
-            $this->toplist_fetcher,
+            $this->toplist_persister,
             $this->brand_sync_service,
             $this->base_url_detector,
             $this->api_token,

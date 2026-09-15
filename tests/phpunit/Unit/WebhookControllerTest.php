@@ -60,8 +60,9 @@ final class WebhookControllerTest extends TestCase
             fn ($key, $default = false) => \SyncFunctionStubsStore::$options[$key] ?? $default
         );
         \SyncFunctionStubsStore::reset();
-        \SyncFunctionStubsStore::$options['dataflair_webhook_secret'] = self::SECRET;
-        \SyncFunctionStubsStore::$options['dataflair_api_base_url']   = 'https://tenant.dataflair.ai/api/v1';
+        \SyncFunctionStubsStore::$options['dataflair_webhook_secret']  = self::SECRET;
+        \SyncFunctionStubsStore::$options['dataflair_api_base_url']    = 'https://tenant.dataflair.ai/api/v1';
+        \SyncFunctionStubsStore::$options['dataflair_webhook_enabled'] = '1';
     }
 
     protected function tearDown(): void
@@ -94,27 +95,27 @@ final class WebhookControllerTest extends TestCase
     }
 
     private function controller(
-        ?FakeToplistPersister $toplistFetcher = null,
+        ?FakeToplistPersister $toplistPersister = null,
         ?SpyBrandSyncService $brandSync = null,
         ?FakeWebhookEventsRepo $events = null,
         ?SpyLoggerForWebhookController $logger = null
     ): array {
-        $toplistFetcher = $toplistFetcher ?? new FakeToplistPersister();
-        $brandSync      = $brandSync ?? new SpyBrandSyncService();
-        $events         = $events ?? new FakeWebhookEventsRepo();
-        $logger         = $logger ?? new SpyLoggerForWebhookController();
+        $toplistPersister = $toplistPersister ?? new FakeToplistPersister();
+        $brandSync        = $brandSync ?? new SpyBrandSyncService();
+        $events           = $events ?? new FakeWebhookEventsRepo();
+        $logger           = $logger ?? new SpyLoggerForWebhookController();
 
         $controller = new WebhookController(
             new WebhookSignatureVerifier(),
             $events,
-            $toplistFetcher,
+            $toplistPersister,
             $brandSync,
             new ApiBaseUrlDetector(new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator())),
             'plugin-api-token',
             $logger
         );
 
-        return [$controller, $toplistFetcher, $brandSync, $events, $logger];
+        return [$controller, $toplistPersister, $brandSync, $events, $logger];
     }
 
     public function test_rejects_an_invalid_signature(): void
@@ -188,25 +189,25 @@ final class WebhookControllerTest extends TestCase
     {
         $events = new FakeWebhookEventsRepo();
         $events->processed = ['delivery-1' => true];
-        [$controller, $toplistFetcher, $brandSync] = $this->controller(null, null, $events);
+        [$controller, $toplistPersister, $brandSync] = $this->controller(null, null, $events);
 
         $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload()));
 
         $this->assertSame(200, $response->get_status());
         $this->assertSame('already_processed', $response->get_data()['status']);
-        $this->assertNull($toplistFetcher->calledWith, 'a replayed delivery must not re-run the handler');
+        $this->assertNull($toplistPersister->calledWith, 'a replayed delivery must not re-run the handler');
     }
 
     public function test_tenant_host_mismatch_is_rejected_and_does_no_work(): void
     {
-        [$controller, $toplistFetcher] = $this->controller();
+        [$controller, $toplistPersister] = $this->controller();
         $payload = $this->toplistPublishedPayload(['tenant_host' => 'a-different-tenant.dataflair.ai']);
 
         $response = $controller->receive($this->signedRequest($payload));
 
         $this->assertSame(409, $response->get_status());
         $this->assertSame('tenant_mismatch', $response->get_data()['error']);
-        $this->assertNull($toplistFetcher->calledWith);
+        $this->assertNull($toplistPersister->calledWith);
     }
 
     public function test_rejects_and_does_no_work_when_the_expected_host_cannot_be_determined(): void
@@ -216,24 +217,24 @@ final class WebhookControllerTest extends TestCase
         // parseable host. The tenant guard must fail closed here, not treat
         // "can't tell" as "assume it matches".
         \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = 'not-a-url';
-        [$controller, $toplistFetcher] = $this->controller();
+        [$controller, $toplistPersister] = $this->controller();
 
         $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload()));
 
         $this->assertSame(409, $response->get_status());
         $this->assertSame('tenant_mismatch', $response->get_data()['error']);
-        $this->assertNull($toplistFetcher->calledWith);
+        $this->assertNull($toplistPersister->calledWith);
     }
 
     public function test_toplist_published_calls_the_toplist_fetcher_with_the_id_endpoint(): void
     {
-        [$controller, $toplistFetcher] = $this->controller();
+        [$controller, $toplistPersister] = $this->controller();
 
         $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload(['data' => ['toplist_id' => 77]])));
 
         $this->assertSame(200, $response->get_status());
-        $this->assertSame('https://tenant.dataflair.ai/api/v1/toplists/77', $toplistFetcher->calledWith[0]);
-        $this->assertSame('plugin-api-token', $toplistFetcher->calledWith[1]);
+        $this->assertSame('https://tenant.dataflair.ai/api/v1/toplists/77', $toplistPersister->calledWith[0]);
+        $this->assertSame('plugin-api-token', $toplistPersister->calledWith[1]);
     }
 
     public function test_brand_status_changed_calls_sync_one_with_the_brand_id(): void
@@ -305,6 +306,37 @@ final class WebhookControllerTest extends TestCase
         $response = $controller->receive($request);
 
         $this->assertSame(400, $response->get_status());
+    }
+
+    public function test_rejects_and_does_no_work_when_webhook_sync_is_disabled(): void
+    {
+        // The admin unchecked "Enable webhook sync" - proves receive() itself
+        // honors that, not just WebhookSelfRegistrar refusing to subscribe.
+        \SyncFunctionStubsStore::$options['dataflair_webhook_enabled'] = '0';
+        [$controller, $toplistPersister] = $this->controller();
+
+        $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload()));
+
+        $this->assertSame(403, $response->get_status());
+        $this->assertSame('webhook_disabled', $response->get_data()['error']);
+        $this->assertNull($toplistPersister->calledWith);
+    }
+
+    public function test_rejects_and_does_no_work_when_nothing_is_configured_at_all(): void
+    {
+        // Distinct from test_rejects_and_does_no_work_when_the_expected_host_cannot_be_determined:
+        // that one covers a malformed-but-non-empty base URL. This covers a
+        // genuinely empty one, which is exactly the case detect() itself
+        // can't signal (it falls back to a real, parseable DataFlair host
+        // instead of returning empty) - only isConfigured() catches it.
+        \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = '';
+        [$controller, $toplistPersister] = $this->controller();
+
+        $response = $controller->receive($this->signedRequest($this->toplistPublishedPayload()));
+
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame('tenant_mismatch', $response->get_data()['error']);
+        $this->assertNull($toplistPersister->calledWith);
     }
 }
 
