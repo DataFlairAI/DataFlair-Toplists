@@ -3,7 +3,7 @@
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
  * Description: Fetch and display casino toplists from DataFlair API
- * Version: 2.3.3
+ * Version: 2.4.0
  * Requires at least: 6.3
  * Requires PHP: 8.1
  * Author: DataFlair
@@ -19,12 +19,13 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants (guarded so tests can pre-define them in their bootstrap)
-if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.3.3');
+if (!defined('DATAFLAIR_VERSION'))                          define('DATAFLAIR_VERSION', '2.4.0');
 if (!defined('DATAFLAIR_PLUGIN_DIR'))                       define('DATAFLAIR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 if (!defined('DATAFLAIR_PLUGIN_URL'))                       define('DATAFLAIR_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('DATAFLAIR_TABLE_NAME'))                       define('DATAFLAIR_TABLE_NAME', 'dataflair_toplists');
 if (!defined('DATAFLAIR_BRANDS_TABLE_NAME'))                define('DATAFLAIR_BRANDS_TABLE_NAME', 'dataflair_brands');
 if (!defined('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME'))  define('DATAFLAIR_ALTERNATIVE_TOPLISTS_TABLE_NAME', 'dataflair_alternative_toplists');
+if (!defined('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME'))        define('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME', 'dataflair_webhook_events');
 
 // Load Composer autoloader
 if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
@@ -107,6 +108,9 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Database\AlternativesRepositoryInterface|null */
     private $alternatives_repo = null;
+
+    /** @var \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface|null */
+    private $webhook_events_repo = null;
 
     /**
      * Phase 3 — sync services. Lazy-instantiated. See src/Sync/*.
@@ -215,6 +219,9 @@ class DataFlair_Toplists {
 
     /** @var \DataFlair\Toplists\Sync\ToplistFetcher|null */
     private $toplist_fetcher = null;
+
+    /** @var \DataFlair\Toplists\Sync\ToplistPersisterInterface|null */
+    private $toplist_persister = null;
 
     /** @var \DataFlair\Toplists\Sync\LogoSync|null */
     private $logo_sync = null;
@@ -436,6 +443,24 @@ class DataFlair_Toplists {
             ? $maybe
             : $default;
         return $this->alternatives_repo;
+    }
+
+    /**
+     * Webhook sync slice — idempotency ledger repository.
+     * Filterable via `dataflair_webhook_events_repository`.
+     */
+    private function webhook_events_repo() {
+        if ($this->webhook_events_repo instanceof \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface) {
+            return $this->webhook_events_repo;
+        }
+        $default = new \DataFlair\Toplists\Webhooks\WebhookEventsRepository();
+        $maybe   = function_exists('apply_filters')
+            ? apply_filters('dataflair_webhook_events_repository', $default)
+            : $default;
+        $this->webhook_events_repo = ($maybe instanceof \DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface)
+            ? $maybe
+            : $default;
+        return $this->webhook_events_repo;
     }
 
     /**
@@ -674,7 +699,12 @@ class DataFlair_Toplists {
             \DataFlair\Toplists\Logging\LoggerFactory::get(),
             $this->toplists_repo(),
             \Closure::fromCallable([$this, 'prefetch_brand_metas_for_items']),
-            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map'])
+            \Closure::fromCallable([$this, 'lookup_brand_meta_from_map']),
+            $this->webhook_events_repo(),
+            $this->toplist_persister(),
+            $this->brand_sync_service(),
+            $this->api_base_url_detector(),
+            trim((string) get_option('dataflair_api_token'))
         );
         return $this->rest_bootstrap;
     }
@@ -853,6 +883,21 @@ class DataFlair_Toplists {
             \Closure::fromCallable([$this, 'build_detailed_api_error'])
         );
         return $this->toplist_fetcher;
+    }
+
+    /**
+     * Webhook sync slice — ToplistPersisterInterface adapter for
+     * WebhookController's toplist.published handler. NOT toplist_fetcher()
+     * above: that's DataFlair\Toplists\Sync\ToplistFetcher, a different
+     * class for the paginated batch-sync pipeline that happens to share the
+     * fetchAndStore() method name but does not implement this interface.
+     */
+    private function toplist_persister() {
+        if ($this->toplist_persister instanceof \DataFlair\Toplists\Sync\ToplistPersisterInterface) {
+            return $this->toplist_persister;
+        }
+        $this->toplist_persister = new \DataFlair\Toplists\Sync\GodClassToplistPersister($this);
+        return $this->toplist_persister;
     }
 
     private function logo_sync() {

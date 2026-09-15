@@ -20,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/AjaxHandlerInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncRequest.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/SyncResult.php';
+require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncOutcome.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Sync/BrandSyncServiceInterface.php';
 require_once DATAFLAIR_PLUGIN_DIR . 'src/Admin/Ajax/SyncBrandsByIdsBatchHandler.php';
 
@@ -121,5 +122,10 @@ final class SpySyncService implements BrandSyncServiceInterface
         $this->received = $request;
 
         return $this->result ?? SyncResult::success($request->page, $request->page, 0, 0, false, true);
+    }
+
+    public function syncOne(int $apiBrandId): \DataFlair\Toplists\Sync\BrandSyncOutcome
+    {
+        return \DataFlair\Toplists\Sync\BrandSyncOutcome::active($apiBrandId);
     }
 }

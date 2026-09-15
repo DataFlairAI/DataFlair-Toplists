@@ -15,9 +15,15 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Admin\Ajax;
 
 use DataFlair\Toplists\Admin\AjaxHandlerInterface;
+use DataFlair\Toplists\Webhooks\WebhookSelfRegistrarInterface;
 
 final class SaveSettingsHandler implements AjaxHandlerInterface
 {
+    public function __construct(
+        private WebhookSelfRegistrarInterface $webhook_registrar
+    ) {
+    }
+
     public function handle(array $request): array
     {
         if (isset($request['dataflair_api_token'])) {
@@ -62,8 +68,36 @@ final class SaveSettingsHandler implements AjaxHandlerInterface
             update_option('dataflair_sync_alert_email', $email);
         }
 
+        // Webhook sync slice: '1' when checked, hidden field sends '0' when
+        // unchecked (same on/off pattern as dataflair_geo_targeting_enabled).
+        // Self-registers on every save while enabled, not just the on/off
+        // transition - the subscribe endpoint upserts by site, so a repeat
+        // call just reconfirms the same URL/secret rather than duplicating
+        // anything, and it also re-heals if the receiver URL ever changes.
+        //
+        // isset()-guarded like every other field above: the checkbox only
+        // exists in the DOM on the API Connection tab, so a save from any
+        // other tab (Customizations, Sync, Geo-Targeting) must leave this
+        // option untouched rather than reading the field's absence as "off".
+        $webhook_registered = null;
+        if (isset($request['dataflair_webhook_enabled'])) {
+            $webhook_enabled = $request['dataflair_webhook_enabled'] === '1';
+            update_option('dataflair_webhook_enabled', $webhook_enabled ? '1' : '0');
+            if ($webhook_enabled) {
+                $webhook_registered = $this->webhook_registrar->register(
+                    rest_url(\DataFlair\Toplists\Rest\RestRouter::NAMESPACE . '/webhooks')
+                );
+            }
+        }
+
         delete_transient('dataflair_api_health');
 
-        return ['success' => true, 'data' => ['message' => 'Settings saved successfully.']];
+        return [
+            'success' => true,
+            'data'    => [
+                'message'             => 'Settings saved successfully.',
+                'webhook_registered'  => $webhook_registered,
+            ],
+        ];
     }
 }

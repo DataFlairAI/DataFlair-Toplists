@@ -43,7 +43,7 @@ final class SchemaMigrator
      * changes; the upgrade path (`upgradeDatabase`) will run once per
      * site on the next request after the bump.
      */
-    public const CURRENT_VERSION = '1.13';
+    public const CURRENT_VERSION = '1.14';
 
     /**
      * Hook into `plugins_loaded` to run `checkDatabaseUpgrade` on every
@@ -130,6 +130,7 @@ final class SchemaMigrator
 
         $this->ensureBrandsExternalIdIndex();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureWebhookEventsTable();
     }
 
     /**
@@ -212,6 +213,7 @@ final class SchemaMigrator
         if (!$missing) {
             $this->ensureBrandsExternalIdIndex();
             $this->ensureToplistsGeoVirtualColumns();
+            $this->ensureWebhookEventsTable();
             return;
         }
 
@@ -261,6 +263,7 @@ final class SchemaMigrator
         dbDelta($brands_sql);
         $this->ensureBrandsExternalIdIndex();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureWebhookEventsTable();
 
         error_log('DataFlair: ensureTablesExist() ran dbDelta — tables were missing.');
     }
@@ -400,6 +403,7 @@ final class SchemaMigrator
         $this->ensureBrandsExternalIdIndex();
         $this->ensureAlternativeToplistsTable();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureWebhookEventsTable();
     }
 
     /**
@@ -510,6 +514,35 @@ final class SchemaMigrator
         dbDelta($alternative_toplists_sql);
 
         error_log('DataFlair: Alternative toplists table created');
+    }
+
+    /**
+     * Idempotency ledger for the webhook receiver (webhook sync slice, v1.14).
+     * A known delivery_id short-circuits to 200/no-op instead of re-running
+     * the handler - protects against a retried or replayed delivery, not
+     * just a duplicate HTTP request.
+     */
+    public function ensureWebhookEventsTable(): void
+    {
+        global $wpdb;
+        $table           = $wpdb->prefix . \DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") === $table) {
+            return;
+        }
+
+        $webhook_events_sql = "CREATE TABLE IF NOT EXISTS $table (
+            delivery_id varchar(36) NOT NULL,
+            event_type varchar(100) NOT NULL,
+            processed_at datetime NOT NULL,
+            PRIMARY KEY (delivery_id)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($webhook_events_sql);
+
+        error_log('DataFlair: Webhook events table created');
     }
 
     /**

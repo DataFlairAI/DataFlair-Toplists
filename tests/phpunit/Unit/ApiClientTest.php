@@ -223,4 +223,122 @@ final class ApiClientTest extends TestCase
         $this->assertArrayNotHasKey('X-DataFlair-Expected-Contract', $headers);
         $this->assertSame(DATAFLAIR_VERSION, $headers['X-DataFlair-Plugin-Version'] ?? null);
     }
+
+    // ── post() — webhook self-registration ──────────────────────────────
+
+    public function test_post_sends_json_body_with_auth_headers(): void
+    {
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $captured = null;
+        Functions\expect('wp_remote_post')->once()->andReturnUsing(function ($url, $args) use (&$captured) {
+            $captured = [$url, $args];
+            return ['body' => '{"status":"registered"}', 'response' => ['code' => 200]];
+        });
+
+        $result = (new ApiClient(new NullLogger()))->post(
+            'https://api.example.com/api/v1/webhooks/subscribe',
+            'tok',
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123']
+        );
+
+        $this->assertFalse($result instanceof \WP_Error);
+        [$url, $args] = $captured;
+        $this->assertSame('https://api.example.com/api/v1/webhooks/subscribe', $url);
+        $this->assertSame('Bearer tok', $args['headers']['Authorization']);
+        $this->assertSame('application/json', $args['headers']['Content-Type']);
+        $this->assertSame(
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123'],
+            json_decode($args['body'], true)
+        );
+    }
+
+    public function test_post_returns_wp_error_on_transport_failure(): void
+    {
+        Functions\when('wp_json_encode')->alias('json_encode');
+        Functions\expect('wp_remote_post')->once()->andReturn(
+            new \WP_Error('http_request_failed', 'timeout')
+        );
+
+        $result = (new ApiClient(new NullLogger()))->post(
+            'https://api.example.com/api/v1/webhooks/subscribe',
+            'tok',
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123']
+        );
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+    }
+
+    /**
+     * Basic Auth credentials must still reach the actual outbound request
+     * (auth would silently break otherwise), but must NOT appear in the URL
+     * handed to the dataflair_http_call action - anything hooked there
+     * (Query Monitor, a logging plugin) would otherwise see the plaintext
+     * password.
+     */
+    public function test_get_embeds_basic_auth_in_the_request_but_not_in_telemetry(): void
+    {
+        Functions\when('get_option')->alias(static function ($key, $default = '') {
+            if ($key === 'dataflair_http_auth_user') {
+                return 'admin';
+            }
+            if ($key === 'dataflair_http_auth_pass') {
+                return 's3cret';
+            }
+            return $default;
+        });
+
+        $requestUrl = null;
+        Functions\expect('wp_remote_get')->once()->andReturnUsing(function ($url) use (&$requestUrl) {
+            $requestUrl = $url;
+            return ['body' => '{"ok":true}', 'response' => ['code' => 200]];
+        });
+
+        $fired = [];
+        Functions\when('do_action')->alias(function (...$args) use (&$fired) {
+            if (($args[0] ?? null) === 'dataflair_http_call') {
+                $fired[] = $args[1] ?? [];
+            }
+        });
+
+        (new ApiClient(new NullLogger()))->get('https://api.example.com/toplists', 'tok');
+
+        $this->assertSame('https://admin:s3cret@api.example.com/toplists', $requestUrl);
+        $this->assertSame('https://api.example.com/toplists', $fired[0]['url']);
+    }
+
+    public function test_post_embeds_basic_auth_in_the_request_but_not_in_telemetry(): void
+    {
+        Functions\when('wp_json_encode')->alias('json_encode');
+        Functions\when('get_option')->alias(static function ($key, $default = '') {
+            if ($key === 'dataflair_http_auth_user') {
+                return 'admin';
+            }
+            if ($key === 'dataflair_http_auth_pass') {
+                return 's3cret';
+            }
+            return $default;
+        });
+
+        $requestUrl = null;
+        Functions\expect('wp_remote_post')->once()->andReturnUsing(function ($url) use (&$requestUrl) {
+            $requestUrl = $url;
+            return ['body' => '{"status":"registered"}', 'response' => ['code' => 200]];
+        });
+
+        $fired = [];
+        Functions\when('do_action')->alias(function (...$args) use (&$fired) {
+            if (($args[0] ?? null) === 'dataflair_http_call') {
+                $fired[] = $args[1] ?? [];
+            }
+        });
+
+        (new ApiClient(new NullLogger()))->post(
+            'https://api.example.com/api/v1/webhooks/subscribe',
+            'tok',
+            ['url' => 'https://site.example/webhook', 'secret' => 'abc123']
+        );
+
+        $this->assertSame('https://admin:s3cret@api.example.com/api/v1/webhooks/subscribe', $requestUrl);
+        $this->assertSame('https://api.example.com/api/v1/webhooks/subscribe', $fired[0]['url']);
+    }
 }

@@ -12,10 +12,16 @@ declare(strict_types=1);
 namespace DataFlair\Toplists\Rest;
 
 use DataFlair\Toplists\Database\ToplistsRepositoryInterface;
+use DataFlair\Toplists\Http\ApiBaseUrlDetector;
 use DataFlair\Toplists\Logging\LoggerInterface;
 use DataFlair\Toplists\Rest\Controllers\CasinosController;
 use DataFlair\Toplists\Rest\Controllers\HealthController;
 use DataFlair\Toplists\Rest\Controllers\ToplistsController;
+use DataFlair\Toplists\Rest\Controllers\WebhookController;
+use DataFlair\Toplists\Sync\BrandSyncServiceInterface;
+use DataFlair\Toplists\Sync\ToplistPersisterInterface;
+use DataFlair\Toplists\Webhooks\WebhookEventsRepositoryInterface;
+use DataFlair\Toplists\Webhooks\WebhookSignatureVerifier;
 
 final class RestBootstrap
 {
@@ -27,7 +33,12 @@ final class RestBootstrap
         private LoggerInterface $logger,
         private ToplistsRepositoryInterface $toplists_repo,
         private \Closure $prefetchBrandMetas,
-        private \Closure $lookupBrandMeta
+        private \Closure $lookupBrandMeta,
+        private WebhookEventsRepositoryInterface $webhook_events_repo,
+        private ToplistPersisterInterface $toplist_persister,
+        private BrandSyncServiceInterface $brand_sync_service,
+        private ApiBaseUrlDetector $base_url_detector,
+        private string $api_token
     ) {}
 
     public function boot(): RestRouter
@@ -40,7 +51,16 @@ final class RestBootstrap
             $this->logger
         );
         $health = new HealthController($this->toplists_repo);
+        $webhook = new WebhookController(
+            new WebhookSignatureVerifier(),
+            $this->webhook_events_repo,
+            $this->toplist_persister,
+            $this->brand_sync_service,
+            $this->base_url_detector,
+            $this->api_token,
+            $this->logger
+        );
 
-        return new RestRouter($toplists, $casinos, $health);
+        return new RestRouter($toplists, $casinos, $health, $webhook);
     }
 }

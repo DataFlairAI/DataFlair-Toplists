@@ -21,9 +21,85 @@ namespace DataFlair\Toplists\Admin\Pages;
 
 final class SettingsPage implements PageInterface
 {
+    /** Soft staleness window — a heuristic, not a hard failure signal. */
+    private const STALE_HOURS = 48;
+
     public function __construct(
         private \Closure $brandsEffectiveBaseResolver
     ) {}
+
+    /**
+     * Fallback warning for the webhook checkbox: rejected deliveries are a
+     * strong, specific signal (bad signature/config); no recent activity at
+     * all is only a soft one, since it may simply mean nothing changed
+     * upstream — copy reflects that difference rather than asserting
+     * breakage either way. Returns null when the feature is off or
+     * healthy-and-silent (nothing to say yet).
+     *
+     * @return array{text:string,style:string}|null
+     */
+    private function webhookStatusLine(): ?array
+    {
+        if (get_option('dataflair_webhook_enabled', '0') !== '1') {
+            return null;
+        }
+
+        $rejected_at = get_option('dataflair_webhook_last_rejected_at', '');
+        $processed_at = get_option('dataflair_webhook_last_processed_at', '');
+        $rejected_ts = $rejected_at !== '' ? $this->gmtTimestamp($rejected_at) : null;
+        $processed_ts = $processed_at !== '' ? $this->gmtTimestamp($processed_at) : null;
+
+        if ($rejected_ts !== null && ($processed_ts === null || $rejected_ts >= $processed_ts)) {
+            $reason = get_option('dataflair_webhook_last_rejected_reason', 'unknown reason');
+            return [
+                'text'  => sprintf(
+                    '⚠ A webhook delivery was rejected %s ago (%s) — check the webhook is still correctly configured.',
+                    human_time_diff($rejected_ts),
+                    $reason
+                ),
+                'style' => 'color:#b32d2e;',
+            ];
+        }
+
+        if ($processed_ts === null) {
+            return [
+                'text'  => 'No webhook activity yet. If you\'ve made recent changes in DataFlair, verify the connection or run a manual sync.',
+                'style' => 'color:#646970;',
+            ];
+        }
+
+        $hours_since = (time() - $processed_ts) / HOUR_IN_SECONDS;
+        if ($hours_since > self::STALE_HOURS) {
+            return [
+                'text'  => sprintf(
+                    'No webhook activity in %s. If you\'ve made recent changes in DataFlair, verify the connection or run a manual sync.',
+                    human_time_diff($processed_ts)
+                ),
+                'style' => 'color:#646970;',
+            ];
+        }
+
+        return [
+            'text'  => sprintf('● Receiving — last event %s ago', human_time_diff($processed_ts)),
+            'style' => 'color:#00a32a;',
+        ];
+    }
+
+    /**
+     * current_time('mysql') (how every dataflair_webhook_last_*_at option is
+     * written) returns site-LOCAL time, but strtotime() parses a naive
+     * datetime string as PHP's default timezone (UTC in a normal WP
+     * install), and human_time_diff()/time() both work in real UTC - a
+     * direct strtotime($option) skews every comparison here by the site's
+     * UTC offset (a webhook processed seconds ago could show as hours old,
+     * or vice versa, on any site with a non-zero timezone). Converts the
+     * stored local string to a real GMT timestamp first, the WordPress-
+     * native inverse of current_time('mysql').
+     */
+    private function gmtTimestamp(string $siteLocalMysqlDate): int
+    {
+        return (int) strtotime(get_gmt_from_date($siteLocalMysqlDate));
+    }
 
     public function render(): void
     {
@@ -125,6 +201,32 @@ final class SettingsPage implements PageInterface
                                         Base URL field itself still ends in <code>/v1</code>.
                                         <?php endif; ?>
                                     </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Webhook Sync</th>
+                                <td>
+                                    <input type="hidden" name="dataflair_webhook_enabled" value="0">
+                                    <label>
+                                        <input type="checkbox"
+                                               id="dataflair_webhook_enabled"
+                                               name="dataflair_webhook_enabled"
+                                               value="1"
+                                               <?php checked(get_option('dataflair_webhook_enabled', '0'), '1'); ?>>
+                                        Enable webhook sync
+                                    </label>
+                                    <p class="description">
+                                        Get brand/toplist updates the moment they happen in DataFlair,
+                                        instead of waiting for the next manual sync. Registers this site
+                                        automatically using the API token above &mdash; no separate secret
+                                        to manage.
+                                    </p>
+                                    <?php $webhook_status = $this->webhookStatusLine(); ?>
+                                    <?php if ($webhook_status !== null): ?>
+                                    <p class="description" style="<?php echo esc_attr($webhook_status['style']); ?>">
+                                        <?php echo esc_html($webhook_status['text']); ?>
+                                    </p>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         </table>

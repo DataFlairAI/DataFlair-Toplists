@@ -168,4 +168,43 @@ final class ApiBaseUrlDetectorTest extends TestCase
 
         $this->assertSame('https://sigma.dataflair.ai/api/v1', $this->detector()->detect());
     }
+
+    public function test_detect_configured_host_returns_the_real_host_when_configured(): void
+    {
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_base_url' ? 'https://tenant.dataflair.ai/api/v1' : $default);
+
+        $this->assertSame('tenant.dataflair.ai', $this->detector()->detectConfiguredHost());
+    }
+
+    public function test_detect_configured_host_lowercases_the_host(): void
+    {
+        // Hostnames are case-insensitive by spec. WebhookController compares
+        // this value against a webhook payload's tenant_host with a strict
+        // !==, so a purely cosmetic case difference must not make the
+        // comparison fail.
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_base_url' ? 'https://Tenant.DataFlair.ai/api/v1' : $default);
+
+        $this->assertSame('tenant.dataflair.ai', $this->detector()->detectConfiguredHost());
+    }
+
+    public function test_detect_configured_host_is_null_when_nothing_is_stored(): void
+    {
+        // The exact case detect() itself can't signal: nothing configured,
+        // so detect() would silently return the hard-coded fallback host
+        // instead of empty/null.
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $default);
+
+        $this->assertNull($this->detector()->detectConfiguredHost());
+    }
+
+    public function test_detect_configured_host_is_null_when_the_stored_url_has_no_parseable_host(): void
+    {
+        // Non-empty (isConfigured() === true) but schemeless, so detect()
+        // returns a string with no parseable host - the exact combination
+        // that let WebhookController's tenant guard silently pass when the
+        // payload also had no tenant_host (null === null).
+        Functions\when('get_option')->alias(fn ($key, $default = false) => $key === 'dataflair_api_base_url' ? 'tenant.dataflair.ai/api/v1' : $default);
+
+        $this->assertNull($this->detector()->detectConfiguredHost());
+    }
 }

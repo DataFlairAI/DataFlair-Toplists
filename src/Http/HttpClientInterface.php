@@ -35,4 +35,17 @@ interface HttpClientInterface
         int $max_retries = 2,
         ?WallClockBudget $budget = null
     );
+
+    /**
+     * POST a small JSON body to a DataFlair API URL. Webhook sync slice's
+     * self-registration call - deliberately simpler than get(): no retry
+     * loop (idempotent, user-initiated from Settings; a failure just means
+     * re-saving), no size cap (registration responses are tiny). Reuses
+     * get()'s auth header and local/Docker URL handling.
+     *
+     * @param array<string,mixed> $body JSON-encoded and sent as the request body.
+     *
+     * @return array|\WP_Error `wp_remote_post`-shaped array on success, `WP_Error` on failure.
+     */
+    public function post(string $url, string $token, array $body, int $timeout = 12);
 }
