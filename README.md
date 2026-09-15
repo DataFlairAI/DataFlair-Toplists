@@ -30,6 +30,14 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 - Stores complete offer, tracker, and geo data as JSON for flexible querying
 - Paginated API fetch handles large brand catalogues automatically
 
+### Webhook Sync
+- DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync
+- A single "Enable webhook sync" checkbox on **DataFlair → Settings → API Connection** self-registers the site with DataFlair automatically, reusing the existing API token, no separate credential to manage
+- Live status shown underneath the checkbox: receiving, no activity yet, or a rejected-delivery reason
+- Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable, and verified before anything else runs
+- The receiver is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant)
+- `toplist.published` re-fetches just that toplist; `brand.status_changed`/`brand.updated` re-fetches just that brand, rather than re-syncing the full catalogue
+
 ### Brand Management
 - Syncs your full brand catalogue into a local database table
 - Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries

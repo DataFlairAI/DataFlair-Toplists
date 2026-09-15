@@ -105,6 +105,16 @@ final class PluginInfoFilter
   <li>Paginated API fetch handles large brand catalogues automatically</li>
 </ul>
 
+<h4>Webhook Sync</h4>
+<ul>
+  <li>DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync</li>
+  <li>A single "Enable webhook sync" checkbox on Settings &rsaquo; API Connection self-registers the site with DataFlair automatically, reusing the existing API token, no separate credential to manage</li>
+  <li>Live status shown underneath the checkbox: receiving, no activity yet, or a rejected-delivery reason</li>
+  <li>Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable, and verified before anything else runs</li>
+  <li>The receiver is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant)</li>
+  <li><code>toplist.published</code> re-fetches just that toplist; <code>brand.status_changed</code>/<code>brand.updated</code> re-fetches just that brand, rather than re-syncing the full catalogue</li>
+</ul>
+
 <h4>Brand Management</h4>
 <ul>
   <li>Syncs your full brand catalogue into a local database table</li>
