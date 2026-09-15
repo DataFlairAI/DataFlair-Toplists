@@ -46,41 +46,59 @@ final class SettingsPage implements PageInterface
 
         $rejected_at = get_option('dataflair_webhook_last_rejected_at', '');
         $processed_at = get_option('dataflair_webhook_last_processed_at', '');
+        $rejected_ts = $rejected_at !== '' ? $this->gmtTimestamp($rejected_at) : null;
+        $processed_ts = $processed_at !== '' ? $this->gmtTimestamp($processed_at) : null;
 
-        if ($rejected_at !== '' && ($processed_at === '' || strtotime($rejected_at) >= strtotime($processed_at))) {
+        if ($rejected_ts !== null && ($processed_ts === null || $rejected_ts >= $processed_ts)) {
             $reason = get_option('dataflair_webhook_last_rejected_reason', 'unknown reason');
             return [
                 'text'  => sprintf(
                     '⚠ A webhook delivery was rejected %s ago (%s) — check the webhook is still correctly configured.',
-                    human_time_diff(strtotime($rejected_at)),
+                    human_time_diff($rejected_ts),
                     $reason
                 ),
                 'style' => 'color:#b32d2e;',
             ];
         }
 
-        if ($processed_at === '') {
+        if ($processed_ts === null) {
             return [
                 'text'  => 'No webhook activity yet. If you\'ve made recent changes in DataFlair, verify the connection or run a manual sync.',
                 'style' => 'color:#646970;',
             ];
         }
 
-        $hours_since = (time() - strtotime($processed_at)) / HOUR_IN_SECONDS;
+        $hours_since = (time() - $processed_ts) / HOUR_IN_SECONDS;
         if ($hours_since > self::STALE_HOURS) {
             return [
                 'text'  => sprintf(
                     'No webhook activity in %s. If you\'ve made recent changes in DataFlair, verify the connection or run a manual sync.',
-                    human_time_diff(strtotime($processed_at))
+                    human_time_diff($processed_ts)
                 ),
                 'style' => 'color:#646970;',
             ];
         }
 
         return [
-            'text'  => sprintf('● Receiving — last event %s ago', human_time_diff(strtotime($processed_at))),
+            'text'  => sprintf('● Receiving — last event %s ago', human_time_diff($processed_ts)),
             'style' => 'color:#00a32a;',
         ];
+    }
+
+    /**
+     * current_time('mysql') (how every dataflair_webhook_last_*_at option is
+     * written) returns site-LOCAL time, but strtotime() parses a naive
+     * datetime string as PHP's default timezone (UTC in a normal WP
+     * install), and human_time_diff()/time() both work in real UTC - a
+     * direct strtotime($option) skews every comparison here by the site's
+     * UTC offset (a webhook processed seconds ago could show as hours old,
+     * or vice versa, on any site with a non-zero timezone). Converts the
+     * stored local string to a real GMT timestamp first, the WordPress-
+     * native inverse of current_time('mysql').
+     */
+    private function gmtTimestamp(string $siteLocalMysqlDate): int
+    {
+        return (int) strtotime(get_gmt_from_date($siteLocalMysqlDate));
     }
 
     public function render(): void

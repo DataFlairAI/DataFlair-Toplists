@@ -38,9 +38,17 @@ namespace {
             /** @var array<string,mixed> */
             public static array $options = [];
 
+            // Simulates the site's configured UTC offset (WP's own
+            // 'gmt_offset' option), in seconds. 0 by default so every
+            // existing fixture (built with plain date(), i.e. implicitly
+            // UTC-sited) is unaffected; a test can set this to prove
+            // get_gmt_from_date() actually corrects a non-zero offset.
+            public static int $gmtOffsetSeconds = 0;
+
             public static function reset(): void
             {
                 self::$options = [];
+                self::$gmtOffsetSeconds = 0;
             }
         }
     }
@@ -65,6 +73,16 @@ namespace DataFlair\Toplists\Admin\Pages {
                 return round($diff / HOUR_IN_SECONDS) . ' hours';
             }
             return round($diff / DAY_IN_SECONDS) . ' days';
+        }
+    }
+    if (!function_exists(__NAMESPACE__ . '\\get_gmt_from_date')) {
+        // Real WP: site-local datetime string -> GMT datetime string, by
+        // subtracting the site's configured UTC offset. Mirrors that exactly
+        // against the simulated offset above instead of a plain passthrough,
+        // so a test can actually exercise the conversion.
+        function get_gmt_from_date($string, $format = 'Y-m-d H:i:s')
+        {
+            return gmdate($format, strtotime($string) - \SettingsPageTestStubsStore::$gmtOffsetSeconds);
         }
     }
 }
@@ -215,6 +233,27 @@ final class SettingsPageTest extends TestCase
         $status = $this->statusLine();
 
         $this->assertStringStartsWith('● Receiving', $status['text']);
+    }
+
+    public function test_status_is_healthy_on_a_site_with_a_non_zero_utc_offset(): void
+    {
+        // Regression test: current_time('mysql') (how every
+        // dataflair_webhook_last_*_at option is written) returns site-LOCAL
+        // time, but the old code compared it directly against real UTC via
+        // strtotime()+time()/human_time_diff(). A site 5 hours ahead of UTC
+        // storing "processed 2 minutes ago" as its own local clock would
+        // have shown as "5 hours ago" (past the healthy window) or, for a
+        // site behind UTC, an event could appear to be in the future.
+        \SettingsPageTestStubsStore::$gmtOffsetSeconds = 5 * HOUR_IN_SECONDS;
+        \SettingsPageTestStubsStore::$options['dataflair_webhook_enabled'] = '1';
+        // Site-local "now" on a UTC+5 site: real UTC time() plus the offset.
+        $siteLocalNow = time() + \SettingsPageTestStubsStore::$gmtOffsetSeconds;
+        \SettingsPageTestStubsStore::$options['dataflair_webhook_last_processed_at'] = date('Y-m-d H:i:s', $siteLocalNow - 120);
+
+        $status = $this->statusLine();
+
+        $this->assertStringStartsWith('● Receiving', $status['text']);
+        $this->assertStringContainsString('mins ago', $status['text']);
     }
 }
 
