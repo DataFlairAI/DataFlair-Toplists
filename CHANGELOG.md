@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.4.0] - 2026-09-15
+
+### Added
+- **Webhook sync.** DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync. A new "Enable webhook sync" checkbox on Settings › API Connection self-registers the site with DataFlair automatically (reusing the existing API token, no separate credential to manage) and shows live status underneath the checkbox: receiving, no activity yet, or a rejected-delivery reason. Deliveries are HMAC-SHA256 signed against a per-site secret the plugin generates once on first enable and never regenerates on later saves. New route: `POST /wp-json/dataflair/v1/webhooks` — idempotent (a retried or duplicate delivery is a safe no-op via a new `wp_dataflair_webhook_events` ledger table) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant). `toplist.published` re-fetches just that one toplist; `brand.status_changed`/`brand.updated` re-fetches just that one brand and updates its local active/disabled state to match.
+
+### Fixed
+Found during the pre-release max-effort review, before this reached any real site:
+- **Saving Settings from any tab other than API Connection no longer silently disables webhook sync.** The webhook checkbox only exists in that tab's markup; the shared save handler used by every tab's Save button now only touches the webhook option when the request actually came from the tab that owns it (`SaveSettingsHandler`, `assets/admin.js`).
+- **Closed a replay-protection gap on the webhook receiver.** Delivery freshness is now checked against the timestamp inside the signed payload, not an HTTP header that was never part of the signature — a captured delivery could previously be replayed by attaching a freshly forged header (`WebhookController`).
+- **The webhook tenant-isolation check now fails closed** instead of silently skipping the check when the site's own configured API base URL can't be resolved to a host (`WebhookController`).
+- **A failed webhook idempotency-ledger write is now logged** instead of silently discarded (`WebhookController`).
+- Local/Docker debug logging no longer mislabels a webhook self-registration call as a plain API fetch (`ApiClient`).
+
+### Tests
+- New coverage for the webhook receiver (signature verification, idempotency, tenant guard, event routing, replay rejection), the self-registration flow, and the settings save-isolation fix. Full suite: 936 tests green.
+
 ## [2.3.3] - 2026-09-10
 
 ### Fixed

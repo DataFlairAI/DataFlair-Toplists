@@ -173,6 +173,13 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.0</h4>
+<ul>
+  <li><strong>Added: webhook sync.</strong> DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync. A new &ldquo;Enable webhook sync&rdquo; checkbox on Settings &rsaquo; API Connection self-registers the site automatically (reusing the existing API token, no separate credential to manage) and shows live status underneath: receiving, no activity yet, or a rejected-delivery reason. Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable. New route <code>POST /wp-json/dataflair/v1/webhooks</code> is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant). <code>toplist.published</code> re-fetches just that toplist; <code>brand.status_changed</code>/<code>brand.updated</code> re-fetches just that brand.</li>
+  <li><strong>Fixed</strong> (found during pre-release review, before reaching any site): saving Settings from any tab other than API Connection no longer silently disables webhook sync. The webhook receiver&rsquo;s replay-freshness check now validates the signed payload&rsquo;s own timestamp instead of an unsigned header. The tenant-isolation check now fails closed instead of silently skipping when the site&rsquo;s API base URL can&rsquo;t be resolved. A failed idempotency-ledger write is now logged instead of swallowed. Local/Docker debug logging no longer mislabels a webhook registration call as a plain API fetch.</li>
+  <li><strong>Tests:</strong> new coverage for the webhook receiver (signature verification, idempotency, tenant guard, event routing, replay rejection), the self-registration flow, and the settings save-isolation fix. Full suite: 936 tests green.</li>
+</ul>
+
 <h4>2.3.3</h4>
 <ul>
   <li><strong>Fixed: fatal error on Tools &rsaquo; Tests &amp; Diagnostics</strong>, found by a live WordPress 7.1 smoke test after merge (<code>renderTestsTab()</code> built a <code>TestsRunner</code> missing a required argument). Verified across every admin page this release touches. <code>Tested up to</code> updated to 7.1.</li>
