@@ -55,9 +55,13 @@ final class WebhookController
             // delivery can still arrive here. Reject before doing any
             // signature-verification work rather than silently continuing
             // to act on a feature the admin explicitly disabled.
-            $this->recordRejected('webhook sync is disabled in settings');
-            $this->logger->info('Webhook: rejected, webhook sync is disabled');
-            return new \WP_REST_Response(['error' => 'webhook_disabled'], 403);
+            return $this->reject(
+                'webhook sync is disabled in settings',
+                'Webhook: rejected, webhook sync is disabled',
+                'webhook_disabled',
+                403,
+                'info'
+            );
         }
 
         $rawBody = $request->get_body();
@@ -65,23 +69,22 @@ final class WebhookController
         $secret = trim((string) get_option('dataflair_webhook_secret', ''));
 
         if (!$this->verifier->verify($rawBody, $signature, $secret)) {
-            $this->recordRejected('invalid signature');
-            $this->logger->warning('Webhook: rejected, invalid signature');
-            return new \WP_REST_Response(['error' => 'invalid_signature'], 401);
+            return $this->reject('invalid signature', 'Webhook: rejected, invalid signature', 'invalid_signature', 401);
         }
 
         $data = json_decode($rawBody, true);
         if (!is_array($data) || !isset($data['delivery_id'], $data['event']) || !is_string($data['delivery_id']) || !is_string($data['event'])) {
-            $this->recordRejected('malformed payload');
-            $this->logger->warning('Webhook: rejected, malformed payload');
-            return new \WP_REST_Response(['error' => 'malformed_payload'], 400);
+            return $this->reject('malformed payload', 'Webhook: rejected, malformed payload', 'malformed_payload', 400);
         }
 
         $occurredAt = is_string($data['occurred_at'] ?? null) ? $data['occurred_at'] : null;
         if (!$this->isFreshTimestamp($occurredAt)) {
-            $this->recordRejected('stale or missing timestamp');
-            $this->logger->warning('Webhook: rejected, stale timestamp: ' . (string) $occurredAt);
-            return new \WP_REST_Response(['error' => 'stale_timestamp'], 401);
+            return $this->reject(
+                'stale or missing timestamp',
+                'Webhook: rejected, stale timestamp: ' . (string) $occurredAt,
+                'stale_timestamp',
+                401
+            );
         }
 
         $deliveryId = $data['delivery_id'];
@@ -101,18 +104,14 @@ final class WebhookController
         // and would never trip an === null check here.
         if (! $this->baseUrlDetector->isConfigured()) {
             $reason = 'tenant host cannot be verified: no API base URL configured';
-            $this->recordRejected($reason);
-            $this->logger->error('Webhook: ' . $reason);
-            return new \WP_REST_Response(['error' => 'tenant_mismatch'], 409);
+            return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
         }
 
         $expectedHost = parse_url($this->baseUrlDetector->detect(false), PHP_URL_HOST);
         $actualHost   = is_string($data['tenant_host'] ?? null) ? $data['tenant_host'] : null;
         if ($actualHost !== $expectedHost) {
             $reason = 'tenant host mismatch: expected ' . ($expectedHost ?? 'none') . ', got ' . ($actualHost ?? 'none');
-            $this->recordRejected($reason);
-            $this->logger->error('Webhook: ' . $reason);
-            return new \WP_REST_Response(['error' => 'tenant_mismatch'], 409);
+            return $this->reject($reason, 'Webhook: ' . $reason, 'tenant_mismatch', 409, 'error');
         }
 
         $payload = is_array($data['data'] ?? null) ? $data['data'] : [];
@@ -169,5 +168,19 @@ final class WebhookController
     {
         update_option('dataflair_webhook_last_rejected_at', current_time('mysql'));
         update_option('dataflair_webhook_last_rejected_reason', $reason);
+    }
+
+    /**
+     * Records the rejection, logs it, and builds the error response - the
+     * shared tail of every rejection branch in receive(). $logMessage is
+     * taken explicitly rather than derived from $reason because the two
+     * diverge per call site (extra context appended, differing prefixes).
+     */
+    private function reject(string $reason, string $logMessage, string $errorCode, int $status, string $level = 'warning'): \WP_REST_Response
+    {
+        $this->recordRejected($reason);
+        $this->logger->{$level}($logMessage);
+
+        return new \WP_REST_Response(['error' => $errorCode], $status);
     }
 }
