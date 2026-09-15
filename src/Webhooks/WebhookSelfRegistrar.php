@@ -20,8 +20,7 @@ final class WebhookSelfRegistrar implements WebhookSelfRegistrarInterface
 {
     public function __construct(
         private HttpClientInterface $http,
-        private ApiBaseUrlDetector $baseUrlDetector,
-        private string $token
+        private ApiBaseUrlDetector $baseUrlDetector
     ) {
     }
 
@@ -37,10 +36,20 @@ final class WebhookSelfRegistrar implements WebhookSelfRegistrarInterface
             return false;
         }
 
+        // Read fresh, not constructor-injected: this class is built once at
+        // plugin-boot time (AdminBootstrap::boot()), before the very request
+        // that can update the token - SaveSettingsHandler saves a new token
+        // and calls register() in the same request. A captured constructor
+        // value would silently authenticate with the token this save just
+        // replaced. Matches every sibling AJAX handler's own convention
+        // (ApiHealthHandler, TestApiConnectionHandler, etc. all re-read this
+        // option inside handle() rather than taking it as a dependency).
+        $token = trim((string) get_option('dataflair_api_token', ''));
+
         $secret = $this->secret();
         $subscribeUrl = rtrim($this->baseUrlDetector->detect(false), '/') . '/webhooks/subscribe';
 
-        $response = $this->http->post($subscribeUrl, $this->token, [
+        $response = $this->http->post($subscribeUrl, $token, [
             'url'    => $receiverUrl,
             'secret' => $secret,
         ]);

@@ -59,8 +59,7 @@ final class WebhookSelfRegistrarTest extends TestCase
     {
         return new WebhookSelfRegistrar(
             $http,
-            new ApiBaseUrlDetector(new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator())),
-            'plugin-api-token'
+            new ApiBaseUrlDetector(new \DataFlair\Toplists\Support\UrlTransformer(new \DataFlair\Toplists\Support\UrlValidator()))
         );
     }
 
@@ -92,6 +91,7 @@ final class WebhookSelfRegistrarTest extends TestCase
     public function test_calls_the_subscribe_endpoint_with_the_receiver_url_and_secret(): void
     {
         \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = 'https://tenant.dataflair.ai/api/v1';
+        \SyncFunctionStubsStore::$options['dataflair_api_token'] = 'plugin-api-token';
         $http = new FakeHttpClientForRegistrar(['body' => '{"status":"registered"}', 'response' => ['code' => 200]]);
 
         $this->registrar($http)->register('https://mysite.example/wp-json/dataflair/v1/webhooks');
@@ -99,6 +99,27 @@ final class WebhookSelfRegistrarTest extends TestCase
         $this->assertSame('https://tenant.dataflair.ai/api/v1/webhooks/subscribe', $http->lastUrl);
         $this->assertSame('plugin-api-token', $http->lastToken);
         $this->assertSame('https://mysite.example/wp-json/dataflair/v1/webhooks', $http->lastBody['url'] ?? null);
+    }
+
+    public function test_uses_the_token_current_at_register_time_not_construction_time(): void
+    {
+        // Regression test: the token used to be a constructor property,
+        // captured once at plugin-boot time (AdminBootstrap::boot(), which
+        // runs before every request). SaveSettingsHandler saves a new token
+        // and calls register() in the very same request - a captured value
+        // would silently authenticate with the token this save just
+        // replaced. register() must read the option fresh.
+        \SyncFunctionStubsStore::$options['dataflair_api_base_url'] = 'https://tenant.dataflair.ai/api/v1';
+        \SyncFunctionStubsStore::$options['dataflair_api_token'] = 'stale-token-from-boot';
+        $http = new FakeHttpClientForRegistrar(['body' => '{"status":"registered"}', 'response' => ['code' => 200]]);
+        $registrar = $this->registrar($http);
+
+        // Simulates SaveSettingsHandler updating the token earlier in the
+        // same request, after $registrar was already constructed.
+        \SyncFunctionStubsStore::$options['dataflair_api_token'] = 'fresh-token-from-this-save';
+        $registrar->register('https://mysite.example/wp-json/dataflair/v1/webhooks');
+
+        $this->assertSame('fresh-token-from-this-save', $http->lastToken);
     }
 
     public function test_returns_false_on_a_non_200_response(): void

@@ -77,8 +77,7 @@ final class AdminBootstrap
             'dataflair_save_settings',
             new SaveSettingsHandler(new WebhookSelfRegistrar(
                 $this->api_client,
-                $this->api_base_url_detector,
-                trim((string) get_option('dataflair_api_token'))
+                $this->api_base_url_detector
             )),
             'dataflair_save_settings'
         );

@@ -40,17 +40,25 @@ jQuery(document).ready(function($) {
             timeout: 10000, // 10 second timeout
             success: function(response) {
                 if (response.success) {
-                    var successText = '✓ ' + response.data.message;
-                    if (response.data.webhook_registered === false) {
-                        successText += ' Webhook registration failed — check your API connection.';
+                    var html = '<span style="color: #46b450;">✓ ' + response.data.message + '</span>';
+                    var webhookFailed = response.data.webhook_registered === false;
+                    if (webhookFailed) {
+                        // Own line, warning colour, not swept into the green
+                        // success text - this is the only surface anywhere
+                        // in the UI that a failed subscribe call happened,
+                        // so it must not read as part of a clean save.
+                        html += '<br><span style="color: #dc3232;">⚠ Webhook registration failed — check your API connection and base URL, then save again.</span>';
                     }
-                    $message.html('<span style="color: #46b450;">' + successText + '</span>');
+                    $message.html(html);
                     $button.val(originalText).prop('disabled', false);
 
-                    // Clear message after 3 seconds
-                    setTimeout(function() {
-                        $message.html('');
-                    }, 3000);
+                    // Only auto-clear a clean save. A failed registration is
+                    // actionable and stays until the next save attempt.
+                    if (!webhookFailed) {
+                        setTimeout(function() {
+                            $message.html('');
+                        }, 3000);
+                    }
                 } else {
                     $message.html('<span style="color: #dc3232;">✗ ' + (response.data.message || 'Error saving settings') + '</span>');
                     $button.val(originalText).prop('disabled', false);
