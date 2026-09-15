@@ -220,6 +220,9 @@ class DataFlair_Toplists {
     /** @var \DataFlair\Toplists\Sync\ToplistFetcher|null */
     private $toplist_fetcher = null;
 
+    /** @var \DataFlair\Toplists\Sync\ToplistPersisterInterface|null */
+    private $toplist_persister = null;
+
     /** @var \DataFlair\Toplists\Sync\LogoSync|null */
     private $logo_sync = null;
 
@@ -698,7 +701,7 @@ class DataFlair_Toplists {
             \Closure::fromCallable([$this, 'prefetch_brand_metas_for_items']),
             \Closure::fromCallable([$this, 'lookup_brand_meta_from_map']),
             $this->webhook_events_repo(),
-            $this->toplist_fetcher(),
+            $this->toplist_persister(),
             $this->brand_sync_service(),
             $this->api_base_url_detector(),
             trim((string) get_option('dataflair_api_token'))
@@ -880,6 +883,21 @@ class DataFlair_Toplists {
             \Closure::fromCallable([$this, 'build_detailed_api_error'])
         );
         return $this->toplist_fetcher;
+    }
+
+    /**
+     * Webhook sync slice — ToplistPersisterInterface adapter for
+     * WebhookController's toplist.published handler. NOT toplist_fetcher()
+     * above: that's DataFlair\Toplists\Sync\ToplistFetcher, a different
+     * class for the paginated batch-sync pipeline that happens to share the
+     * fetchAndStore() method name but does not implement this interface.
+     */
+    private function toplist_persister() {
+        if ($this->toplist_persister instanceof \DataFlair\Toplists\Sync\ToplistPersisterInterface) {
+            return $this->toplist_persister;
+        }
+        $this->toplist_persister = new \DataFlair\Toplists\Sync\GodClassToplistPersister($this);
+        return $this->toplist_persister;
     }
 
     private function logo_sync() {
