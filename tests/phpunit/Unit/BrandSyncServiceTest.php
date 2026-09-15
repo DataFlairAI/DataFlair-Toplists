@@ -422,6 +422,55 @@ final class BrandSyncServiceTest extends TestCase
         $this->assertFalse($this->brands->disabledCalls[0]['disabled']);
     }
 
+    public function test_sync_one_fires_dataflair_brand_synced_with_the_upserted_row(): void
+    {
+        $this->http->response = [
+            'body'     => json_encode(['data' => $this->brandPayload(42, 'Active Brand', 'Active', ['UK'], [])]),
+            'response' => ['code' => 200],
+        ];
+
+        // setUp() stubs do_action() with a blanket justReturn(null) - Brain
+        // Monkey's when()/expect() for the same function name don't compose
+        // (confirmed empirically: an expect() layered on top is never
+        // reached), so this overrides it with a capturing alias instead,
+        // the same technique ApiBaseUrlDetectorTest uses for update_option.
+        $fired = [];
+        Functions\when('do_action')->alias(function (...$args) use (&$fired) {
+            $fired[] = $args;
+
+            return null;
+        });
+
+        $this->makeService()->syncOne(42);
+
+        $this->assertCount(1, $fired, 'dataflair_brand_synced should fire exactly once');
+        $this->assertSame('dataflair_brand_synced', $fired[0][0]);
+        $this->assertSame(42, $fired[0][1]);
+        $this->assertSame('Active Brand', $fired[0][2]['name']);
+    }
+
+    public function test_sync_one_404_does_not_fire_dataflair_brand_synced(): void
+    {
+        // No upsert on this path (see class docblock: "404 -> disable only,
+        // nothing to upsert") - the hook must not fire over a row that was
+        // never written.
+        $this->http->response = [
+            'body'     => '',
+            'response' => ['code' => 404],
+        ];
+
+        $fired = [];
+        Functions\when('do_action')->alias(function (...$args) use (&$fired) {
+            $fired[] = $args;
+
+            return null;
+        });
+
+        $this->makeService()->syncOne(999);
+
+        $this->assertSame([], $fired);
+    }
+
     public function test_sync_one_inactive_brand_upserts_fresh_data_and_sets_disabled_flag(): void
     {
         $this->http->response = [

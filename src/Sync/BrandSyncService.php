@@ -382,6 +382,12 @@ final class BrandSyncService implements BrandSyncServiceInterface
         $row       = $this->buildBrandRow($brandData);
         $this->brands->upsert($row);
 
+        // Lets a site-installed listener (e.g. a theme's review CPT) react to
+        // this brand's local cache having just been refreshed - kept generic
+        // (id + the same row buildBrandRow() already produces) so this
+        // plugin never needs to know what "reviews" are.
+        do_action('dataflair_brand_synced', $apiBrandId, $row);
+
         $isActive = ($brandData['brandStatus'] ?? '') === 'Active';
         $this->brands->setDisabledByApiBrandIds([$apiBrandId], !$isActive);
 
