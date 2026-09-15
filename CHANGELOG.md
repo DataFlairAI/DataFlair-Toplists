@@ -20,8 +20,13 @@ Found during the pre-release max-effort review, before this reached any real sit
 - **A failed webhook idempotency-ledger write is now logged** instead of silently discarded (`WebhookController`).
 - Local/Docker debug logging no longer mislabels a webhook self-registration call as a plain API fetch (`ApiClient`).
 
+Found only by a live round-trip against a real WordPress install (an actual DataFlair backend delivering a real signed webhook), not by the mocked test suite — same root cause as the 2.3.3 `TestsRunner` incident below:
+- **Webhook self-registration returned a 419 for every real caller.** `POST /api/v1/webhooks/subscribe` (the DataFlair backend side) was never added to the CSRF exemption list, so a plugin calling it over plain HTTP with no Laravel session always failed. Fixed on the DataFlair side; nothing to update here, but self-registration from this version now completes successfully against a patched backend.
+- **The whole REST API (toplists, casinos, health, webhooks — not just the new route) fatally errored on every request.** `rest_bootstrap()` wired the webhook receiver's toplist-persistence dependency to `ToplistFetcher` (the paginated batch-sync class) instead of the `ToplistPersisterInterface` adapter `RestBootstrap` actually requires — a `TypeError` on every `rest_api_init`. Both classes happen to share a `fetchAndStore()` method name, which is how the mismatch slipped through review.
+
 ### Tests
 - New coverage for the webhook receiver (signature verification, idempotency, tenant guard, event routing, replay rejection), the self-registration flow, and the settings save-isolation fix. Full suite: 936 tests green.
+- The two live-only findings above are structurally invisible to this plugin's mocked PHPUnit suite (per `ShimForwardingTest`'s own docblock, the 5,600-line god class is deliberately never loaded in tests) and to the DataFlair backend's feature tests (Laravel's CSRF middleware unconditionally no-ops while running tests). Both were caught, and re-verified as fixed, only by an actual delivery from a running DataFlair instance to a running WordPress site.
 
 ## [2.3.3] - 2026-09-10
 
