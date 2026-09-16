@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.4.1] - 2026-09-16
+
+### Fixed
+- **Fatal error rendering the toplist block/shortcode on Roots/Acorn (Sage-based) themes.** The Alpine.js already-loaded detection called `strpos()` directly on every queued script's `->src`, assuming it is always a plain string. Acorn-based themes register compiled assets with `->src` as an asset value object instead of a string; `strpos()` threw a `TypeError` that the theme's Blade layer turned into a fatal error on every page rendering the block or shortcode — effectively the whole toplist feature on such a theme (`AlpineJsEnqueuer`). Found live during QA on a Roots/Acorn client site; reproduced in an isolated regression test (same `TypeError`, no live site needed) before fixing. Fix coerces via `__toString()` when the object supports it and skips the entry otherwise, instead of fataling.
+
+### Tests
+- Two new cases pin both the non-Stringable-safe-skip and the Stringable-object-still-detected paths. Full suite: 968 tests green.
+
 ## [2.4.0] - 2026-09-15
 
 ### Added
