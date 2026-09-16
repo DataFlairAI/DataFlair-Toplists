@@ -183,6 +183,10 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.2</h4>
+<ul>
+  <li><strong>Fixed: casino-card icons (ribbon star, rating star, feature checks, and others) could render oversized on the live front end.</strong> These SVGs ship with only a viewBox, no width/height, and the containment rule for them only ever shipped in the block-editor stylesheet, which never loads on a published page. A page-level reset that expands bare <code>&lt;svg&gt;</code> to 100% width (Tailwind Preflight and similar resets both do this) could stretch them to fill their container. Found live during QA. Ported the same rule already proven correct in <code>assets/editor.css</code> to the front-end stylesheet.</li>
+</ul>
 <h4>2.4.1</h4>
 <ul>
   <li><strong>Fixed: fatal error rendering the toplist block/shortcode on Roots/Acorn (Sage-based) themes.</strong> The Alpine.js already-loaded detection called <code>strpos()</code> directly on every queued script&rsquo;s <code>-&gt;src</code>, assuming it is always a plain string. Acorn-based themes register compiled assets with <code>-&gt;src</code> as an asset value object instead, which threw a <code>TypeError</code> the theme&rsquo;s Blade layer turned into a fatal error on every page rendering the block or shortcode. <code>AlpineJsEnqueuer</code> now coerces via <code>__toString()</code> when available and skips the entry otherwise instead of fataling. Found live on a Roots/Acorn client site during QA; reproduced in an isolated regression test before fixing.</li>
