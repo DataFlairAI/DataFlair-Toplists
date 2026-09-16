@@ -437,6 +437,9 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.4.2
+- **Fixed: casino-card icons (ribbon star, rating star, feature checks, and others) could render oversized on the live front end.** These SVGs ship with only a viewBox, no width/height, and the containment rule for them only ever shipped in the block-editor stylesheet, which never loads on a published page. A page-level reset that expands bare `<svg>` to 100% width (Tailwind Preflight and similar resets both do this) could stretch them to fill their container. Found live during QA. Ported the same rule already proven correct in `assets/editor.css` to the front-end stylesheet.
+
 ### 2.4.1
 - **Fixed: fatal error rendering the toplist block/shortcode on Roots/Acorn (Sage-based) themes.** The Alpine.js already-loaded detection called `strpos()` directly on every queued script's `->src`, assuming it is always a plain string. Acorn-based themes register compiled assets with `->src` as an asset value object instead, which threw a `TypeError` the theme's Blade layer turned into a fatal error on every page rendering the block or shortcode. `AlpineJsEnqueuer` now coerces via `__toString()` when available and skips the entry otherwise instead of fataling. Found live on a Roots/Acorn client site during QA; reproduced in an isolated regression test before fixing.
 - **Tests:** two new cases pin both the non-Stringable-safe-skip and the Stringable-object-still-detected paths. Full suite: 968 tests green.

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.4.2] - 2026-09-16
+
+### Fixed
+- **Casino-card icons (ribbon star, rating star, feature checks, and others) could render oversized on the live front end.** The 8 icon SVGs in `views/frontend/casino-card.php` ship with only a viewBox, no width/height, and the containment rule for them only ever shipped in `assets/editor.css` (the block-editor stylesheet), which never loads on a published page. A page-level reset that expands bare `<svg>` to 100% width (Tailwind Preflight and similar resets both do this) could stretch them to fill their container — reproduced live where the ribbon star rendered full-viewport-height on a real front-end page. Ported the same rule already proven correct in `editor.css` to `assets/style.css`.
+
 ## [2.4.1] - 2026-09-16
 
 ### Fixed
