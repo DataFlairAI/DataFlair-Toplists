@@ -43,7 +43,7 @@ final class SchemaMigrator
      * changes; the upgrade path (`upgradeDatabase`) will run once per
      * site on the next request after the bump.
      */
-    public const CURRENT_VERSION = '1.14';
+    public const CURRENT_VERSION = '1.15';
 
     /**
      * Hook into `plugins_loaded` to run `checkDatabaseUpgrade` on every
@@ -130,6 +130,7 @@ final class SchemaMigrator
 
         $this->ensureBrandsExternalIdIndex();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureToplistsSortIndexes();
         $this->ensureWebhookEventsTable();
     }
 
@@ -213,6 +214,7 @@ final class SchemaMigrator
         if (!$missing) {
             $this->ensureBrandsExternalIdIndex();
             $this->ensureToplistsGeoVirtualColumns();
+            $this->ensureToplistsSortIndexes();
             $this->ensureWebhookEventsTable();
             return;
         }
@@ -263,6 +265,7 @@ final class SchemaMigrator
         dbDelta($brands_sql);
         $this->ensureBrandsExternalIdIndex();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureToplistsSortIndexes();
         $this->ensureWebhookEventsTable();
 
         error_log('DataFlair: ensureTablesExist() ran dbDelta — tables were missing.');
@@ -403,6 +406,7 @@ final class SchemaMigrator
         $this->ensureBrandsExternalIdIndex();
         $this->ensureAlternativeToplistsTable();
         $this->ensureToplistsGeoVirtualColumns();
+        $this->ensureToplistsSortIndexes();
         $this->ensureWebhookEventsTable();
     }
 
@@ -474,6 +478,37 @@ final class SchemaMigrator
                 }
             }
 
+            $index = 'idx_' . $column;
+            if (!$wpdb->get_var("SHOW INDEX FROM $table_name WHERE Key_name = '$index'")) {
+                $wpdb->query("CREATE INDEX $index ON $table_name ($column)");
+                if ($wpdb->last_error) {
+                    error_log("DataFlair: Failed creating $index index: " . $wpdb->last_error);
+                }
+            }
+        }
+    }
+
+    /**
+     * Ensure the toplists table has indexes covering every column the admin
+     * list page's ORDER BY can hit — {@see ToplistsQuery::ALLOWED_SORT} and
+     * the page's own hard-coded default sort. `api_toplist_id` already has a
+     * UNIQUE KEY and `slug` already gets `idx_slug` from the v1.5 upgrade
+     * above; this covers the three that never got one: `last_synced` (the
+     * page's default sort, hit on every plain page load - reproduced live as
+     * MySQL error 1038 "Out of sort memory" once the table grew large enough
+     * that a full-table filesort with no supporting index exceeded the
+     * host's sort_buffer_size), `name`, and `item_count`.
+     */
+    public function ensureToplistsSortIndexes(): void
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . \DATAFLAIR_TABLE_NAME;
+
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+            return;
+        }
+
+        foreach (['last_synced', 'name', 'item_count'] as $column) {
             $index = 'idx_' . $column;
             if (!$wpdb->get_var("SHOW INDEX FROM $table_name WHERE Key_name = '$index'")) {
                 $wpdb->query("CREATE INDEX $index ON $table_name ($column)");

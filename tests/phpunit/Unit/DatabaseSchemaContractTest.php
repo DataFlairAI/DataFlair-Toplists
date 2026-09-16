@@ -135,6 +135,26 @@ final class DatabaseSchemaContractTest extends TestCase
         return substr($source, $start, $next - $start);
     }
 
+    /**
+     * Same as methodBody(), but bounded by the next method of EITHER
+     * visibility. methodBody() only stops at `private function`, so it
+     * over-captures for a public method that isn't immediately followed by
+     * upgradeDatabase() (the class's one private method) - fine for the
+     * narrow generated-column regex it's used with above, not safe for a
+     * plain substr_count() check like the wiring test below.
+     */
+    private function methodBodyAnyVisibility(string $source, string $method): string
+    {
+        $start = strpos($source, 'function ' . $method . '(');
+        $this->assertNotFalse($start, "Method {$method}() not found in " . self::MIGRATOR);
+
+        $next = preg_match('/\n    (?:public|private) function /', $source, $matches, PREG_OFFSET_CAPTURE, $start + 1)
+            ? $matches[0][1]
+            : strlen($source);
+
+        return substr($source, $start, $next - $start);
+    }
+
     public function test_toplists_table_columns_match_the_locked_contract(): void
     {
         $this->assertEqualsCanonicalizing([
@@ -227,6 +247,38 @@ final class DatabaseSchemaContractTest extends TestCase
             2,
             substr_count($body, 'ensureWebhookEventsTable()'),
             'ensureTablesExist() must call ensureWebhookEventsTable() in both its branches' . self::HINT
+        );
+    }
+
+    public function test_ensure_toplists_sort_indexes_is_wired_into_every_self_heal_path(): void
+    {
+        // ensureToplistsSortIndexes() (v1.15) exists to fix a live MySQL
+        // error 1038 "Out of sort memory" on the admin list page's default
+        // last_synced sort once the toplists table grew large enough that an
+        // unindexed filesort exceeded the host's sort_buffer_size. Same
+        // reasoning as the webhook test above: a call missing from even one
+        // of the three places that can leave the migrator believing the
+        // schema is current silently reproduces that incident on whatever
+        // install path lost it, and no other test would catch it - the
+        // column-contract tests above only pin columns, not indexes.
+        $source = $this->source();
+
+        $this->assertSame(
+            1,
+            substr_count($this->methodBodyAnyVisibility($source, 'createTables'), 'ensureToplistsSortIndexes()'),
+            'createTables() must call ensureToplistsSortIndexes()' . self::HINT
+        );
+
+        $this->assertSame(
+            2,
+            substr_count($this->methodBody($source, 'ensureTablesExist'), 'ensureToplistsSortIndexes()'),
+            'ensureTablesExist() must call ensureToplistsSortIndexes() in both its branches' . self::HINT
+        );
+
+        $this->assertSame(
+            1,
+            substr_count($this->methodBodyAnyVisibility($source, 'upgradeDatabase'), 'ensureToplistsSortIndexes()'),
+            'upgradeDatabase() must call ensureToplistsSortIndexes()' . self::HINT
         );
     }
 
