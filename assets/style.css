@@ -1,5 +1,34 @@
 /* DataFlair Toplists Styles */
 
+/*
+ * Contain casino-card SVG icons on the front end. These ship with only a
+ * viewBox (no width/height), so an unrelated reset elsewhere on the page
+ * that expands bare <svg> to 100% width (Tailwind Preflight and similar
+ * base resets both do this) stretches them to fill their container instead
+ * of rendering at icon size. Mirrors the same rule already shipped in
+ * assets/editor.css for the block-editor canvas, which never loads here.
+ */
+.casino-card-ribbon .ribbon-star,
+svg.ribbon-star {
+    width: 18px !important;
+    height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    flex-shrink: 0;
+    display: block;
+}
+
+.casino-card-wrapper svg.rating-star,
+.casino-card-wrapper svg.review-arrow,
+.casino-card-wrapper svg.feature-check,
+.casino-card-wrapper svg.toggle-arrow,
+.casino-card-wrapper svg.heading-icon,
+.casino-card-wrapper svg.reviewer-icon {
+    flex-shrink: 0;
+    max-width: 24px;
+    height: auto;
+}
+
 .dataflair-toplist {
     margin: 30px 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
