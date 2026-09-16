@@ -183,6 +183,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.1</h4>
+<ul>
+  <li><strong>Fixed: fatal error rendering the toplist block/shortcode on Roots/Acorn (Sage-based) themes.</strong> The Alpine.js already-loaded detection called <code>strpos()</code> directly on every queued script&rsquo;s <code>-&gt;src</code>, assuming it is always a plain string. Acorn-based themes register compiled assets with <code>-&gt;src</code> as an asset value object instead, which threw a <code>TypeError</code> the theme&rsquo;s Blade layer turned into a fatal error on every page rendering the block or shortcode. <code>AlpineJsEnqueuer</code> now coerces via <code>__toString()</code> when available and skips the entry otherwise instead of fataling. Found live on a Roots/Acorn client site during QA; reproduced in an isolated regression test before fixing.</li>
+  <li><strong>Tests:</strong> two new cases pin both the non-Stringable-safe-skip and the Stringable-object-still-detected paths. Full suite: 968 tests green.</li>
+</ul>
 <h4>2.4.0</h4>
 <ul>
   <li><strong>Added: webhook sync.</strong> DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync. A new &ldquo;Enable webhook sync&rdquo; checkbox on Settings &rsaquo; API Connection self-registers the site automatically (reusing the existing API token, no separate credential to manage) and shows live status underneath: receiving, no activity yet, or a rejected-delivery reason. Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable. New route <code>POST /wp-json/dataflair/v1/webhooks</code> is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant). <code>toplist.published</code> re-fetches just that toplist; <code>brand.status_changed</code>/<code>brand.updated</code> re-fetches just that brand.</li>
