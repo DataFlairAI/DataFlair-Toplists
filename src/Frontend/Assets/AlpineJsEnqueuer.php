@@ -112,12 +112,22 @@ final class AlpineJsEnqueuer
         if ($wp_scripts && !empty($wp_scripts->queue)) {
             foreach ($wp_scripts->queue as $queuedHandle) {
                 $script = $wp_scripts->registered[$queuedHandle] ?? null;
+                $src    = $script->src ?? null;
+
+                // Some themes (e.g. Roots/Acorn-based Sage themes) register
+                // ->src as an asset value object rather than a plain string.
+                // strpos() requires a real string, so coerce via __toString()
+                // when available and skip otherwise instead of fataling.
+                if (is_object($src)) {
+                    $src = method_exists($src, '__toString') ? (string) $src : null;
+                }
+
                 if (
                     $script
-                    && isset($script->src)
+                    && is_string($src)
                     && (
-                        strpos($script->src, 'alpine') !== false
-                        || strpos($script->src, 'alpinejs') !== false
+                        strpos($src, 'alpine') !== false
+                        || strpos($src, 'alpinejs') !== false
                     )
                 ) {
                     return true;
