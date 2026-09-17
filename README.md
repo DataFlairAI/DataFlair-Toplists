@@ -437,6 +437,10 @@ Brands that already match a published review post will be linked. Brands without
 
 ## Changelog
 
+### 2.4.3
+- **Fixed: admin Toplists list page could hit MySQL error 1038 "Out of sort memory"** once the table grew large enough that the default `ORDER BY last_synced DESC` filesort exceeded the host's `sort_buffer_size`. Schema v1.15 adds indexes on `last_synced`, `name`, and `item_count` (`ensureToplistsSortIndexes()`), covering every column `ToplistsQuery::ALLOWED_SORT` can hit that didn't already have one.
+- **Tests:** new wiring test that the method is called from every self-heal/upgrade path. Full suite: 969 tests, 3131 assertions.
+
 ### 2.4.2
 - **Fixed: casino-card icons (ribbon star, rating star, feature checks, and others) could render oversized on the live front end.** These SVGs ship with only a viewBox, no width/height, and the containment rule for them only ever shipped in the block-editor stylesheet, which never loads on a published page. A page-level reset that expands bare `<svg>` to 100% width (Tailwind Preflight and similar resets both do this) could stretch them to fill their container. Found live during QA. Ported the same rule already proven correct in `assets/editor.css` to the front-end stylesheet.
 
@@ -846,4 +850,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.3.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.1
+**Version:** 2.4.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.1

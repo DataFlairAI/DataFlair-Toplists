@@ -215,6 +215,10 @@ Two practical notes:
 - **Rows are replaced on a full sync.** Do not store your own data in these
   tables or add your own columns to them; keep anything of your own in a
   separate table keyed by `api_toplist_id` or `api_brand_id`.
+- **Indexes may appear without a column change.** Schema v1.15 (plugin 2.4.3)
+  adds `idx_last_synced`, `idx_name`, and `idx_item_count` on
+  `wp_dataflair_toplists`. Column names and types are unchanged. You do not
+  need to do anything; the plugin creates them on the next request.
 
 ### If you have custom code reading the payload
 

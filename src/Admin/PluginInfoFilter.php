@@ -183,6 +183,11 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.3</h4>
+<ul>
+  <li><strong>Fixed: admin Toplists list page could hit MySQL error 1038 &ldquo;Out of sort memory&rdquo;</strong> once the table grew large enough that the default <code>ORDER BY last_synced DESC</code> filesort exceeded the host&rsquo;s <code>sort_buffer_size</code>. Schema v1.15 adds indexes on <code>last_synced</code>, <code>name</code>, and <code>item_count</code> (<code>ensureToplistsSortIndexes()</code>), covering every column <code>ToplistsQuery::ALLOWED_SORT</code> can hit that didn&rsquo;t already have one.</li>
+  <li><strong>Tests:</strong> new wiring test that the method is called from every self-heal/upgrade path. Full suite: 969 tests, 3131 assertions.</li>
+</ul>
 <h4>2.4.2</h4>
 <ul>
   <li><strong>Fixed: casino-card icons (ribbon star, rating star, feature checks, and others) could render oversized on the live front end.</strong> These SVGs ship with only a viewBox, no width/height, and the containment rule for them only ever shipped in the block-editor stylesheet, which never loads on a published page. A page-level reset that expands bare <code>&lt;svg&gt;</code> to 100% width (Tailwind Preflight and similar resets both do this) could stretch them to fill their container. Found live during QA. Ported the same rule already proven correct in <code>assets/editor.css</code> to the front-end stylesheet.</li>

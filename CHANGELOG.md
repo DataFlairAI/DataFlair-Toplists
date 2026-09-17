@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.4.3] - 2026-09-17
+
+### Fixed
+- **Admin Toplists list page could hit MySQL error 1038 "Out of sort memory"** once the table grew large enough that the default `ORDER BY last_synced DESC` filesort exceeded the host's `sort_buffer_size`. Schema v1.15 adds indexes on `last_synced`, `name`, and `item_count` (`ensureToplistsSortIndexes()`), covering every column `ToplistsQuery::ALLOWED_SORT` can hit that didn't already have one. Wired into all four self-heal/upgrade call sites the same way the sibling `ensure*()` methods are.
+
+### Tests
+- New wiring test that `ensureToplistsSortIndexes()` is called from `createTables()`, both branches of `ensureTablesExist()`, and `upgradeDatabase()`. Full suite: 969 tests, 3131 assertions.
+
 ## [2.4.2] - 2026-09-16
 
 ### Fixed
