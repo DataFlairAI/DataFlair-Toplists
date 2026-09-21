@@ -52,6 +52,8 @@ namespace DataFlair\Toplists\Frontend\Content {
 
     use DataFlair\Toplists\Tests\ReviewContent\ReviewContentStubs as S;
 
+    require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpSanitizeTitleFake.php';
+
     if (!function_exists(__NAMESPACE__ . '\\post_type_exists')) {
         function post_type_exists($post_type)
         {
@@ -76,7 +78,7 @@ namespace DataFlair\Toplists\Frontend\Content {
             if (S::$sanitizeTitle) {
                 return (S::$sanitizeTitle)($title);
             }
-            return strtolower(str_replace(' ', '-', (string) $title));
+            return \WpSanitizeTitleFake::sanitize((string) $title);
         }
     }
     if (!function_exists(__NAMESPACE__ . '\\wp_insert_post')) {
