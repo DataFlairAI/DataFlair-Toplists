@@ -21,7 +21,7 @@ jQuery(document).ready(function($) {
             dataflair_ribbon_text_color: $('#dataflair_ribbon_text_color').val() || '',
             dataflair_cta_bg_color: $('#dataflair_cta_bg_color').val() || '',
             dataflair_cta_text_color: $('#dataflair_cta_text_color').val() || '',
-            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v1'
+            dataflair_brands_api_version: $('input[name="dataflair_brands_api_version"]:checked').val() || 'v2'
         };
 
         // The webhook checkbox only exists on the API Connection tab - only

@@ -49,7 +49,7 @@ final class SaveSettingsHandler implements AjaxHandlerInterface
         }
 
         $version = (isset($request['dataflair_brands_api_version'])
-            && $request['dataflair_brands_api_version'] === 'v2') ? 'v2' : 'v1';
+            && $request['dataflair_brands_api_version'] === 'v1') ? 'v1' : 'v2';
         update_option('dataflair_brands_api_version', $version);
 
         foreach (['dataflair_ribbon_bg_color', 'dataflair_ribbon_text_color', 'dataflair_cta_bg_color', 'dataflair_cta_text_color'] as $key) {
