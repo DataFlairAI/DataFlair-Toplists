@@ -222,7 +222,7 @@ What moved out of `dataflair-toplists.php`:
 - `Support\UrlTransformer` — replaces inline `maybe_force_https()`. Rewrites `http://` → `https://` for non-local URLs (the production redirect strips `Authorization` headers; up-front HTTPS avoids the rewrite).
 - `Support\EnvironmentDetector` — replaces inline `is_running_in_docker()`. Three-way detection: `/.dockerenv`, `/proc/1/cgroup` keywords, `host.docker.internal` DNS resolution. Currently unused after Phase 0A but kept as a discrete unit.
 - `Http\ApiBaseUrlDetector` — replaces inline `get_api_base_url()`. Three-tier resolution: stored option → endpoints option (with cache-back) → `https://sigma.dataflair.ai/api/v1` fallback. Strips trailing path beyond `/api/vN`.
-- `Http\BrandsApiUrlBuilder` — replaces inline `get_brands_api_url()`. Respects `dataflair_brands_api_version` (v1 default, v2 opt-in); appends `?page=N`.
+- `Http\BrandsApiUrlBuilder` — replaces inline `get_brands_api_url()`. Respects `dataflair_brands_api_version` (v2 default, v1 legacy opt-in); appends `?page=N`.
 - `Http\ApiErrorFormatter` — replaces inline `build_detailed_api_error()`. Owns the long status-code switch (401 Basic vs Bearer vs HTML, 403/404/419/429/500/502-504/default), producing actionable admin-UI guidance.
 - `Support\RelativeTimeFormatter` — replaces inline `time_ago()` and `time_until()`. Emits `"3 minutes ago"` / `"in 3 minutes"` labels.
 
@@ -436,6 +436,11 @@ Brands that already match a published review post will be linked. Brands without
 ---
 
 ## Changelog
+
+### 2.4.4
+- **Changed: Brands API Version defaults to V2 (Recommended).** Multi-vertical brand fields (`classificationTypes`, `sportsbook`, `poker`, `sweeps-coins`, and unified offers) are now active by default via `BrandsApiUrlBuilder::effectiveBase()`. The setting dynamically routes brand sync calls to `/api/v2/brands` while keeping Toplists anchored on `/api/v1/toplists`, with full backward-compatibility fallback to V1 (`Legacy`). A site that already saved this setting keeps the version it chose; only a site that never saved it moves to V2.
+- **Database Contract & Custom Downstream Consumers Verified:** Re-confirmed that the `wp_dataflair_brands` database table contract (including `api_brand_id` and verbatim JSON in the `data` column with `externalId`) remains fully stable for downstream custom sync consumers.
+- **Tests:** Full automated Chrome integration suite run against all 8 SiGMA tenant findings. PHPUnit suite: 969 tests, 3131 assertions, all green.
 
 ### 2.4.3
 - **Fixed: admin Toplists list page could hit MySQL error 1038 "Out of sort memory"** once the table grew large enough that the default `ORDER BY last_synced DESC` filesort exceeded the host's `sort_buffer_size`. Schema v1.15 adds indexes on `last_synced`, `name`, and `item_count` (`ensureToplistsSortIndexes()`), covering every column `ToplistsQuery::ALLOWED_SORT` can hit that didn't already have one.
@@ -850,4 +855,4 @@ Brands that already match a published review post will be linked. Brands without
 
 GPL v2 or later
 
-**Version:** 2.4.3 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.1
+**Version:** 2.4.4 | **Requires WordPress:** 6.3+ | **Requires PHP:** 8.1+ | **Tested up to:** 7.1

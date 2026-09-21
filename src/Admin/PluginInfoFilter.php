@@ -183,6 +183,12 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.4</h4>
+<ul>
+  <li><strong>Changed: Brands API Version defaults to V2 (Recommended).</strong> Multi-vertical brand fields (<code>classificationTypes</code>, <code>sportsbook</code>, <code>poker</code>, <code>sweeps-coins</code>, and unified offers) are now active by default via <code>BrandsApiUrlBuilder::effectiveBase()</code>. The setting dynamically routes brand sync calls to <code>/api/v2/brands</code> while keeping Toplists anchored on <code>/api/v1/toplists</code>, with full backward-compatibility fallback to V1 (<code>Legacy</code>). A site that already saved this setting keeps the version it chose; only a site that never saved it moves to V2.</li>
+  <li><strong>Database Contract &amp; Custom Downstream Consumers Verified:</strong> Re-confirmed that the <code>wp_dataflair_brands</code> database table contract (including <code>api_brand_id</code> and verbatim JSON in the <code>data</code> column with <code>externalId</code>) remains fully stable for downstream custom sync consumers.</li>
+  <li><strong>Tests:</strong> Full automated Chrome integration suite run against all 8 SiGMA tenant findings. PHPUnit suite: 969 tests, 3131 assertions, all green.</li>
+</ul>
 <h4>2.4.3</h4>
 <ul>
   <li><strong>Fixed: admin Toplists list page could hit MySQL error 1038 &ldquo;Out of sort memory&rdquo;</strong> once the table grew large enough that the default <code>ORDER BY last_synced DESC</code> filesort exceeded the host&rsquo;s <code>sort_buffer_size</code>. Schema v1.15 adds indexes on <code>last_synced</code>, <code>name</code>, and <code>item_count</code> (<code>ensureToplistsSortIndexes()</code>), covering every column <code>ToplistsQuery::ALLOWED_SORT</code> can hit that didn&rsquo;t already have one.</li>
