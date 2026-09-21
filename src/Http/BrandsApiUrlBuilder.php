@@ -2,9 +2,9 @@
 /**
  * Phase 9.11 — Brands API URL builder.
  *
- * Brands sync respects the `dataflair_brands_api_version` option (`v1`
- * default, `v2` opt-in). Toplists always use v1, so this helper exists
- * only for the brands path.
+ * Brands sync respects the `dataflair_brands_api_version` option (`v2`
+ * default since 2.4.4, `v1` legacy opt-in). Toplists always use v1, so this
+ * helper exists only for the brands path.
  */
 
 declare(strict_types=1);
@@ -52,7 +52,7 @@ final class BrandsApiUrlBuilder implements BrandsApiUrlBuilderInterface
     public function effectiveBase(bool $persist = true): string
     {
         $base    = $this->base->detect($persist);
-        $version = get_option('dataflair_brands_api_version', 'v1') === 'v2' ? 'v2' : 'v1';
+        $version = get_option('dataflair_brands_api_version', 'v2') === 'v1' ? 'v1' : 'v2';
 
         return UrlTransformer::withApiVersion($base, $version);
     }

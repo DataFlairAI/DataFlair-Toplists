@@ -31,8 +31,8 @@ final class UrlTransformer
     /**
      * Point an API base URL at a given version by rewriting its `/api/vN`
      * segment. A base without that segment comes back unchanged: brand sync
-     * must never rewrite a URL it does not recognise. Brand sync (v1 default,
-     * v2 opt-in) and the admin API preview share this one owner, which is
+     * must never rewrite a URL it does not recognise. Brand sync (v2 default,
+     * v1 legacy opt-in) and the admin API preview share this one owner, which is
      * what keeps Settings describing the URL sync really calls.
      */
     public static function withApiVersion(string $url, string $version): string

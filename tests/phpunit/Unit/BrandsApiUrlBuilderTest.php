@@ -1,7 +1,7 @@
 <?php
 /**
  * Phase 9.11 — Pins Http\BrandsApiUrlBuilder behaviour: respects the
- * `dataflair_brands_api_version` option (v1 default, v2 opt-in) and
+ * `dataflair_brands_api_version` option (v2 default since 2.4.4, v1 legacy opt-in) and
  * appends the page query parameter.
  */
 
@@ -43,7 +43,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         );
     }
 
-    public function test_v1_default_appends_page_param(): void
+    public function test_stored_v1_appends_page_param(): void
     {
         Functions\when('get_option')->alias(function ($key, $default = false) {
             if ($key === 'dataflair_api_base_url')      return 'https://tenant.dataflair.ai/api/v1';
@@ -117,7 +117,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         });
 
         $this->assertSame(
-            'https://sigma.dataflair.ai/api/v1/brands?per_page=25&page=1',
+            'https://sigma.dataflair.ai/api/v2/brands?per_page=25&page=1',
             $this->builder()->buildPageUrl(1)
         );
     }
@@ -127,7 +127,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
      * reflect the v2 rewrite even though the raw stored option still ends in
      * /v1 — the exact mismatch Sigma read as a broken sync (V2 was selected
      * and working; the label never said so). The v1 case is already pinned
-     * by test_v1_default_appends_page_param, since buildPageUrl delegates.
+     * by test_stored_v1_appends_page_param, since buildPageUrl delegates.
      */
     public function test_effective_base_reflects_v2_rewrite_even_though_stored_option_says_v1(): void
     {
@@ -217,7 +217,7 @@ final class BrandsApiUrlBuilderTest extends TestCase
         Functions\expect('update_option')->never();
 
         $this->assertSame(
-            'https://tenant.dataflair.ai/api/v1/brands/42',
+            'https://tenant.dataflair.ai/api/v2/brands/42',
             $this->builder()->buildSingleUrl(42)
         );
     }

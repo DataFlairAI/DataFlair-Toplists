@@ -7,7 +7,7 @@
  *   - api token trimmed (no sanitize_text_field — it mangles brackets)
  *   - http-basic-auth password trimmed only
  *   - http-basic-auth user sanitize_text_field
- *   - brands-api-version whitelisted to v1|v2 (default v1)
+ *   - brands-api-version whitelisted to v1|v2 (default v2)
  *   - base URL esc_url_raw'd, trailing slash stripped, pinned to /api/vN
  *   - empty base URL deletes the option rather than storing ''
  *   - colour fields sanitize_text_field'd
@@ -76,11 +76,11 @@ final class SaveSettingsHandlerTest extends TestCase
 
     public function test_brands_api_version_whitelisted_to_v1_or_v2(): void
     {
-        ($this->handler())->handle(['dataflair_brands_api_version' => 'v2']);
-        $this->assertSame('v2', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
+        ($this->handler())->handle(['dataflair_brands_api_version' => 'v1']);
+        $this->assertSame('v1', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
 
         ($this->handler())->handle(['dataflair_brands_api_version' => 'v99']);
-        $this->assertSame('v1', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
+        $this->assertSame('v2', \SaveSettingsHandlerTestStubs::$options['dataflair_brands_api_version']);
     }
 
     public function test_empty_base_url_deletes_the_option(): void
@@ -130,7 +130,7 @@ final class SaveSettingsHandlerTest extends TestCase
         // reading "absent" as "off" — see
         // test_webhook_setting_is_untouched_when_key_is_absent_from_request.
         $this->assertSame(
-            ['dataflair_brands_api_version' => 'v1'],
+            ['dataflair_brands_api_version' => 'v2'],
             \SaveSettingsHandlerTestStubs::$options
         );
     }

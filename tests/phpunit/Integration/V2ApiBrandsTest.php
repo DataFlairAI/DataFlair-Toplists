@@ -194,7 +194,7 @@ class V2ApiBrandsTest extends TestCase {
 
     /** Mirrors ajax_save_settings() version validation. */
     private function sanitizeApiVersion(string $input): string {
-        return $input === 'v2' ? 'v2' : 'v1';
+        return $input === 'v1' ? 'v1' : 'v2';
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -346,13 +346,13 @@ class V2ApiBrandsTest extends TestCase {
         $this->assertSame([], $casinos);
     }
 
-    /** Test 11: sanitizeApiVersion rejects invalid values, defaults to v1 */
+    /** Test 11: sanitizeApiVersion rejects invalid values, defaults to v2 */
     public function test_ajax_save_settings_only_accepts_v1_or_v2(): void {
         $this->assertSame('v1', $this->sanitizeApiVersion('v1'));
         $this->assertSame('v2', $this->sanitizeApiVersion('v2'));
-        $this->assertSame('v1', $this->sanitizeApiVersion('v3'));
-        $this->assertSame('v1', $this->sanitizeApiVersion(''));
-        $this->assertSame('v1', $this->sanitizeApiVersion('V2'));
-        $this->assertSame('v1', $this->sanitizeApiVersion('../hack'));
+        $this->assertSame('v2', $this->sanitizeApiVersion('v3'));
+        $this->assertSame('v2', $this->sanitizeApiVersion(''));
+        $this->assertSame('v2', $this->sanitizeApiVersion('V2'));
+        $this->assertSame('v2', $this->sanitizeApiVersion('../hack'));
     }
 }

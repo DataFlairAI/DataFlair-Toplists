@@ -179,14 +179,14 @@ final class SettingsPage implements PageInterface
                                 <td>
                                     <label>
                                         <input type="radio" name="dataflair_brands_api_version"
-                                               value="v1" <?php checked(get_option('dataflair_brands_api_version', 'v1'), 'v1'); ?>>
-                                        V1 <span style="color:#646970;">(default)</span>
+                                               value="v2" <?php checked(get_option('dataflair_brands_api_version', 'v2'), 'v2'); ?>>
+                                        V2 <span style="color:#2271b1;font-weight:600;">(Recommended)</span>
                                     </label>
                                     &nbsp;&nbsp;
                                     <label>
                                         <input type="radio" name="dataflair_brands_api_version"
-                                               value="v2" <?php checked(get_option('dataflair_brands_api_version', 'v1'), 'v2'); ?>>
-                                        V2
+                                               value="v1" <?php checked(get_option('dataflair_brands_api_version', 'v2'), 'v1'); ?>>
+                                        V1 <span style="color:#646970;">(Legacy)</span>
                                     </label>
                                     <p class="description">
                                         V2 includes classificationTypes, 15 multi-vertical brand fields

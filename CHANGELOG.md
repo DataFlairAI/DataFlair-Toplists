@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Live 2.x release notes also live in `README.md` (Changelog) and the `plugins_api` block in `src/Admin/PluginInfoFilter.php`. Keep those in sync when cutting a release.
 
+## [2.4.4] - 2026-09-21
+
+### Changed
+- **Brands API Version defaults to V2 (Recommended).** Multi-vertical brand fields (`classificationTypes`, `sportsbook`, `poker`, `sweeps-coins`, and unified offers) are now active by default via `BrandsApiUrlBuilder::effectiveBase()`. The setting dynamically routes brand sync calls to `/api/v2/brands` while keeping Toplists anchored on `/api/v1/toplists`, with full backward-compatibility fallback to V1 (`Legacy`). A site that already saved this setting keeps the version it chose; only a site that never saved it moves to V2.
+- **Database Contract & Custom Downstream Consumers Verified:** Re-confirmed that the `wp_dataflair_brands` database table contract (including `api_brand_id` and verbatim JSON in the `data` column with `externalId`) remains fully stable for downstream custom sync consumers.
+
+### Tests
+- Full automated Chrome integration suite run against all 8 SiGMA tenant findings (Settings V2 toggle, brand search for `bc.g`, casino editor brand name mapping, 0-duplicate toplist selector, mutually exclusive operating/restricted geo lists, and brand/toplist sync).
+- PHPUnit unit and integration test suite: 969 tests, 3131 assertions, all green. The two changed test files also pass when run on their own.
+
 ## [2.4.3] - 2026-09-17
 
 ### Fixed
