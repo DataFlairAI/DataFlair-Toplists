@@ -11,7 +11,7 @@
  *   - happy path: `layout=table` short-circuits to TableRenderer.render()
  *   - `limit` slices items before rendering
  *   - `title` overrides the stored toplist name
- *   - stale notice fires only when last_synced > 3 days ago
+ *   - cached data renders without a public stale notice
  *   - dataflair_render_started + dataflair_render_finished fire with the
  *     payload shape the Phase 1 telemetry contract requires
  */
@@ -320,7 +320,7 @@ final class ToplistShortcodeTest extends TestCase
         $this->assertStringNotContainsString('Stored Name', $html);
     }
 
-    public function test_stale_notice_fires_when_data_older_than_three_days(): void
+    public function test_cached_data_renders_without_public_stale_notice(): void
     {
         $items   = [['brand' => ['name' => 'Acme'], 'position' => 1]];
         $stale_t = time() - (4 * 24 * 60 * 60);
@@ -329,8 +329,9 @@ final class ToplistShortcodeTest extends TestCase
 
         $html = $sc->render(['id' => 42]);
 
-        $this->assertStringContainsString('dataflair-notice', $html);
-        $this->assertStringContainsString('cached version', $html);
+        $this->assertStringNotContainsString('dataflair-notice', $html);
+        $this->assertStringNotContainsString('cached version', $html);
+        $this->assertStringContainsString('Stored', $html);
     }
 
     public function test_render_started_action_fires_with_payload(): void

@@ -185,12 +185,6 @@ final class ToplistShortcode
         ob_start();
         ?>
         <div class="dataflair-toplist">
-            <?php if ($is_stale): ?>
-                <div class="dataflair-notice">
-                    ⚠️ This data was last updated on <?php echo date('M d, Y', (int) $last_synced); ?>. Using cached version.
-                </div>
-            <?php endif; ?>
-
             <?php if (!empty($title)): ?>
             <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
             <?php endif; ?>

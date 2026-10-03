@@ -66,12 +66,12 @@ final class TableRendererTest extends TestCase
         $this->assertStringNotContainsString('dataflair-title', $html);
     }
 
-    public function test_stale_notice_fires_only_when_is_stale(): void
+    public function test_cached_data_renders_without_public_stale_notice(): void
     {
         $stale = new ToplistTableVM([], 't', true, 1710000000);
         $fresh = new ToplistTableVM([], 't', false, 1710000000);
 
-        $this->assertStringContainsString('dataflair-notice', $this->renderer->render($stale));
+        $this->assertStringNotContainsString('dataflair-notice', $this->renderer->render($stale));
         $this->assertStringNotContainsString('dataflair-notice', $this->renderer->render($fresh));
     }
 
