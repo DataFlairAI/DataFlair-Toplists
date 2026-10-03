@@ -222,7 +222,7 @@ function test_toplist_render(): void {
     dfr_end();
 
     // ── T08: Stale data warning ───────────────────────────────────────────────
-    dfr_section("T08 · Stale Data Warning (>3 days old)");
+    dfr_section("T08 · Cached Data Without Public Warning");
 
     // Find a toplist older than 3 days, or simulate one
     $stale_toplist = null;
@@ -236,10 +236,10 @@ function test_toplist_render(): void {
         $age_days = round((time() - strtotime($stale_toplist->last_synced)) / 86400, 1);
         dfr_info("Found stale toplist id={$stale_id} ({$age_days} days old)");
         $out = do_shortcode("[dataflair_toplist id=\"{$stale_id}\"]");
-        if (str_contains($out, 'dataflair-notice') || str_contains($out, 'last updated') || str_contains($out, 'cached')) {
-            dfr_pass("Stale data warning banner present in output");
+        if (!str_contains($out, 'dataflair-notice') && !str_contains($out, 'Using cached version')) {
+            dfr_pass("Cached data renders without a public warning");
         } else {
-            dfr_fail("No stale data warning found — expected banner for data {$age_days} days old");
+            dfr_fail("Unexpected public warning for data {$age_days} days old");
         }
     } else {
         // Simulate by temporarily updating last_synced to 4 days ago
@@ -249,10 +249,10 @@ function test_toplist_render(): void {
         $wpdb->update($table, ['last_synced' => $stale_time], ['id' => $first_toplist->id]);
 
         $out = do_shortcode("[dataflair_toplist id=\"{$first_id}\"]");
-        if (str_contains($out, 'dataflair-notice') || str_contains($out, 'last updated') || str_contains($out, 'cached')) {
-            dfr_pass("Stale data warning banner present when last_synced is 4 days ago");
+        if (!str_contains($out, 'dataflair-notice') && !str_contains($out, 'Using cached version')) {
+            dfr_pass("Cached data renders without a public warning when last_synced is 4 days ago");
         } else {
-            dfr_fail("No stale data warning found even when last_synced is 4 days ago");
+            dfr_fail("Unexpected public warning when last_synced is 4 days ago");
         }
 
         // Restore original last_synced

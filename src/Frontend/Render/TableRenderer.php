@@ -28,18 +28,10 @@ final class TableRenderer implements TableRendererInterface
 
         $items = $vm->items;
         $title = $vm->title;
-        $is_stale = $vm->isStale;
-        $last_synced = $vm->lastSynced;
         $pros_cons_data = $vm->prosConsData;
 
         ?>
         <div class="dataflair-toplist dataflair-toplist-table">
-            <?php if ($is_stale): ?>
-                <div class="dataflair-notice">
-                    ⚠️ This data was last updated on <?php echo date('M d, Y', $last_synced); ?>. Using cached version.
-                </div>
-            <?php endif; ?>
-
             <?php if (!empty($title)): ?>
                 <h2 class="dataflair-title"><?php echo esc_html($title); ?></h2>
             <?php endif; ?>
