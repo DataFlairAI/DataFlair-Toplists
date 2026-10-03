@@ -127,6 +127,34 @@ final class TableRendererTest extends TestCase
         $this->assertStringContainsString('Limited live support', $html);
     }
 
+    public function test_resolves_pros_cons_via_slug_key_for_brand_name_with_accents_and_punctuation(): void
+    {
+        // Slug pinned against a live WordPress 6.9.4 install's real sanitize_title()
+        // (verified via `wp eval-file`):
+        //   "Björn's Casino & Café_Royale...Deluxe" => "bjorns-casino-cafe_royale-deluxe"
+        // Exercises every divergence the fake sanitize_title() implementations used to
+        // get wrong: accent transliteration (ö/é), ampersand deletion, apostrophe
+        // deletion, underscore preservation, and consecutive-dash collapsing ("...").
+        // No brand id/item id is set, so the resolver can only reach this override via
+        // the `casino-slug-{slug}` key — a wrong slug means a lookup miss.
+        $items = [[
+            'brand' => ['name' => "Björn's Casino & Café_Royale...Deluxe"],
+            'position' => 1,
+        ]];
+        $pros_cons_data = [
+            'casino-slug-bjorns-casino-cafe_royale-deluxe' => [
+                'pros' => ['Fast KYC'],
+                'cons' => ['High wagering requirement'],
+            ],
+        ];
+        $vm = new ToplistTableVM($items, 't', false, 0, $pros_cons_data);
+
+        $html = $this->renderer->render($vm);
+
+        $this->assertStringContainsString('Fast KYC', $html);
+        $this->assertStringContainsString('High wagering requirement', $html);
+    }
+
     public function test_emits_offer_fields_from_offer_subarray(): void
     {
         $items = [[

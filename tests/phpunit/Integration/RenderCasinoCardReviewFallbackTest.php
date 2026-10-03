@@ -13,6 +13,8 @@
 
 use PHPUnit\Framework\TestCase;
 
+require_once DATAFLAIR_PLUGIN_DIR . 'tests/phpunit/WpSanitizeTitleFake.php';
+
 if (!function_exists('esc_html')) {
     function esc_html($value) { return (string) $value; }
 }
@@ -24,10 +26,7 @@ if (!function_exists('esc_url')) {
 }
 if (!function_exists('sanitize_title')) {
     function sanitize_title($value) {
-        $value = strtolower(trim((string) $value));
-        $value = str_replace('.', '-', $value);
-        $value = preg_replace('/[^a-z0-9\-]+/', '-', $value);
-        return trim((string) $value, '-');
+        return WpSanitizeTitleFake::sanitize((string) $value);
     }
 }
 if (!function_exists('home_url')) {
