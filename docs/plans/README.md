@@ -7,6 +7,7 @@ Living index of all parked plans for this plugin. New plans go in `to-be-impleme
 | # | Plan | Touches | Owner | Created | Notes |
 |---|------|---------|-------|---------|-------|
 | 01 | [DataFlair → WordPress Webhooks Sync Architecture](to-be-implemented/01-dataflair-to-wordpress-webhooks-sync-architecture.md) | dataflair.ai-v2 + plugin | Mex | 2026-04-25 | Phase A (delta endpoint) → B (tombstones) → C (webhooks). Coordinated cross-repo work. |
+| 02 | [DataFlair Toplists for ASP.NET](to-be-implemented/02-dataflair-toplists-for-aspnet.md) | new repo `DataFlair-Toplists-Net` | Mex | 2026-08-18 | Port the plugin to custom ASP.NET CMS sites (first target: cricketworld.com). Sidecar embed first, in-process assembly second. |
 
 ## In progress
 
