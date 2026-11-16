@@ -21,6 +21,10 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 
 ---
 
+## Redirect feature disabled in 2.4.5
+
+The local `/go/` campaign redirect feature is disabled globally. Requests to `/go` or `/go/` return HTTP 410 instead of forwarding to an affiliate URL. Existing links using this feature will stop working after this update is installed. Sync, stored data, and unrelated pages are unchanged. Previously cached 301 redirects and direct third-party affiliate links are not revoked.
+
 ## Features
 
 ### Toplist Sync

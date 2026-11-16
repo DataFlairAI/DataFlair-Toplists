@@ -183,6 +183,8 @@ final class PluginInfoFilter
     private function changelogHtml(): string
     {
         return '
+<h4>2.4.5 — Campaign redirects disabled</h4>
+<ul><li>Disabled the local /go/ campaign redirect feature globally. Existing /go links return HTTP 410 after installation; sync and stored data are unchanged. Previously cached 301s and direct affiliate links are not revoked.</li></ul>
 <h4>2.4.4</h4>
 <ul>
   <li><strong>Changed: Brands API Version defaults to V2 (Recommended).</strong> Multi-vertical brand fields (<code>classificationTypes</code>, <code>sportsbook</code>, <code>poker</code>, <code>sweeps-coins</code>, and unified offers) are now active by default via <code>BrandsApiUrlBuilder::effectiveBase()</code>. The setting dynamically routes brand sync calls to <code>/api/v2/brands</code> while keeping Toplists anchored on <code>/api/v1/toplists</code>, with full backward-compatibility fallback to V1 (<code>Legacy</code>). A site that already saved this setting keeps the version it chose; only a site that never saved it moves to V2.</li>
