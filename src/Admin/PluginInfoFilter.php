@@ -89,104 +89,14 @@ final class PluginInfoFilter
 
     private function descriptionHtml(): string
     {
-        return '
-<p>DataFlair Toplists is a WordPress plugin that connects your site to the <strong>DataFlair</strong> affiliate management platform. DataFlair is a white-label iGaming data service built for casino and sportsbook affiliate publishers, it lets you manage your entire brand catalogue, bonus offers, promo codes, affiliate tracking links, geo rules, and rating data in one central dashboard, then distribute that data to all your WordPress affiliate sites simultaneously.</p>
-<p>This plugin is the WordPress-side receiver. It syncs your toplists and brands from the DataFlair API, stores them locally in custom database tables, and renders fully styled casino and sportsbook comparison cards on any page or post, with no live API calls on the front end.</p>
-
-<p><strong>Version 2.4.5 disables local /go/ campaign redirects globally.</strong> Existing /go links return HTTP 410 after installation. Sync, stored data, and unrelated pages are unchanged. Direct affiliate links and previously cached redirects are not revoked.</p>
-
-<h4>How It Works</h4>
-<p>Your DataFlair account holds your brand catalogue and toplist configurations (e.g. "Top 10 Casinos in India", "Best Sportsbooks in Italy"). The plugin syncs this data on a configurable schedule and caches it locally. You place the DataFlair Gutenberg block or <code>[dataflair_toplist id="123"]</code> shortcode on any page, and the plugin renders the full toplist from cached data, fast and reliable.</p>
-
-<h4>Toplist Sync</h4>
-<ul>
-  <li>Syncs from DataFlair API v1 and v2</li>
-  <li>Full sync and incremental sync modes with conflict detection and preview before overwriting</li>
-  <li>Supports multiple geo-editions, rotation schedules, and locked item positions</li>
-  <li>Stores complete offer, tracker, and geo data as JSON for flexible querying</li>
-  <li>Paginated API fetch handles large brand catalogues automatically</li>
-</ul>
-
-<h4>Webhook Sync</h4>
-<ul>
-  <li>DataFlair pushes toplist and brand changes to the site the moment they happen, instead of waiting for the next scheduled sync</li>
-  <li>A single "Enable webhook sync" checkbox on Settings &rsaquo; API Connection self-registers the site with DataFlair automatically, reusing the existing API token, no separate credential to manage</li>
-  <li>Live status shown underneath the checkbox: receiving, no activity yet, or a rejected-delivery reason</li>
-  <li>Deliveries are HMAC-SHA256 signed against a per-site secret generated once on first enable, and verified before anything else runs</li>
-  <li>The receiver is idempotent (a retried or duplicate delivery is a safe no-op) and tenant-scoped (rejects a delivery meant for a different DataFlair tenant)</li>
-  <li><code>toplist.published</code> re-fetches just that toplist; <code>brand.status_changed</code>/<code>brand.updated</code> re-fetches just that brand, rather than re-syncing the full catalogue</li>
-</ul>
-
-<h4>Brand Management</h4>
-<ul>
-  <li>Syncs your full brand catalogue into a local database table</li>
-  <li>Stores name, slug, logo, star rating, licenses, payment methods, classification types, and restricted countries</li>
-  <li>Admin screen at DataFlair, Brands shows all synced brands with their affiliate data</li>
-  <li><strong>Review URL Override:</strong> per-brand custom review URL that wins over all automatic URL generation across the entire site. Field locks after saving and unlocks on Edit.</li>
-</ul>
-
-<h4>Casino Card Rendering</h4>
-<ul>
-  <li>Renders fully styled casino cards showing: brand logo, name, star rating, bonus offer text, promo code copy button, feature list, affiliate CTA, and Read Review link (shown only when a published review or manual review URL exists)</li>
-  <li>Promo codes render as a pill-shaped copy-to-clipboard button, matching the design of standalone review pages</li>
-  <li>Review pros defaults are read from published review CPT meta with safe fallback logic for duplicate slugs and brand-id matches</li>
-  <li>Review post resolution matches published reviews by slug or by _review_brand_id when the live review slug differs from the API slug (for example draft at base slug vs published …-india)</li>
-  <li>Review URL resolution priority: manual override, published review post permalink, auto-generated /reviews/{slug}/, affiliate CTA link</li>
-  <li>Normalizes casino key slug generation to match Gutenberg editor brandSlug behavior for brands with special characters</li>
-  <li>Supports multiple product types (casino, sportsbook, poker) with type-aware labels</li>
-</ul>
-
-<h4>Gutenberg Block and Shortcode</h4>
-<ul>
-  <li>Native WordPress block with inspector controls for toplist selection, item limit, and display options</li>
-  <li>Includes a testing-focused accordion table layout option to inspect synced data without wide horizontal-scroll tables</li>
-  <li>Server-side rendered, always reflects live synced data</li>
-  <li>Pros and cons overrides in the block editor use stable brand and item IDs when available, so custom copy survives reordered toplists and refreshed sync payloads</li>
-  <li>Shortcode: <code>[dataflair_toplist id="123" limit="10"]</code> works anywhere</li>
-</ul>
-
-<h4>API Contract Safety</h4>
-<ul>
-  <li>Every API request identifies the plugin version and the API contract it was built for. A backend that cannot serve that contract answers HTTP 409 and sync pauses with a clear admin notice instead of storing a response the plugin cannot render.</li>
-  <li>Contract canary: sync payloads are deep-validated on every page before any local write. A renamed, removed, or retyped render-critical field stops the sync and names the field, rather than silently blanking cards.</li>
-  <li>Fail-safe sync ordering: the destructive stale-row wipe runs only after a response has been fetched and validated, so a backend outage can never empty a site. An empty payload against a populated site refuses the wipe.</li>
-  <li>Every contract failure ends with an action, either "update the plugin to version X" or "this is a DataFlair-side change, report it". The notice clears itself on the next successful sync.</li>
-  <li>The plugin announces DataFlair API version changes: a dismissible informational notice when the contract revision moves or a newer API version becomes available.</li>
-  <li>The database tables are a declared contract, locked by a test: additive only within a major version, with the data column storing the verbatim API payload for sites that read the tables directly.</li>
-  <li>Health endpoint reports paused streams plus an integration profile (geo targeting, API contract and revision, last sync times) for monitoring.</li>
-</ul>
-
-<h4>WP-CLI</h4>
-<ul>
-  <li><code>wp dataflair sync</code> runs a full sync (<code>--only=toplists</code> or <code>--only=brands</code> to scope it). Exits non-zero on failure so a real system cron can react, and backs off automatically on API rate limits.</li>
-  <li><code>wp dataflair logs</code> tails DataFlair log entries with <code>--since</code>, <code>--level</code> and <code>--limit</code> filters.</li>
-  <li><code>wp dataflair reconcile-reviews</code> backfills cached review post IDs for existing brand rows.</li>
-</ul>
-
-<h4>Automatic Updates</h4>
-<ul>
-  <li>Self-updating via GitHub releases, no WordPress.org required</li>
-  <li>WordPress shows native update notifications when a new release is published on GitHub</li>
-  <li>Powered by plugin-update-checker v5.6, release-based (not branch-based)</li>
-</ul>
-
-<h4>Admin Interface</h4>
-<ul>
-  <li><strong>Dashboard:</strong> API health tile, stat tiles (brands synced, toplists count, last sync + next-in), recent sync activity feed, scheduled jobs card, shortcode usage count with copy button. Sync Brands and Sync Toplists buttons with live progress toast.</li>
-  <li><strong>Toplists list:</strong> search, bulk re-sync and bulk delete, per-row accordion with Items tab (position/brand/offer/synced status per item) and Raw JSON tab (pretty-printed blob with copy + download).</li>
-  <li><strong>Brands:</strong> full brand table with review URL override inline-edit cell.</li>
-  <li><strong>Tools:</strong> Tests runner including the API Contract Check diagnostic (per-test Run + Run All, persisted results), Logs tab (filtered DataFlair entries from debug.log, severity colouring, Download), API Preview tab.</li>
-  <li><strong>Settings:</strong> API Connection tab (bearer token + Test Connection), Customizations tab (colour pickers with live preview), Sync Schedule tab (cadence selects, retry count, alert email — saves and reschedules WP-Cron hooks), Geo-Targeting tab (site-level on/off toggle for the render gate). Dirty-state amber pill + beforeunload guard.</li>
-  <li>REST API endpoints for the block editor.</li>
-</ul>
-        ';
+        return '<p><strong>2.4.5 retires DataFlair Toplists.</strong> On the first request loading this version, it permanently drops the current WordPress site prefix’s dataflair_toplists, dataflair_brands, dataflair_alternative_toplists, and dataflair_webhook_events tables. Back up first. Sync, webhook/API handlers, schema recreation, and toplist rendering are disabled. Local /go links return HTTP 410. WordPress core tables, posts, media, settings, and unrelated tables remain. Cached 301s and direct affiliate URLs cannot be revoked by this plugin. This applies to every installation that loads the update.</p>';
     }
 
     private function changelogHtml(): string
     {
         return '
-<h4>2.4.5 — Campaign redirects disabled</h4>
-<ul><li>Disabled the local /go/ campaign redirect feature globally. Existing /go links return HTTP 410 after installation; sync and stored data are unchanged. Previously cached 301s and direct affiliate links are not revoked.</li></ul>
+<h4>2.4.5 — Plugin retirement and permanent data removal</h4>
+<ul><li>Permanently drops all four plugin-specific tables on first load of the new runtime. Disables data sync, webhook handlers, schema healing and toplist rendering. Local /go links return HTTP 410. Core WordPress tables remain; a code rollback cannot restore deleted data.</li></ul>
 <h4>2.4.4</h4>
 <ul>
   <li><strong>Changed: Brands API Version defaults to V2 (Recommended).</strong> Multi-vertical brand fields (<code>classificationTypes</code>, <code>sportsbook</code>, <code>poker</code>, <code>sweeps-coins</code>, and unified offers) are now active by default via <code>BrandsApiUrlBuilder::effectiveBase()</code>. The setting dynamically routes brand sync calls to <code>/api/v2/brands</code> while keeping Toplists anchored on <code>/api/v1/toplists</code>, with full backward-compatibility fallback to V1 (<code>Legacy</code>). A site that already saved this setting keeps the version it chose; only a site that never saved it moves to V2.</li>

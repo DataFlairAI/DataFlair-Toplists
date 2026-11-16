@@ -1,5 +1,14 @@
 # DataFlair Toplists
 
+## 2.4.5 retirement warning
+
+This version permanently drops **all four plugin-specific tables** using the current site prefix: `dataflair_toplists`, `dataflair_brands`, `dataflair_alternative_toplists`, and `dataflair_webhook_events`. It runs on the first request that loads the new code, not inside an update request still running the old code. Inactive copies do not run until activated. Network installations retire each site when that site loads the plugin. Back up first: code rollback does not recover rows.
+
+It disables sync, webhook/API handlers, schema self-healing, and toplist rendering. `/go` and `/go/` return HTTP 410 without a Location header. Core tables, posts, media, existing settings and unrelated tables remain. Direct affiliate URLs and browser/CDN-cached 301s remain outside its control. Every installation loading this release is affected.
+
+The feature documentation below describes earlier versions.
+
+
 A WordPress plugin that connects your site to the [DataFlair](https://dataflair.ai) affiliate management platform and renders fully styled casino and sportsbook toplist blocks.
 
 ---
@@ -23,7 +32,7 @@ This plugin is the WordPress-side receiver. It syncs your toplists and brands fr
 
 ## Redirect feature disabled in 2.4.5
 
-The local `/go/` campaign redirect feature is disabled globally. Requests to `/go` or `/go/` return HTTP 410 instead of forwarding to an affiliate URL. Existing links using this feature will stop working after this update is installed. Sync, stored data, and unrelated pages are unchanged. Previously cached 301 redirects and direct third-party affiliate links are not revoked.
+The local `/go/` campaign redirect feature is disabled globally. Requests to `/go` or `/go/` return HTTP 410 instead of forwarding to an affiliate URL. Existing links using this feature will stop working after this update is installed. All four plugin tables are permanently removed and sync is disabled; unrelated pages are unchanged. Previously cached 301 redirects and direct third-party affiliate links are not revoked.
 
 ## Features
 

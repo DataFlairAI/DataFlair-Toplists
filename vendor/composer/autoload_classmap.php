@@ -214,6 +214,7 @@ return array(
     'DataFlair\\Toplists\\I18n' => $baseDir . '/src/I18n.php',
     'DataFlair\\Toplists\\Lifecycle\\Activator' => $baseDir . '/src/Lifecycle/Activator.php',
     'DataFlair\\Toplists\\Lifecycle\\Deactivator' => $baseDir . '/src/Lifecycle/Deactivator.php',
+    'DataFlair\\Toplists\\Lifecycle\\Retirement' => $baseDir . '/src/Lifecycle/Retirement.php',
     'DataFlair\\Toplists\\Logging\\ErrorLogLogger' => $baseDir . '/includes/Logging/ErrorLogLogger.php',
     'DataFlair\\Toplists\\Logging\\FileLogger' => $baseDir . '/includes/Logging/FileLogger.php',
     'DataFlair\\Toplists\\Logging\\LoggerFactory' => $baseDir . '/includes/Logging/LoggerFactory.php',

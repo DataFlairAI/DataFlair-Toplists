@@ -2,7 +2,7 @@
 /**
  * Plugin Name: DataFlair Toplists
  * Plugin URI: https://dataflair.ai
- * Description: Fetch and display casino toplists from DataFlair API
+ * Description: Retires DataFlair Toplists, permanently removes its four data tables, and disables local campaign redirects
  * Version: 2.4.5
  * Requires at least: 6.3
  * Requires PHP: 8.1
@@ -31,6 +31,10 @@ if (!defined('DATAFLAIR_WEBHOOK_EVENTS_TABLE_NAME'))        define('DATAFLAIR_WE
 if (file_exists(DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once DATAFLAIR_PLUGIN_DIR . 'vendor/autoload.php';
 }
+
+// Retired runtime: do not register schema healing, sync, REST, admin or CLI writers.
+\DataFlair\Toplists\Lifecycle\Retirement::boot(__FILE__);
+return;
 
 // Phase 9.5 — WPPB-style lifecycle hooks. WordPress requires these to
 // be registered at plugin-file load time (not from inside a class

@@ -296,6 +296,7 @@ class ComposerStaticInitec35113edf75635d2b9751a54a43e34f
         'DataFlair\\Toplists\\I18n' => __DIR__ . '/../..' . '/src/I18n.php',
         'DataFlair\\Toplists\\Lifecycle\\Activator' => __DIR__ . '/../..' . '/src/Lifecycle/Activator.php',
         'DataFlair\\Toplists\\Lifecycle\\Deactivator' => __DIR__ . '/../..' . '/src/Lifecycle/Deactivator.php',
+        'DataFlair\\Toplists\\Lifecycle\\Retirement' => __DIR__ . '/../..' . '/src/Lifecycle/Retirement.php',
         'DataFlair\\Toplists\\Logging\\ErrorLogLogger' => __DIR__ . '/../..' . '/includes/Logging/ErrorLogLogger.php',
         'DataFlair\\Toplists\\Logging\\FileLogger' => __DIR__ . '/../..' . '/includes/Logging/FileLogger.php',
         'DataFlair\\Toplists\\Logging\\LoggerFactory' => __DIR__ . '/../..' . '/includes/Logging/LoggerFactory.php',
