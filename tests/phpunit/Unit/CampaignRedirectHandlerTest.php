@@ -19,7 +19,7 @@ final class CampaignRedirectHandlerTest extends TestCase
         Monkey\setUp();
         $_GET = [];
         $_SERVER = [];
-        Functions\when('home_url')->alias(fn (string $path): string => 'https://publisher.test' . $path);
+        Functions\when('DataFlair\\Toplists\\Frontend\\Redirect\\home_url')->alias(fn (string $path): string => 'https://publisher.test' . $path);
         Functions\expect('get_transient')->never();
         Functions\expect('wp_redirect')->never();
         Functions\expect('wp_remote_get')->never();
@@ -69,7 +69,7 @@ final class CampaignRedirectHandlerTest extends TestCase
 
     public function test_wordpress_subdirectory_is_respected(): void
     {
-        Functions\when('home_url')->alias(fn (string $path): string => 'https://publisher.test/site' . $path);
+        Functions\when('DataFlair\\Toplists\\Frontend\\Redirect\\home_url')->alias(fn (string $path): string => 'https://publisher.test/site' . $path);
         $_SERVER['REQUEST_URI'] = '/site/go/?campaign=example';
         Functions\expect('nocache_headers')->once();
         Functions\expect('wp_die')->once()->with(
